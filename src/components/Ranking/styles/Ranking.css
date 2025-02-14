@@ -1,88 +1,150 @@
 .ranking-container {
-  @apply space-y-6;
+  padding: 20px;
 }
 
 .ranking-filters {
-  @apply bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm space-y-4;
+  margin-bottom: 20px;
+  padding: 20px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
 }
 
 .ranking-filter-row {
-  @apply grid grid-cols-2 gap-4;
+  display: flex;
+  gap: 20px;
+  margin-bottom: 15px;
 }
 
 .ranking-filter-group {
-  @apply flex flex-col gap-2;
+  flex: 1;
 }
 
 .ranking-filter-group label {
-  @apply text-sm font-medium text-gray-700 dark:text-gray-300;
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
 }
 
 .ranking-filter-group select,
 .ranking-filter-group input {
-  @apply w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
 }
 
 .ranking-filter-buttons {
-  @apply flex gap-4 mt-4;
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.ranking-btn-primary,
+.ranking-btn-secondary {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
 }
 
 .ranking-btn-primary {
-  @apply px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2;
+  background-color: #007bff;
+  color: white;
+}
+
+.ranking-btn-primary:hover {
+  background-color: #0056b3;
 }
 
 .ranking-btn-secondary {
-  @apply px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2;
+  background-color: #6c757d;
+  color: white;
+}
+
+.ranking-btn-secondary:hover {
+  background-color: #545b62;
 }
 
 .ranking-table-container {
-  @apply bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden;
+  overflow-x: auto;
 }
 
 .ranking-table {
-  @apply w-full;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.ranking-table th,
+.ranking-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #dee2e6;
 }
 
 .ranking-table th {
-  @apply px-6 py-3 bg-gray-50 dark:bg-gray-700 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider;
-}
-
-.ranking-table td {
-  @apply px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-700;
+  background-color: #f8f9fa;
+  font-weight: 600;
 }
 
 .rank-column {
-  @apply w-16 text-center;
+  width: 80px;
 }
 
 .image-column {
-  @apply w-16;
+  width: 60px;
 }
 
 .artist-column {
-  @apply max-w-[200px];
+  min-width: 200px;
 }
 
 .title-column {
-  @apply max-w-[300px];
+  min-width: 250px;
 }
 
 .genre-column {
-  @apply max-w-[150px];
+  min-width: 150px;
 }
 
 .executions-column {
-  @apply w-24 text-right;
+  width: 120px;
+  text-align: right;
 }
 
 .loading-indicator {
-  @apply flex flex-col items-center justify-center p-8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
 }
 
 .spinner {
-  @apply w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #3498db;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 .error-message {
-  @apply p-4 mb-4 text-red-700 bg-red-100 rounded-lg;
+  padding: 12px;
+  margin-bottom: 20px;
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+}
+
+/* React-Select customization */
+.react-select-container {
+  width: 100%;
 }
