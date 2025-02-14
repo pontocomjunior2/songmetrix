@@ -354,10 +354,9 @@ app.get('/api/ranking', authenticateUser, async (req, res) => {
       id: row.id,
       rank: row.id,
       artist: row.artist,
-      artistImage: 'https://via.placeholder.com/40',
-      song: row.song_title,
+      song_title: row.song_title,
       genre: row.genre,
-      executions: row.executions
+      executions: parseInt(row.executions)
     }));
 
     res.json(rankingData);

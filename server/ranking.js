@@ -74,17 +74,22 @@ router.get('/api/ranking', authenticateUser, async (req, res) => {
     console.log('GET /api/ranking - Parâmetros:', params);
 
     const result = await pool.query(query, params);
-    console.log('GET /api/ranking - Linhas encontradas:', result.rows.length);
+    console.log('GET /api/ranking - Query executada:', {
+      query,
+      params,
+      rowCount: result.rows.length
+    });
 
     const rankingData = result.rows.map(row => ({
       id: row.id,
       rank: row.id,
       artist: row.artist,
-      artistImage: 'https://via.placeholder.com/40',
       song_title: row.song_title,
       genre: row.genre,
-      executions: row.executions
+      executions: parseInt(row.executions)
     }));
+
+    console.log('GET /api/ranking - Dados processados:', rankingData);
 
     res.json(rankingData);
   } catch (error) {
