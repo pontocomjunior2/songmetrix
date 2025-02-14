@@ -1,29 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { format, subDays } from 'date-fns';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Radio as RadioIcon, Music, Clock } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-
-interface ApiRadioStation {
-  name: string;
-  is_online: boolean;
-}
-
-interface ApiTopSong {
-  song_title: string;
-  artist: string;
-  executions: number;
-}
-
-interface ApiArtistData {
-  artist: string;
-  executions: number;
-}
-
-interface RadioStation {
-  name: string;
-  isOnline: boolean;
-}
+import { Radio as RadioIcon, Music } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 interface TopSong {
   title: string;
@@ -31,76 +9,63 @@ interface TopSong {
   plays: number;
 }
 
-interface ChartData {
+interface ActiveRadio {
   name: string;
-  executions: number;
+  isOnline: boolean;
 }
 
-interface GenreData {
+interface GenreDistribution {
   name: string;
   value: number;
   color: string;
 }
 
-interface DashboardData {
-  activeRadios: ApiRadioStation[];
-  topSongs: ApiTopSong[];
-  artistData: ApiArtistData[];
-  genreData: GenreData[];
-}
-
 export default function Dashboard() {
   const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [activeRadios, setActiveRadios] = useState<RadioStation[]>([]);
+  const [activeRadios, setActiveRadios] = useState<ActiveRadio[]>([]);
   const [topSongs, setTopSongs] = useState<TopSong[]>([]);
-  const [artistChartData, setArtistChartData] = useState<ChartData[]>([]);
-  const [genreData, setGenreData] = useState<GenreData[]>([]);
-
-  const getAuthHeaders = async () => {
-    const token = await currentUser?.getIdToken();
-    return {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    };
-  };
+  const [artistData, setArtistData] = useState<any[]>([]);
+  const [genreDistribution, setGenreDistribution] = useState<GenreDistribution[]>([]);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       if (!currentUser) return;
-      
+
       try {
-        const headers = await getAuthHeaders();
+        const token = await currentUser.getIdToken();
         const response = await fetch('/api/dashboard', {
-          headers,
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
         });
 
-        if (!response.ok) throw new Error('Failed to fetch dashboard data');
-        
+        if (!response.ok) throw new Error('Falha ao carregar dados do dashboard');
+
         const data = await response.json();
         
-        // Atualiza os estados com os dados recebidos
-        const dashboardData = data as DashboardData;
-        
-        setActiveRadios(dashboardData.activeRadios.map((radio: ApiRadioStation) => ({
+        // Transform API data to match our interfaces
+        setActiveRadios(data.activeRadios.map((radio: any) => ({
           name: radio.name,
           isOnline: radio.is_online
         })));
 
-        setTopSongs(dashboardData.topSongs.map((song: ApiTopSong) => ({
+        setTopSongs(data.topSongs.map((song: any) => ({
           title: song.song_title,
           artist: song.artist,
           plays: song.executions
         })));
 
-        setGenreData(dashboardData.genreData);
-        setArtistChartData(dashboardData.artistData.map((artist: ApiArtistData) => ({
+        setArtistData(data.artistData.map((artist: any) => ({
           name: artist.artist,
           executions: artist.executions
         })));
 
+        setGenreDistribution(data.genreData);
+
       } catch (error) {
-        console.error('Error fetching dashboard data:', error);
+        console.error('Erro ao carregar dados:', error);
       } finally {
         setLoading(false);
       }
@@ -110,14 +75,15 @@ export default function Dashboard() {
   }, [currentUser]);
 
   if (loading) {
-    return <div className="flex justify-center items-center h-full">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-    </div>;
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6">
-      {/* Rádios Mais Ativas e Top Músicas */}
       <div className="grid grid-cols-2 gap-6">
         {/* Rádios Mais Ativas */}
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
@@ -126,11 +92,12 @@ export default function Dashboard() {
               <RadioIcon className="w-5 h-5" />
               Rádios Mais Ativas
             </h2>
+            <span className="text-yellow-500">⭐</span>
           </div>
           <div className="space-y-4">
-            {activeRadios.map((radio) => (
-              <div key={radio.name} className="flex items-center justify-between">
-                <span>{radio.name}</span>
+            {activeRadios.map((radio, index) => (
+              <div key={index} className="flex items-center justify-between">
+                <span className="text-gray-900 dark:text-gray-100">{radio.name}</span>
                 <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">
                   Online
                 </span>
@@ -151,24 +118,25 @@ export default function Dashboard() {
             {topSongs.map((song, index) => (
               <div key={index} className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium">{song.title}</p>
+                  <p className="font-medium text-gray-900 dark:text-gray-100">{song.title}</p>
                   <p className="text-sm text-gray-500">{song.artist}</p>
                 </div>
-                <span className="text-sm">{song.plays} plays</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  {song.plays} plays
+                </span>
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Gráficos */}
       <div className="grid grid-cols-2 gap-6">
         {/* Artistas Mais Tocados */}
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
           <h2 className="text-lg font-semibold mb-4">Artistas Mais Tocados</h2>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={artistChartData}>
+              <BarChart data={artistData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" />
                 <YAxis />
@@ -186,7 +154,7 @@ export default function Dashboard() {
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={genreData}
+                  data={genreDistribution}
                   dataKey="value"
                   nameKey="name"
                   cx="50%"
@@ -194,7 +162,7 @@ export default function Dashboard() {
                   outerRadius={80}
                   label={({ name, value }) => `${name} ${value}%`}
                 >
-                  {genreData.map((entry, index) => (
+                  {genreDistribution.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>

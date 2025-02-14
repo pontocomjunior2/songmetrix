@@ -1,7 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { format, subDays } from 'date-fns';
 import { useAuth } from '../../contexts/AuthContext';
+import { fetchSpotifyToken, fetchArtistImageFromSpotify } from './services/spotify';
 import './styles/Ranking.css';
+
+interface RankingApiItem {
+  id: number;
+  rank: number;
+  artist: string;
+  song_title: string;
+  genre: string;
+  executions: number;
+}
 
 interface RankingItem {
   id: number;
@@ -70,6 +80,69 @@ export default function Ranking() {
   }, [currentUser]);
 
   // Carregar dados do ranking
+  const [spotifyToken, setSpotifyToken] = useState<string | null>(null);
+  const [artistImages, setArtistImages] = useState<{ [key: string]: string }>({});
+
+  // Buscar token do Spotify
+  useEffect(() => {
+    const getSpotifyToken = async () => {
+      const token = await fetchSpotifyToken();
+      setSpotifyToken(token);
+    };
+    getSpotifyToken();
+  }, []);
+
+  const fetchArtistImages = async () => {
+    if (!spotifyToken || !rankingData.length) return;
+
+    const newImages: { [key: string]: string } = {};
+    const artistsToFetch = rankingData.filter(item => !artistImages[item.artist]);
+
+    // Buscar imagens em lotes de 5 para evitar muitas requisições simultâneas
+    for (let i = 0; i < artistsToFetch.length; i += 5) {
+      const batch = artistsToFetch.slice(i, i + 5);
+      await Promise.all(
+        batch.map(async (item) => {
+          try {
+            const imageUrl = await fetchArtistImageFromSpotify(item.artist, spotifyToken);
+            if (imageUrl) {
+              newImages[item.artist] = imageUrl;
+            }
+          } catch (error) {
+            console.error(`Erro ao buscar imagem para ${item.artist}:`, error);
+          }
+        })
+      );
+
+      if (Object.keys(newImages).length > 0) {
+        setArtistImages(prev => ({ ...prev, ...newImages }));
+      }
+    }
+
+    // Atualizar o ranking com todas as novas imagens
+    if (Object.keys(newImages).length > 0) {
+      setRankingData(current => 
+        current.map(item => ({
+          ...item,
+          artistImage: newImages[item.artist] || artistImages[item.artist] || 'https://via.placeholder.com/80'
+        }))
+      );
+    }
+  };
+
+  // Buscar imagens dos artistas quando o ranking mudar
+  useEffect(() => {
+    if (spotifyToken && rankingData.length > 0) {
+      const newArtists = rankingData.filter(item => !artistImages[item.artist]);
+      if (newArtists.length > 0) {
+        const timer = setTimeout(() => {
+          fetchArtistImages();
+        }, 500); // Pequeno delay para evitar múltiplas requisições
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [rankingData, spotifyToken, artistImages]);
+
   const fetchRankingData = async () => {
     if (!currentUser) return;
     
@@ -90,40 +163,24 @@ export default function Ranking() {
       const response = await fetch(`/api/ranking?${params.toString()}`, { headers });
       if (!response.ok) throw new Error('Falha ao carregar ranking');
 
-      const data = await response.json();
-      
-      // Simular dados para demonstração
-      const mockData: RankingItem[] = [
-        {
-          id: 1,
-          rank: 1,
-          artist: "Israel & Rodolfo",
-          artistImage: "https://example.com/artist1.jpg",
-          song: "Arruma Um Bão",
-          genre: "Sertanejo",
-          executions: 311
-        },
-        {
-          id: 2,
-          rank: 2,
-          artist: "Maiara & Maraisa",
-          artistImage: "https://example.com/artist2.jpg",
-          song: "Vai Lá (Ao Vivo em Goiânia)",
-          genre: "Sertanejo",
-          executions: 301
-        },
-        {
-          id: 3,
-          rank: 3,
-          artist: "Gusttavo Lima",
-          artistImage: "https://example.com/artist3.jpg",
-          song: "A Noite (La Notte) [Ao Vivo]",
-          genre: "Sertanejo",
-          executions: 300
+      const data = await response.json() as RankingApiItem[];
+      const rankingWithImages = data.map(item => ({
+        id: item.id,
+        rank: item.rank,
+        artist: item.artist,
+        song: item.song_title,
+        genre: item.genre,
+        executions: item.executions,
+        artistImage: artistImages[item.artist] || 'https://via.placeholder.com/80'
+      }));
+      setRankingData(rankingWithImages);
+      // Trigger image fetch for new artists
+      if (spotifyToken) {
+        const newArtists = rankingWithImages.filter(item => !artistImages[item.artist]);
+        if (newArtists.length > 0) {
+          fetchArtistImages();
         }
-      ];
-
-      setRankingData(mockData);
+      }
     } catch (error) {
       console.error('Erro ao carregar ranking:', error);
       setError('Não foi possível carregar o ranking. Tente novamente mais tarde.');
@@ -280,20 +337,52 @@ export default function Ranking() {
               {rankingData.map((item) => (
                 <tr key={item.id}>
                   <td className="rank-column">{item.rank}</td>
-                  <td className="image-column">
-                    <img
-                      src={item.artistImage}
-                      alt={item.artist}
-                      className="w-10 h-10 rounded-full"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src = 'https://via.placeholder.com/40';
-                      }}
-                    />
+                  <td className="w-28 p-3">
+                    <div className="relative w-20 h-20 overflow-hidden group">
+                      <div 
+                        className={`absolute inset-0 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse transition-opacity duration-500 ${
+                          artistImages[item.artist] ? 'opacity-0' : 'opacity-100'
+                        }`}
+                      >
+                        <div className="h-full w-full flex items-center justify-center text-gray-400">
+                          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                          </svg>
+                        </div>
+                      </div>
+                      <img
+                        src={item.artistImage}
+                        alt={item.artist}
+                        className={`absolute inset-0 w-full h-full object-cover rounded-lg shadow-lg transition-all duration-500 transform hover:scale-105 ${
+                          artistImages[item.artist] ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
+                        }`}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = 'https://via.placeholder.com/80';
+                        }}
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-lg" />
+                    </div>
                   </td>
-                  <td className="artist-column">{item.artist}</td>
-                  <td className="title-column">{item.song}</td>
-                  <td className="genre-column">{item.genre}</td>
-                  <td className="executions-column">{item.executions}</td>
+                  <td className="artist-column px-6">
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer transition-colors">
+                        {item.artist}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="title-column px-6">
+                    <div className="flex flex-col">
+                      <span className="font-medium text-gray-900 dark:text-white">{item.song_title}</span>
+                    </div>
+                  </td>
+                  <td className="genre-column px-4">
+                    <span className="text-sm text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-full">
+                      {item.genre}
+                    </span>
+                  </td>
+                  <td className="executions-column px-4 text-right font-medium">
+                    {item.executions.toLocaleString()}
+                  </td>
                 </tr>
               ))}
             </tbody>
