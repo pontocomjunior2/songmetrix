@@ -1,7 +1,7 @@
 const SPOTIFY_CLIENT_ID = "6454790e98c04c22b3fecc25dcd9e75c";
 const SPOTIFY_CLIENT_SECRET = "b9d28568c7e04ad79735bf8fddb750ed";
 
-export const fetchSpotifyToken = async (): Promise<string | null> => {
+export const fetchSpotifyToken = async () => {
   const tokenUrl = "https://accounts.spotify.com/api/token";
 
   try {

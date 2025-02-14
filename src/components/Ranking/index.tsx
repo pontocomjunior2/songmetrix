@@ -1,34 +1,85 @@
-import React, { useState, useEffect } from 'react';
-import { format, subDays } from 'date-fns';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import Select from 'react-select';
+import moment from 'moment';
+import { LazyLoadImage } from 'react-lazy-load-image-component';
+import 'react-lazy-load-image-component/src/effects/blur.css';
+import './styles/Ranking.css';
+import { fetchSpotifyToken, fetchArtistImageFromSpotify } from './services/spotify';
+import { RankingItem, SpotifyTokenData, ArtistImages, RankingFilters } from './types';
+import { MultiValue } from 'react-select';
 import { Loader2 } from 'lucide-react';
-
-interface RankingItem {
-  id: number;
-  artist: string;
-  song_title: string;
-  genre: string;
-  executions: number;
-}
 
 export default function Ranking() {
   const { currentUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [rankingData, setRankingData] = useState<RankingItem[]>([]);
-  const [selectedRadios, setSelectedRadios] = useState<string[]>([]);
-  const [radios, setRadios] = useState<string[]>([]);
-  const [rankingSize, setRankingSize] = useState('10');
-
-  // Data padrão: últimos 10 dias
-  const endDate = format(new Date(), 'yyyy-MM-dd');
-  const startDate = format(subDays(new Date(), 10), 'yyyy-MM-dd');
-
-  useEffect(() => {
-    if (currentUser) {
-      fetchRadios();
-      fetchRanking();
+  const [selectedRadios, setSelectedRadios] = useState<Array<{ value: string; label: string }>>([]);
+  const [radiosOptions, setRadiosOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [filters, setFilters] = useState<RankingFilters>({
+    rankingSize: '10',
+    startDate: moment().subtract(10, 'days').format('YYYY-MM-DD'),
+    endDate: moment().format('YYYY-MM-DD'),
+    hourStart: '',
+    hourEnd: '',
+    selectedRadios: []
+  });
+  const [artistImages, setArtistImages] = useState<ArtistImages>(() => {
+    const cached = localStorage.getItem('artistImages');
+    return cached ? JSON.parse(cached) : {};
+  });
+  const [spotifyTokenData, setSpotifyTokenData] = useState<SpotifyTokenData | null>(() => {
+    const storedToken = localStorage.getItem('spotifyToken');
+    const storedExpiration = localStorage.getItem('spotifyTokenExpiration');
+    if (storedToken && storedExpiration && Date.now() < parseInt(storedExpiration)) {
+      return { token: storedToken, expiresAt: parseInt(storedExpiration) };
     }
-  }, [currentUser]);
+    return null;
+  });
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const loadSpotifyToken = useCallback(async () => {
+    if (spotifyTokenData && spotifyTokenData.expiresAt > Date.now()) {
+      return spotifyTokenData.token;
+    }
+
+    console.log("Obtendo novo token do Spotify...");
+    const newToken = await fetchSpotifyToken();
+    if (newToken) {
+      const expiresAt = Date.now() + 3600000; // Token expira em 1 hora
+      setSpotifyTokenData({ token: newToken, expiresAt });
+      localStorage.setItem('spotifyToken', newToken);
+      localStorage.setItem('spotifyTokenExpiration', expiresAt.toString());
+      return newToken;
+    }
+    return null;
+  }, [spotifyTokenData]);
+
+  const loadArtistImages = useCallback(async (data: RankingItem[]) => {
+    const token = await loadSpotifyToken();
+    if (!token) {
+      console.error("Token Spotify não disponível. Imagens não podem ser carregadas.");
+      return;
+    }
+
+    const newImages: ArtistImages = {};
+    for (const item of data) {
+      if (!artistImages[item.artist]) {
+        try {
+          const spotifyImageUrl = await fetchArtistImageFromSpotify(item.artist, token);
+          if (spotifyImageUrl) {
+            newImages[item.artist] = spotifyImageUrl;
+          }
+        } catch (error) {
+          console.error(`Erro ao carregar a imagem para ${item.artist}:`, error);
+        }
+      }
+    }
+
+    const updatedImages = { ...artistImages, ...newImages };
+    setArtistImages(updatedImages);
+    localStorage.setItem('artistImages', JSON.stringify(updatedImages));
+  }, [artistImages, loadSpotifyToken]);
 
   const getAuthHeaders = async () => {
     const token = await currentUser?.getIdToken();
@@ -44,79 +95,92 @@ export default function Ranking() {
       const response = await fetch('/api/radios', { headers });
       if (!response.ok) throw new Error('Failed to fetch radios');
       const data = await response.json();
-      setRadios(data);
+      const options = data.map((radio: string) => ({ value: radio, label: radio }));
+      setRadiosOptions(options);
     } catch (error) {
       console.error('Error fetching radios:', error);
+      setErrorMessage('Erro ao carregar as rádios. Por favor, tente novamente.');
     }
   };
 
   const fetchRanking = async () => {
     setLoading(true);
+    setErrorMessage(null);
     try {
       const headers = await getAuthHeaders();
       const params = new URLSearchParams({
-        startDate,
-        endDate,
-        rankingSize,
-        ...(selectedRadios.length > 0 && { radio: selectedRadios.join(',') })
+        startDate: filters.startDate,
+        endDate: filters.endDate,
+        rankingSize: filters.rankingSize,
+        startTime: filters.hourStart,
+        endTime: filters.hourEnd,
+        ...(selectedRadios.length > 0 && { 
+          radio: selectedRadios.map(r => r.value).join(',') 
+        })
       });
 
       const response = await fetch(`/api/ranking?${params.toString()}`, { headers });
       if (!response.ok) throw new Error('Failed to fetch ranking');
       const data = await response.json();
-      setRankingData(data);
+      console.log('Dados recebidos do servidor:', data);
+      
+      // Verificar se os dados têm a estrutura esperada
+      if (Array.isArray(data) && data.length > 0) {
+        console.log('Exemplo do primeiro item:', data[0]);
+        console.log('song_title está presente?', data[0].hasOwnProperty('song_title'));
+        
+        // Garantir que todos os campos necessários estejam presentes
+        const processedData = data.map(item => ({
+          ...item,
+          song_title: item.song_title || item.song || 'Título não disponível'
+        }));
+        
+        setRankingData(processedData);
+      } else {
+        setRankingData([]);
+      }
+      await loadArtistImages(data);
     } catch (error) {
       console.error('Error fetching ranking:', error);
+      setErrorMessage('Erro ao carregar o ranking. Por favor, tente novamente.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRadioChange = (radio: string) => {
-    const newSelection = selectedRadios.includes(radio)
-      ? selectedRadios.filter(r => r !== radio)
-      : [...selectedRadios, radio];
-    setSelectedRadios(newSelection);
-  };
+  useEffect(() => {
+    if (currentUser) {
+      fetchRadios();
+      fetchRanking();
+    }
+  }, [currentUser]);
 
-  const handleRankingSizeChange = (size: string) => {
-    setRankingSize(size);
+  const handleSearch = () => {
     fetchRanking();
   };
 
+  const clearFilters = () => {
+    setFilters({
+      rankingSize: '10',
+      startDate: moment().subtract(10, 'days').format('YYYY-MM-DD'),
+      endDate: moment().format('YYYY-MM-DD'),
+      hourStart: '',
+      hourEnd: '',
+      selectedRadios: []
+    });
+    setSelectedRadios([]);
+  };
+
   return (
-    <div className="space-y-6">
-      {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
-        <div className="flex flex-wrap gap-4 items-center justify-between">
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-              Rádios
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {radios.map((radio) => (
-                <button
-                  key={radio}
-                  onClick={() => handleRadioChange(radio)}
-                  className={`px-3 py-1 rounded-full text-sm ${
-                    selectedRadios.includes(radio)
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
-                  }`}
-                >
-                  {radio}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-              TOP
-            </label>
+    <div className="ranking-container">
+      <div className="ranking-filters">
+        <div className="ranking-filter-row">
+          <div className="ranking-filter-group">
+            <label htmlFor="ranking-size">Ranking:</label>
             <select
-              value={rankingSize}
-              onChange={(e) => handleRankingSizeChange(e.target.value)}
-              className="rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+              id="ranking-size"
+              value={filters.rankingSize}
+              onChange={(e) => setFilters({ ...filters, rankingSize: e.target.value })}
             >
               <option value="10">TOP 10</option>
               <option value="20">TOP 20</option>
@@ -125,47 +189,118 @@ export default function Ranking() {
               <option value="200">TOP 200</option>
             </select>
           </div>
+
+          <div className="ranking-filter-group">
+            <label htmlFor="radio-select">Rádios:</label>
+            <Select
+              id="radio-select"
+              options={radiosOptions}
+              isMulti
+              value={selectedRadios}
+              onChange={(newValue: MultiValue<{ value: string; label: string }>) => {
+                setSelectedRadios(newValue as { value: string; label: string }[]);
+              }}
+              placeholder="Selecione as rádios"
+              className="react-select-container"
+              classNamePrefix="react-select"
+            />
+          </div>
+        </div>
+
+        <div className="ranking-filter-row-datetime">
+          <div className="ranking-filter-group">
+            <label htmlFor="date-start">Data Início:</label>
+            <input
+              type="date"
+              id="date-start"
+              value={filters.startDate}
+              onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+            />
+          </div>
+
+          <div className="ranking-filter-group">
+            <label htmlFor="date-end">Data Fim:</label>
+            <input
+              type="date"
+              id="date-end"
+              value={filters.endDate}
+              onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+            />
+          </div>
+
+          <div className="ranking-filter-group">
+            <label htmlFor="hour-start">Hora Início:</label>
+            <input
+              type="time"
+              id="hour-start"
+              value={filters.hourStart}
+              onChange={(e) => setFilters({ ...filters, hourStart: e.target.value })}
+            />
+          </div>
+
+          <div className="ranking-filter-group">
+            <label htmlFor="hour-end">Hora Fim:</label>
+            <input
+              type="time"
+              id="hour-end"
+              value={filters.hourEnd}
+              onChange={(e) => setFilters({ ...filters, hourEnd: e.target.value })}
+            />
+          </div>
+        </div>
+
+        <div className="ranking-filter-buttons">
+          <button className="ranking-btn-primary" onClick={handleSearch} disabled={loading}>
+            {loading ? "Carregando..." : "Pesquisar"}
+          </button>
+          <button className="ranking-btn-secondary" onClick={clearFilters}>
+            Limpar Filtros
+          </button>
         </div>
       </div>
 
-      {/* Ranking Table */}
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm overflow-x-auto">
+      {errorMessage && <div className="error-message">{errorMessage}</div>}
+
+      <div className="ranking-table-container">
         {loading ? (
-          <div className="flex justify-center items-center py-8">
+          <div className="loading-indicator">
             <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <p>Carregando...</p>
           </div>
         ) : (
-          <table className="w-full">
+          <table className="ranking-table">
             <thead>
-              <tr className="border-b dark:border-gray-700">
-                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Posição</th>
-                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Artista</th>
-                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Música</th>
-                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Gênero</th>
-                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Execuções</th>
+              <tr>
+                <th className="rank-column">Rank</th>
+                <th className="image-column"></th>
+                <th className="artist-column">Artista</th>
+                <th className="title-column">Título</th>
+                <th className="genre-column">Gênero</th>
+                <th className="executions-column">Execuções</th>
               </tr>
             </thead>
             <tbody>
               {rankingData.map((item, index) => (
-                <tr
-                  key={item.id}
-                  className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
-                >
-                  <td className="px-4 py-2 text-gray-700 dark:text-gray-200">
-                    {index + 1}º
+                <tr key={item.id}>
+                  <td className="rank-column">{index + 1}º</td>
+                  <td className="image-column">
+                    {artistImages[item.artist] ? (
+                      <LazyLoadImage
+                        src={artistImages[item.artist]}
+                        alt={item.artist}
+                        effect="blur"
+                        width={50}
+                        height={50}
+                        style={{ borderRadius: "50%" }}
+                      />
+                    ) : (
+                      <div style={{ width: "50px", height: "50px", backgroundColor: "#ddd", borderRadius: "50%" }}></div>
+                    )}
                   </td>
-                  <td className="px-4 py-2 text-gray-700 dark:text-gray-200">
-                    {item.artist}
-                  </td>
-                  <td className="px-4 py-2 text-gray-700 dark:text-gray-200">
-                    {item.song_title}
-                  </td>
-                  <td className="px-4 py-2 text-gray-700 dark:text-gray-200">
-                    {item.genre}
-                  </td>
-                  <td className="px-4 py-2 text-gray-700 dark:text-gray-200">
-                    {item.executions}
-                  </td>
+                  <td className="artist-column">{item.artist}</td>
+                  <td className="title-column">{item.song_title}</td>
+                  <td className="genre-column">{item.genre}</td>
+                  <td className="executions-column">{item.executions}</td>
                 </tr>
               ))}
             </tbody>
