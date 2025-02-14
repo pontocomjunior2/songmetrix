@@ -350,17 +350,7 @@ app.get('/api/ranking', authenticateUser, async (req, res) => {
     const result = await pool.query(query, params);
     console.log('GET /api/ranking - Linhas encontradas:', result.rows.length);
 
-    const rankingData = result.rows.map(row => ({
-      id: row.id,
-      rank: row.id,
-      artist: row.artist,
-      artistImage: 'https://via.placeholder.com/40',
-      song: row.song_title,
-      genre: row.genre,
-      executions: row.executions
-    }));
-
-    res.json(rankingData);
+    res.json(result.rows);
   } catch (error) {
     console.error('GET /api/ranking - Erro:', error);
     res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
