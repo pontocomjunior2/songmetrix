@@ -6,10 +6,16 @@ import {
   signInWithPopup,
   createUserWithEmailAndPassword,
   signOut,
-  onIdTokenChanged
+  onAuthStateChanged
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, onSnapshot } from 'firebase/firestore';
-import { auth, db, UserStatus } from '../lib/firebase';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { 
+  auth, 
+  db, 
+  UserStatus,
+  refreshAuthToken,
+  ensureValidToken
+} from '../lib/firebase';
 import { UserStatusType } from '../types/components';
 
 interface AuthContextType {
@@ -38,123 +44,132 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [userStatus, setUserStatus] = useState<UserStatusType | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Listener para mudanças no token de autenticação
-    const unsubscribeAuth = onIdTokenChanged(auth, async (user) => {
-      setCurrentUser(user);
-      if (user) {
-        // Força a atualização do token para receber as claims mais recentes
-        await user.getIdToken(true);
+  // Function to check user status
+  const checkUserStatus = async (user: User) => {
+    try {
+      // Ensure we have a valid token
+      const hasValidToken = await ensureValidToken();
+      if (!hasValidToken) {
+        console.error('Failed to ensure valid token');
+        setUserStatus(UserStatus.NOT_PAID);
+        return;
       }
-    });
 
-    return () => unsubscribeAuth();
-  }, []);
-
-  useEffect(() => {
-    if (currentUser) {
-      // Listener para mudanças no documento do usuário
-      const unsubscribeDoc = onSnapshot(
-        doc(db, 'users', currentUser.uid),
-        (doc) => {
-          if (doc.exists()) {
-            setUserStatus(doc.data().status as UserStatusType);
-          }
-        },
-        (error) => {
-          console.error('Erro ao observar status do usuário:', error);
-        }
-      );
-
-      return () => unsubscribeDoc();
-    } else {
-      setUserStatus(null);
-    }
-  }, [currentUser]);
-
-  useEffect(() => {
-    // Atualiza o estado de loading quando tivermos tanto o usuário quanto seu status
-    setLoading(false);
-  }, [currentUser, userStatus]);
-
-  const signInWithEmail = async (email: string, password: string) => {
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (error) {
-      console.error('Erro no login com email:', error);
-      throw error;
-    }
-  };
-
-  const signInWithGoogle = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const userDoc = await getDoc(doc(db, 'users', result.user.uid));
+      const userRef = doc(db, 'users', user.uid);
+      const docSnap = await getDoc(userRef);
       
-      if (!userDoc.exists()) {
-        await setDoc(doc(db, 'users', result.user.uid), {
-          email: result.user.email,
+      if (docSnap.exists()) {
+        setUserStatus(docSnap.data().status as UserStatusType);
+      } else {
+        // Create document if it doesn't exist
+        await setDoc(userRef, {
+          email: user.email,
           status: UserStatus.NOT_PAID,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         });
+        setUserStatus(UserStatus.NOT_PAID);
       }
     } catch (error) {
-      console.error('Erro no login com Google:', error);
-      throw error;
+      console.error('Error checking user status:', error);
+      setUserStatus(UserStatus.NOT_PAID);
     }
+  };
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setCurrentUser(user);
+        await checkUserStatus(user);
+      } else {
+        setCurrentUser(null);
+        setUserStatus(null);
+      }
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  const signInWithEmail = async (email: string, password: string) => {
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    await refreshAuthToken();
+    await checkUserStatus(result.user);
+  };
+
+  const signInWithGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    const result = await signInWithPopup(auth, provider);
+    await refreshAuthToken();
+    await checkUserStatus(result.user);
   };
 
   const signUpWithEmail = async (email: string, password: string) => {
-    try {
-      const result = await createUserWithEmailAndPassword(auth, email, password);
-      await setDoc(doc(db, 'users', result.user.uid), {
-        email,
-        status: UserStatus.NOT_PAID,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-    } catch (error) {
-      console.error('Erro no registro:', error);
-      throw error;
-    }
+    const result = await createUserWithEmailAndPassword(auth, email, password);
+    
+    // Get fresh token
+    await refreshAuthToken();
+    
+    const userRef = doc(db, 'users', result.user.uid);
+    await setDoc(userRef, {
+      email,
+      status: UserStatus.NOT_PAID,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    
+    // Refresh token again after document creation
+    await refreshAuthToken();
+    await checkUserStatus(result.user);
   };
 
   const logout = async () => {
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.error('Erro no logout:', error);
-      throw error;
-    }
+    await signOut(auth);
   };
 
   const redirectToStripeCheckout = async () => {
     if (!currentUser) return;
 
-    try {
-      const response = await fetch('/api/create-checkout-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId: currentUser.uid,
-          priceId: import.meta.env.VITE_SUBSCRIPTION_PRICE_ID,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Erro ao criar sessão de checkout');
-      }
-
-      const { url } = await response.json();
-      window.location.href = url;
-    } catch (error) {
-      console.error('Erro ao redirecionar para Stripe:', error);
-      throw error;
+    // Ensure we have a valid token
+    const hasValidToken = await ensureValidToken();
+    if (!hasValidToken) {
+      throw new Error('Failed to ensure valid token');
     }
+
+    const userRef = doc(db, 'users', currentUser.uid);
+    const userDoc = await getDoc(userRef);
+    
+    if (userDoc.exists() && userDoc.data().status === UserStatus.PAID) {
+      window.location.href = '/dashboard';
+      return;
+    }
+
+    // Get fresh token for API request
+    const token = await refreshAuthToken();
+    if (!token) {
+      throw new Error('Failed to get fresh token');
+    }
+
+    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+    const response = await fetch(`${API_URL}/api/create-checkout-session`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        userId: currentUser.uid,
+        email: currentUser.email,
+        priceId: import.meta.env.VITE_SUBSCRIPTION_PRICE_ID,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Error creating checkout session');
+    }
+
+    const { url } = await response.json();
+    window.location.href = url;
   };
 
   const value = {
