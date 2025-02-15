@@ -1,6 +1,8 @@
 import React from 'react';
 import { Bell, ChevronDown, HelpCircle, LogOut, Moon, Settings, Sun } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
+import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 interface HeaderProps {
   currentView: string;
@@ -25,6 +27,17 @@ export default function Header({
   setShowProfileMenu
 }: HeaderProps) {
   const { theme, toggleTheme } = useTheme();
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/');
+    } catch (error) {
+      console.error('Erro ao fazer logout:', error);
+    }
+  };
 
   return (
     <header className="fixed top-0 right-0 left-64 h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 z-10">
@@ -110,7 +123,10 @@ export default function Header({
                     <Settings className="w-4 h-4" />
                     Configurações
                   </button>
-                  <button className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-red-600 dark:text-red-400">
+                  <button 
+                    onClick={handleLogout}
+                    className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-red-600 dark:text-red-400"
+                  >
                     <LogOut className="w-4 h-4" />
                     Sair
                   </button>
