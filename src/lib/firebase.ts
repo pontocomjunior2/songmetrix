@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { UserStatusType } from '../types/components';
 
@@ -15,14 +15,20 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
+let app;
+try {
+  app = initializeApp(firebaseConfig);
+} catch (error) {
+  app = initializeApp(firebaseConfig, 'default');
+}
 
 // Initialize services
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
-// Set language
+// Set language and persistence
 auth.useDeviceLanguage();
+auth.setPersistence(browserLocalPersistence);
 
 // User status constants
 export const UserStatus: { [key: string]: UserStatusType } = {
