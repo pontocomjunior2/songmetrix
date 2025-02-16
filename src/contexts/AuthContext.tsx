@@ -6,7 +6,9 @@ import {
   signInWithPopup,
   createUserWithEmailAndPassword,
   signOut,
-  onAuthStateChanged
+  onAuthStateChanged,
+  browserLocalPersistence,
+  setPersistence
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { 
@@ -92,9 +94,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signInWithEmail = async (email: string, password: string) => {
-    const result = await signInWithEmailAndPassword(auth, email, password);
-    await refreshAuthToken();
-    await checkUserStatus(result.user);
+    try {
+      await setPersistence(auth, browserLocalPersistence);
+      const result = await signInWithEmailAndPassword(auth, email, password);
+      await refreshAuthToken();
+      await checkUserStatus(result.user);
+    } catch (error: any) {
+      console.error('Erro no login:', error);
+      if (error.code === 'auth/invalid-credential') {
+        throw new Error('Email ou senha inválidos');
+      }
+      throw error;
+    }
   };
 
   const signInWithGoogle = async () => {
