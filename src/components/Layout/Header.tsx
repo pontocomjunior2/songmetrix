@@ -1,8 +1,10 @@
 import React from 'react';
-import { Bell, ChevronDown, HelpCircle, LogOut, Moon, Settings, Sun } from 'lucide-react';
+import { Bell, ChevronDown, HelpCircle, LogOut, Moon, Settings, Sun, Users } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { UserStatus } from '../../lib/firebase';
+import UserAvatar from '../Common/UserAvatar';
 
 interface HeaderProps {
   currentView: string;
@@ -27,7 +29,7 @@ export default function Header({
   setShowProfileMenu
 }: HeaderProps) {
   const { theme, toggleTheme } = useTheme();
-  const { logout } = useAuth();
+  const { logout, userStatus, currentUser } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -38,6 +40,8 @@ export default function Header({
       console.error('Erro ao fazer logout:', error);
     }
   };
+
+  const isAdmin = userStatus === UserStatus.ADMIN;
 
   return (
     <header className="fixed top-0 right-0 left-64 h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 z-10">
@@ -104,17 +108,52 @@ export default function Header({
               onClick={() => setShowProfileMenu(!showProfileMenu)}
               className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
             >
-              <img
-                src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80"
-                alt="Profile"
-                className="w-8 h-8 rounded-full"
-              />
+              <div className="flex items-center gap-2">
+                {currentUser && (
+                  <UserAvatar
+                    email={currentUser.email || ''}
+                    photoURL={currentUser.photoURL}
+                    size="sm"
+                  />
+                )}
+                <span className="text-sm font-medium hidden md:block">
+                  {currentUser?.email}
+                </span>
+              </div>
               <ChevronDown className="w-4 h-4" />
             </button>
 
             {showProfileMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+              <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+                <div className="p-3 border-b border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center gap-3">
+                    {currentUser && (
+                      <UserAvatar
+                        email={currentUser.email || ''}
+                        photoURL={currentUser.photoURL}
+                        size="md"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                        {currentUser?.email}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                        {isAdmin ? 'Administrador' : 'Usuário'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
                 <div className="py-1">
+                  {isAdmin && (
+                    <button 
+                      onClick={() => navigate('/admin/users')}
+                      className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      <Users className="w-4 h-4" />
+                      Gerenciar Usuários
+                    </button>
+                  )}
                   <button className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700">
                     <HelpCircle className="w-4 h-4" />
                     Ajuda

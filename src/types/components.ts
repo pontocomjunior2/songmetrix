@@ -8,7 +8,7 @@ export interface LayoutProps {
 }
 
 // Auth Types
-export type UserStatusType = 'NOT_PAID' | 'PAID' | 'ADMIN';
+export type UserStatusType = 'INATIVO' | 'ATIVO' | 'ADMIN';
 
 export interface AuthState {
   currentUser: any;
@@ -21,7 +21,7 @@ export interface AuthContextType extends AuthState {
   signInWithGoogle: () => Promise<void>;
   signUpWithEmail: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  redirectToStripeCheckout: () => Promise<void>;
+  updateUserStatus?: (uid: string, status: UserStatusType) => Promise<void>;
 }
 
 // Common Component Types
@@ -55,8 +55,9 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
 export interface User {
   uid: string;
   email: string | null;
+  photoURL?: string | null;
+  displayName?: string | null;
   status: UserStatusType;
-  stripeCustomerId?: string;
   createdAt: string;
   updatedAt?: string;
 }

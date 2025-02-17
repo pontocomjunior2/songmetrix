@@ -69,6 +69,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const userData = docSnap.data();
         console.log('Dados do usuário no Firestore:', userData);
         
+        // Update user profile data if it has changed
+        const updateData: any = {};
+        if (user.photoURL && user.photoURL !== userData.photoURL) {
+          updateData.photoURL = user.photoURL;
+        }
+        if (user.displayName && user.displayName !== userData.displayName) {
+          updateData.displayName = user.displayName;
+        }
+        if (Object.keys(updateData).length > 0) {
+          updateData.updatedAt = new Date().toISOString();
+          await updateDoc(userRef, updateData);
+        }
+        
         // Define o status com base nas regras de negócio
         if (userData.status === UserStatus.ADMIN) {
           if (!currentToken.claims.admin) {
@@ -105,6 +118,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         await setDoc(userRef, {
           uid: user.uid,
           email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
           status: UserStatus.INATIVO,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
@@ -178,8 +193,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
     const result = await signInWithPopup(auth, provider);
+    
+    // Get additional user info
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    const user = result.user;
+    
     await refreshAuthToken();
-    await checkUserStatus(result.user);
+    await checkUserStatus(user);
   };
 
   const signUpWithEmail = async (email: string, password: string) => {
