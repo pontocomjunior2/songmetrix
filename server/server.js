@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
 import { format } from 'date-fns';
-import { auth } from './firebase-admin.js';
+import { auth, db, UserStatus } from './firebase-admin.js';
 import { createCheckoutSession, handleWebhook } from './stripe.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -34,15 +34,32 @@ const authenticateUser = async (req, res, next) => {
     const token = authHeader.split('Bearer ')[1];
     const decodedToken = await auth.verifyIdToken(token);
     
-    // Verifica se o usuário tem acesso pago
-    if (!decodedToken.paid && !decodedToken.admin) {
+    // Busca o status do usuário no Firestore
+    const userDoc = await db.collection('users').doc(decodedToken.uid).get();
+    
+    if (!userDoc.exists) {
+      return res.status(403).json({ 
+        error: 'Usuário não encontrado',
+        code: 'user_not_found'
+      });
+    }
+
+    const userData = userDoc.data();
+    
+    // Verifica se o usuário está ativo ou é admin
+    if (userData.status !== UserStatus.ATIVO && userData.status !== UserStatus.ADMIN) {
       return res.status(403).json({ 
         error: 'Assinatura necessária',
         code: 'subscription_required'
       });
     }
 
-    req.user = decodedToken;
+    // Adiciona os dados do usuário ao request
+    req.user = {
+      ...decodedToken,
+      status: userData.status
+    };
+    
     next();
   } catch (error) {
     console.error('Erro de autenticação:', error);
