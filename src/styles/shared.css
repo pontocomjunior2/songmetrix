@@ -1,0 +1,100 @@
+/* Dark mode styles for components */
+@media (prefers-color-scheme: dark) {
+  /* Common container styles */
+  .bg-white {
+    background-color: #1f2937 !important;
+  }
+
+  .dark\:bg-gray-800 {
+    background-color: #1f2937 !important;
+  }
+
+  .dark\:bg-gray-700 {
+    background-color: #374151 !important;
+  }
+
+  /* Border colors */
+  .dark\:border-gray-700 {
+    border-color: #374151 !important;
+  }
+
+  .border-gray-300.dark\:border-gray-600 {
+    border-color: #4b5563 !important;
+  }
+
+  /* Text colors */
+  .text-gray-700.dark\:text-gray-200,
+  .text-gray-600.dark\:text-gray-400 {
+    color: #e5e7eb !important;
+  }
+
+  /* Form elements */
+  input[type="text"],
+  input[type="date"],
+  input[type="time"],
+  select,
+  .react-select__control {
+    background-color: #374151 !important;
+    border-color: #4b5563 !important;
+    color: #e5e7eb !important;
+  }
+
+  /* Table styles */
+  table thead {
+    background-color: #374151 !important;
+  }
+
+  table th {
+    color: #e5e7eb !important;
+  }
+
+  table td {
+    color: #e5e7eb !important;
+  }
+
+  tr:hover {
+    background-color: #374151 !important;
+  }
+
+  /* React-select customization */
+  .react-select__menu {
+    background-color: #374151 !important;
+  }
+
+  .react-select__option {
+    background-color: #374151 !important;
+    color: #e5e7eb !important;
+  }
+
+  .react-select__option--is-focused {
+    background-color: #4b5563 !important;
+  }
+
+  .react-select__option--is-selected {
+    background-color: #2563eb !important;
+  }
+
+  .react-select__multi-value {
+    background-color: #4b5563 !important;
+  }
+
+  .react-select__multi-value__label {
+    color: #e5e7eb !important;
+  }
+
+  /* Button styles */
+  .ranking-btn-secondary {
+    background-color: #374151 !important;
+    color: #e5e7eb !important;
+  }
+
+  .ranking-btn-secondary:hover {
+    background-color: #4b5563 !important;
+  }
+
+  /* Loading and empty states */
+  .loading-indicator p,
+  .text-gray-500.dark\:text-gray-400 {
+    color: #9ca3af !important;
+  }
+}
