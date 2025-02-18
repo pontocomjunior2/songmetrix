@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, ChevronDown, HelpCircle, LogOut, Moon, Settings, Sun } from 'lucide-react';
-import { useTheme } from '../hooks/useTheme';
-import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../../hooks/useTheme';
+import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
-import Sidebar from './Layout/Sidebar';
-import UserAvatar from './Common/UserAvatar';
+import Sidebar from './Sidebar';
+import UserAvatar from '../Common/UserAvatar';
 
 interface LayoutProps {
   currentView: string;
