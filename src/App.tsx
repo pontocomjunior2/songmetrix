@@ -8,7 +8,7 @@ import AdminRoute from './components/Auth/AdminRoute';
 import FirstAccessRoute from './components/Auth/FirstAccessRoute';
 import PendingApproval from './components/Auth/PendingApproval';
 import Layout from './components/Layout';
-import Dashboard from './components/Dashboard';
+import Dashboard from './components/Dashboard/index';
 import Ranking from './components/Ranking';
 import RealTime from './components/RealTime';
 import Radios from './components/Radios';

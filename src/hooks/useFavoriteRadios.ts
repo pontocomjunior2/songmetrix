@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
 export const useFavoriteRadios = () => {
@@ -14,12 +14,12 @@ export const useFavoriteRadios = () => {
     if (!currentUser) return;
 
     try {
-      const userFavoritesRef = doc(db, 'userFavorites', currentUser.uid);
-      const docSnap = await getDoc(userFavoritesRef);
+      const userRef = doc(db, 'users', currentUser.uid);
+      const docSnap = await getDoc(userRef);
       
       if (docSnap.exists()) {
         const data = docSnap.data();
-        setFavoriteRadios(data.radios || []);
+        setFavoriteRadios(data.favoriteRadios || []);
       } else {
         setFavoriteRadios([]);
       }
@@ -46,10 +46,10 @@ export const useFavoriteRadios = () => {
 
     try {
       setLoading(true);
-      const userFavoritesRef = doc(db, 'userFavorites', currentUser.uid);
+      const userRef = doc(db, 'users', currentUser.uid);
       
-      await setDoc(userFavoritesRef, {
-        radios,
+      await updateDoc(userRef, {
+        favoriteRadios: radios,
         updatedAt: new Date().toISOString()
       });
 
@@ -68,12 +68,12 @@ export const useFavoriteRadios = () => {
     if (!currentUser) return false;
 
     try {
-      const userFavoritesRef = doc(db, 'userFavorites', currentUser.uid);
-      const docSnap = await getDoc(userFavoritesRef);
+      const userRef = doc(db, 'users', currentUser.uid);
+      const docSnap = await getDoc(userRef);
       
       if (docSnap.exists()) {
         const data = docSnap.data();
-        return Array.isArray(data.radios) && data.radios.length > 0;
+        return Array.isArray(data.favoriteRadios) && data.favoriteRadios.length > 0;
       }
       return false;
     } catch (error) {
