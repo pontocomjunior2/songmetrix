@@ -23,39 +23,18 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 
 export const refreshAuthToken = async () => {
-  console.log('Iniciando refresh do token...');
   try {
     if (!auth.currentUser) {
       console.warn('Nenhum usuário autenticado para atualizar o token');
       return;
     }
 
-    console.log('Forçando refresh do token...');
     await auth.currentUser.getIdToken(true);
-
-    // Aguarda 5 segundos para garantir a propagação do token
-    console.log('Aguardando propagação do token (5 segundos)...');
-    await new Promise(resolve => setTimeout(resolve, 5000));
-
-    console.log('Verificando claims do token...');
     const tokenResult = await auth.currentUser.getIdTokenResult();
     
-    console.log('Token atualizado:', {
-      claims: tokenResult.claims,
-      isAdmin: tokenResult.claims.admin === true,
-      token: {
-        authTime: tokenResult.authTime,
-        issuedAtTime: tokenResult.issuedAtTime,
-        expirationTime: tokenResult.expirationTime,
-        signInProvider: tokenResult.signInProvider
-      }
-    });
-
     if (!tokenResult.claims.admin) {
-      console.warn('Alerta: Token não possui a claim admin!');
+      console.warn('Token não possui a claim admin');
     }
-
-    console.log('Claims disponíveis:', Object.keys(tokenResult.claims));
 
   } catch (error) {
     console.error('Erro ao atualizar token:', error);
