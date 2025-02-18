@@ -3,11 +3,11 @@
 }
 
 .ranking-filters {
-  background-color: white;
   padding: 1.5rem;
   border-radius: 0.5rem;
   box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   margin-bottom: 1.5rem;
+  @apply bg-white dark:bg-gray-800;
 }
 
 .ranking-filter-row {
@@ -33,18 +33,16 @@
   display: block;
   font-size: 0.875rem;
   font-weight: 500;
-  color: #374151;
   margin-bottom: 0.5rem;
+  @apply text-gray-700 dark:text-gray-200;
 }
 
 .ranking-filter-group select,
 .ranking-filter-group input {
   width: 100%;
   padding: 0.5rem;
-  border: 1px solid #d1d5db;
   border-radius: 0.375rem;
-  background-color: white;
-  color: #374151;
+  @apply border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200;
 }
 
 .ranking-filter-buttons {
@@ -73,23 +71,22 @@
 }
 
 .ranking-btn-secondary {
-  background-color: #e5e7eb;
-  color: #374151;
   padding: 0.5rem 1rem;
   border-radius: 0.375rem;
   font-weight: 500;
   transition: background-color 0.2s;
+  @apply bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200;
 }
 
 .ranking-btn-secondary:hover {
-  background-color: #d1d5db;
+  @apply bg-gray-200 dark:bg-gray-600;
 }
 
 .ranking-table-container {
-  background-color: white;
   border-radius: 0.5rem;
   box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   overflow-x: auto;
+  @apply bg-white dark:bg-gray-800;
 }
 
 .ranking-table {
@@ -101,18 +98,16 @@
 .ranking-table td {
   padding: 0.75rem 1rem;
   text-align: left;
-  border-bottom: 1px solid #e5e7eb;
-  color: #374151;
+  @apply border-b border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200;
 }
 
 .ranking-table th {
-  background-color: #f9fafb;
   font-weight: 500;
-  color: #374151;
+  @apply bg-gray-50 dark:bg-gray-700;
 }
 
 .ranking-table tr:hover {
-  background-color: #f9fafb;
+  @apply bg-gray-50 dark:bg-gray-700;
 }
 
 .rank-column {
@@ -146,14 +141,14 @@
   align-items: center;
   justify-content: center;
   padding: 2rem;
+  @apply text-gray-700 dark:text-gray-200;
 }
 
 .error-message {
-  background-color: #fee2e2;
-  color: #991b1b;
   padding: 1rem;
   border-radius: 0.375rem;
   margin-bottom: 1rem;
+  @apply bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-100;
 }
 
 /* React-select customization */
@@ -162,7 +157,7 @@
 }
 
 .react-select__control {
-  border-color: #d1d5db !important;
+  @apply border-gray-300 dark:border-gray-600 dark:bg-gray-700 !important;
   border-radius: 0.375rem !important;
   min-height: 38px !important;
 }
@@ -174,118 +169,37 @@
 
 .react-select__menu {
   z-index: 9999 !important;
+  @apply dark:bg-gray-700 dark:border-gray-600 !important;
 }
 
-/* Dark mode overrides */
-@media (prefers-color-scheme: dark) {
-  .ranking-container {
-    background-color: #1a1f2e;
-  }
+.react-select__option {
+  @apply dark:bg-gray-700 dark:text-gray-200 !important;
+}
 
-  .ranking-filters,
-  .ranking-table-container {
-    background-color: #1f2937;
-    border: 1px solid #374151;
-  }
+.react-select__option--is-focused {
+  @apply dark:bg-gray-600 !important;
+}
 
-  .ranking-filter-group label {
-    color: #e5e7eb;
-  }
+.react-select__option--is-selected {
+  @apply bg-blue-600 dark:bg-blue-600 !important;
+}
 
-  .ranking-filter-group select,
-  .ranking-filter-group input,
-  .react-select__control {
-    background-color: #111827 !important;
-    border-color: #374151 !important;
-    color: #e5e7eb !important;
-  }
+.react-select__multi-value {
+  @apply dark:bg-gray-600 !important;
+}
 
-  .ranking-filter-group input[type="date"],
-  .ranking-filter-group input[type="time"] {
-    color-scheme: dark;
-  }
+.react-select__multi-value__label {
+  @apply dark:text-gray-200 !important;
+}
 
-  .ranking-table {
-    background-color: #1f2937;
-  }
+.react-select__multi-value__remove {
+  @apply dark:text-gray-200 !important;
+}
 
-  .ranking-table th {
-    background-color: #111827;
-    color: #e5e7eb;
-    border-bottom: 1px solid #374151;
-  }
+.react-select__multi-value__remove:hover {
+  @apply dark:bg-gray-500 dark:text-gray-200 !important;
+}
 
-  .ranking-table td {
-    border-bottom: 1px solid #374151;
-    color: #e5e7eb;
-  }
-
-  .ranking-table tr:hover {
-    background-color: #111827;
-  }
-
-  .react-select__menu {
-    background-color: #111827 !important;
-    border: 1px solid #374151;
-  }
-
-  .react-select__option {
-    background-color: #111827 !important;
-    color: #e5e7eb !important;
-  }
-
-  .react-select__option--is-focused {
-    background-color: #1f2937 !important;
-  }
-
-  .react-select__option--is-selected {
-    background-color: #2563eb !important;
-  }
-
-  .react-select__multi-value {
-    background-color: #1f2937 !important;
-  }
-
-  .react-select__multi-value__label {
-    color: #e5e7eb !important;
-  }
-
-  .react-select__multi-value__remove {
-    color: #e5e7eb !important;
-  }
-
-  .react-select__multi-value__remove:hover {
-    background-color: #374151 !important;
-    color: #e5e7eb !important;
-  }
-
-  .ranking-btn-secondary {
-    background-color: #111827;
-    color: #e5e7eb;
-    border: 1px solid #374151;
-  }
-
-  .ranking-btn-secondary:hover {
-    background-color: #1f2937;
-  }
-
-  .error-message {
-    background-color: #7f1d1d;
-    color: #fecaca;
-  }
-
-  /* Loading indicator */
-  .loading-indicator {
-    color: #e5e7eb;
-  }
-
-  /* Placeholder text color */
-  .react-select__placeholder {
-    color: #6b7280 !important;
-  }
-
-  /* Input placeholder color */
-  input::placeholder {
-    color: #6b7280;
-  }
+.react-select__placeholder {
+  @apply text-gray-500 dark:text-gray-400 !important;
 }
