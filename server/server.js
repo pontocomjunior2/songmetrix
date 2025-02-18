@@ -96,26 +96,47 @@ const authenticateUser = async (req, res, next) => {
 
 const { Pool } = pg;
 
-const pool = new Pool({
-  user: process.env.POSTGRES_USER,
-  host: process.env.POSTGRES_HOST,
-  database: process.env.POSTGRES_DB,
-  password: process.env.POSTGRES_PASSWORD,
-  port: parseInt(process.env.POSTGRES_PORT),
-  ssl: {
-    rejectUnauthorized: false
-  }
-});
+let pool;
 
-// Teste de conexão com o banco
-pool.connect((err, client, done) => {
-  if (err) {
-    console.error('Erro ao conectar ao banco de dados:', err);
-  } else {
-    console.log('Conexão com o banco de dados estabelecida com sucesso');
-    done();
+try {
+  pool = new Pool({
+    user: process.env.POSTGRES_USER,
+    host: process.env.POSTGRES_HOST,
+    database: process.env.POSTGRES_DB,
+    password: process.env.POSTGRES_PASSWORD,
+    port: parseInt(process.env.POSTGRES_PORT),
+    ssl: {
+      rejectUnauthorized: false
+    }
+  });
+
+  // Test the connection
+  pool.connect((err, client, done) => {
+    if (err) {
+      console.error('Erro ao conectar ao banco de dados:', err);
+    } else {
+      console.log('Conexão com o banco de dados estabelecida com sucesso');
+      done();
+    }
+  });
+} catch (error) {
+  console.error('Erro ao criar pool de conexões:', error);
+}
+
+// Helper function to safely execute database queries
+const safeQuery = async (query, params = []) => {
+  if (!pool) {
+    console.error('Pool de conexões não disponível');
+    return { rows: [] };
   }
-});
+
+  try {
+    return await pool.query(query, params);
+  } catch (error) {
+    console.error('Erro ao executar query:', error);
+    return { rows: [] };
+  }
+};
 
 // Rotas públicas
 app.post('/api/create-checkout-session', createCheckoutSession);
@@ -123,6 +144,12 @@ app.post('/api/create-checkout-session', createCheckoutSession);
 // Rotas com autenticação básica (sem verificação de paid/admin)
 app.get('/api/radios/status', authenticateBasicUser, async (req, res) => {
   try {
+    // Buscar rádios favoritas do usuário primeiro
+    const userRef = db.collection('users').doc(req.user.uid);
+    const userDoc = await userRef.get();
+    const userData = userDoc.data();
+    const favoriteRadios = userData?.favoriteRadios || [];
+
     // Buscar o último registro de cada rádio
     const query = `
       WITH latest_entries AS (
@@ -139,29 +166,59 @@ app.get('/api/radios/status', authenticateBasicUser, async (req, res) => {
       ORDER BY name
     `;
 
-    const result = await pool.query(query);
-    
-    // Buscar rádios favoritas do usuário
-    const userRef = db.collection('users').doc(req.user.uid);
-    const userDoc = await userRef.get();
-    const userData = userDoc.data();
-    const favoriteRadios = userData?.favoriteRadios || [];
+    try {
+    const result = await safeQuery(query);
+      
+      if (!result.rows || result.rows.length === 0) {
+        // Se não há registros no banco, retornar apenas as rádios favoritas como offline
+        const offlineRadios = favoriteRadios.map(name => ({
+          name,
+          status: 'OFFLINE',
+          lastUpdate: null,
+          isFavorite: true
+        }));
+        return res.json(offlineRadios);
+      }
+      
+      const currentTime = new Date();
+      const radiosStatus = result.rows.map(row => {
+        const lastUpdate = row.last_update ? new Date(row.last_update) : null;
+        const timeDiff = lastUpdate ? currentTime.getTime() - lastUpdate.getTime() : Infinity;
+        const isOnline = timeDiff <= 30 * 60 * 1000; // 30 minutes
 
-    const currentTime = new Date();
-    const radiosStatus = result.rows.map(row => {
-      const lastUpdate = new Date(row.last_update);
-      const timeDiff = currentTime.getTime() - lastUpdate.getTime();
-      const isOnline = timeDiff <= 30 * 60 * 1000; // 30 minutes
+        return {
+          name: row.name,
+          status: isOnline ? 'ONLINE' : 'OFFLINE',
+          lastUpdate: row.last_update,
+          isFavorite: favoriteRadios.includes(row.name)
+        };
+      });
 
-      return {
-        name: row.name,
-        status: isOnline ? 'ONLINE' : 'OFFLINE',
-        lastUpdate: row.last_update,
-        isFavorite: favoriteRadios.includes(row.name)
-      };
-    });
+      // Adicionar rádios favoritas que não estão no banco como offline
+      const existingRadios = new Set(radiosStatus.map(radio => radio.name));
+      const missingFavorites = favoriteRadios.filter(name => !existingRadios.has(name));
+      
+      missingFavorites.forEach(name => {
+        radiosStatus.push({
+          name,
+          status: 'OFFLINE',
+          lastUpdate: null,
+          isFavorite: true
+        });
+      });
 
-    res.json(radiosStatus);
+      res.json(radiosStatus);
+    } catch (dbError) {
+      console.error('Erro ao consultar banco de dados:', dbError);
+      // Se houver erro no banco, retornar apenas as rádios favoritas como offline
+      const offlineRadios = favoriteRadios.map(name => ({
+        name,
+        status: 'OFFLINE',
+        lastUpdate: null,
+        isFavorite: true
+      }));
+      return res.json(offlineRadios);
+    }
   } catch (error) {
     console.error('GET /api/radios/status - Erro:', error);
     res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
@@ -171,9 +228,14 @@ app.get('/api/radios/status', authenticateBasicUser, async (req, res) => {
 app.post('/api/radios/favorite', authenticateBasicUser, async (req, res) => {
   try {
     const { radioName, favorite } = req.body;
-    const userRef = db.collection('users').doc(req.user.uid);
     
+    if (!radioName) {
+      return res.status(400).json({ error: 'Nome da rádio não fornecido' });
+    }
+
+    const userRef = db.collection('users').doc(req.user.uid);
     const userDoc = await userRef.get();
+    
     if (!userDoc.exists) {
       return res.status(404).json({ error: 'Usuário não encontrado' });
     }
@@ -192,7 +254,44 @@ app.post('/api/radios/favorite', authenticateBasicUser, async (req, res) => {
       updatedAt: new Date().toISOString()
     });
 
-    res.json({ success: true, favoriteRadios });
+    // Buscar status atualizado das rádios
+    const query = `
+      WITH latest_entries AS (
+        SELECT 
+          name,
+          MAX(date + time::time) as last_update
+        FROM music_log
+        GROUP BY name
+      )
+      SELECT 
+        name,
+        last_update
+      FROM latest_entries
+      WHERE name = ANY($1::text[])
+      ORDER BY name
+    `;
+
+    const result = await safeQuery(query, [favoriteRadios]);
+    
+    const currentTime = new Date();
+    const radiosStatus = result.rows.map(row => {
+      const lastUpdate = new Date(row.last_update);
+      const timeDiff = currentTime.getTime() - lastUpdate.getTime();
+      const isOnline = timeDiff <= 30 * 60 * 1000; // 30 minutes
+
+      return {
+        name: row.name,
+        status: isOnline ? 'ONLINE' : 'OFFLINE',
+        lastUpdate: row.last_update,
+        isFavorite: favoriteRadios.includes(row.name)
+      };
+    });
+
+    res.json({ 
+      success: true, 
+      favoriteRadios,
+      radiosStatus
+    });
   } catch (error) {
     console.error('POST /api/radios/favorite - Erro:', error);
     res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
@@ -267,7 +366,7 @@ app.post('/api/executions', authenticateUser, async (req, res) => {
     console.log('POST /api/executions - Query:', query);
     console.log('POST /api/executions - Parâmetros:', params);
 
-    const result = await pool.query(query, params);
+    const result = await safeQuery(query, params);
     console.log('POST /api/executions - Linhas encontradas:', result.rows.length);
 
     res.json(result.rows);
@@ -290,7 +389,33 @@ app.get('/api/dashboard', authenticateUser, async (req, res) => {
     const userData = userDoc.data();
     const favoriteRadios = userData?.favoriteRadios || [];
 
-    // Query para buscar dados do dashboard
+    // Pegar rádios da query string
+    const radios = req.query.radio;
+    const selectedRadios = Array.isArray(radios) ? radios : radios ? [radios] : [];
+
+    // Verificar se há rádios selecionadas
+    if (selectedRadios.length === 0) {
+      console.log('GET /api/dashboard - Nenhuma rádio selecionada');
+      return res.json({
+        totalExecutions: 0,
+        uniqueArtists: 0,
+        uniqueSongs: 0,
+        activeRadios: [],
+        topSongs: [],
+        artistData: [],
+        genreData: []
+      });
+    }
+
+    // Verificar se as rádios selecionadas são favoritas
+    const invalidRadios = selectedRadios.filter(radio => !favoriteRadios.includes(radio));
+    if (invalidRadios.length > 0) {
+      console.log('GET /api/dashboard - Rádios inválidas:', invalidRadios);
+      return res.status(400).json({ error: 'Algumas rádios selecionadas não são favoritas' });
+    }
+
+    console.log('GET /api/dashboard - Rádios selecionadas:', selectedRadios);
+    
     const query = `
       WITH adjusted_dates AS (
         SELECT 
@@ -301,6 +426,7 @@ app.get('/api/dashboard', authenticateUser, async (req, res) => {
           (date + INTERVAL '3 hours')::date as date
         FROM music_log
         WHERE (date + INTERVAL '3 hours')::date BETWEEN $1 AND $2
+          AND name = ANY($3::text[])
       ),
       artist_counts AS (
         SELECT 
@@ -318,6 +444,8 @@ app.get('/api/dashboard', authenticateUser, async (req, res) => {
         FROM adjusted_dates
         WHERE genre IS NOT NULL
         GROUP BY genre
+        ORDER BY count DESC
+        LIMIT 5
       ),
       song_counts AS (
         SELECT 
@@ -345,37 +473,47 @@ app.get('/api/dashboard', authenticateUser, async (req, res) => {
         ) as dashboard_data
     `;
 
-    const result = await pool.query(query, [
+    const params = [
       format(startDate, 'yyyy-MM-dd'),
-      format(endDate, 'yyyy-MM-dd')
-    ]);
+      format(endDate, 'yyyy-MM-dd'),
+      selectedRadios
+    ];
 
-    const dashboardData = result.rows[0].dashboard_data;
+    console.log('GET /api/dashboard - Query:', query);
+    console.log('GET /api/dashboard - Parâmetros:', params);
+    console.log('GET /api/dashboard - Parâmetros formatados:', JSON.stringify(params, null, 2));
+
+    const result = await safeQuery(query, params);
+
+    const dashboardData = result.rows[0]?.dashboard_data || {
+      artistData: [],
+      genreData: [],
+      topSongs: [],
+      activeRadios: []
+    };
     
     // Calcular totais
-    const totalExecutions = dashboardData.artistData.reduce((sum, item) => sum + parseInt(item.executions), 0);
-    const uniqueArtists = dashboardData.artistData.length;
-    const uniqueSongs = dashboardData.topSongs.length;
+    const totalExecutions = (dashboardData.artistData || [])
+      .reduce((sum, item) => sum + parseInt(item.executions), 0);
+    const uniqueArtists = (dashboardData.artistData || []).length;
+    const uniqueSongs = (dashboardData.topSongs || []).length;
 
     // Formatar dados dos gêneros para percentuais
-    const totalGenreExecutions = dashboardData.genreData.reduce((sum, item) => sum + parseInt(item.count), 0);
-    const genreData = dashboardData.genreData.map(item => ({
-      name: item.genre,
-      value: Math.round((item.count / totalGenreExecutions) * 100),
-      color: getGenreColor(item.genre)
-    }));
-
-    // Selecionar 3 rádios favoritas aleatoriamente
-    const shuffledFavorites = favoriteRadios
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 3);
+    const totalGenreExecutions = (dashboardData.genreData || [])
+      .reduce((sum, item) => sum + parseInt(item.count), 0);
+    const genreData = totalGenreExecutions > 0 
+      ? (dashboardData.genreData || []).map(item => ({
+          name: item.genre,
+          value: Math.round((item.count / totalGenreExecutions) * 100),
+          color: getGenreColor(item.genre)
+        }))
+      : [];
 
     res.json({
       totalExecutions,
       uniqueArtists,
       uniqueSongs,
       activeRadios: dashboardData.activeRadios,
-      favoriteRadios: shuffledFavorites,
       topSongs: dashboardData.topSongs,
       artistData: dashboardData.artistData,
       genreData
@@ -467,7 +605,7 @@ app.get('/api/ranking', authenticateUser, async (req, res) => {
     console.log('GET /api/ranking - Query:', query);
     console.log('GET /api/ranking - Parâmetros:', params);
 
-    const result = await pool.query(query, params);
+    const result = await safeQuery(query, params);
     console.log('GET /api/ranking - Linhas encontradas:', result.rows.length);
 
     res.json(result.rows);
