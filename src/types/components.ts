@@ -60,6 +60,7 @@ export interface User {
   status: UserStatusType;
   createdAt: string;
   updatedAt?: string;
+  favoriteRadios?: string[];
 }
 
 export interface Filters {
@@ -98,4 +99,14 @@ export interface RankingItem {
 
 export interface Radio {
   name: string;
+  status: 'ONLINE' | 'OFFLINE';
+  lastUpdate: string;
+  isFavorite: boolean;
+}
+
+export interface RadioStatus {
+  name: string;
+  status: 'ONLINE' | 'OFFLINE';
+  lastUpdate: string;
+  isFavorite: boolean;
 }

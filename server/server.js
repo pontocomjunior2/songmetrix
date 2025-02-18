@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
 import { format } from 'date-fns';
-import { auth, db, UserStatus } from './firebase-admin.js';
+import { auth, db } from './firebase-admin.js';
 import { createCheckoutSession, handleWebhook } from './stripe.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -34,32 +34,15 @@ const authenticateUser = async (req, res, next) => {
     const token = authHeader.split('Bearer ')[1];
     const decodedToken = await auth.verifyIdToken(token);
     
-    // Busca o status do usuário no Firestore
-    const userDoc = await db.collection('users').doc(decodedToken.uid).get();
-    
-    if (!userDoc.exists) {
-      return res.status(403).json({ 
-        error: 'Usuário não encontrado',
-        code: 'user_not_found'
-      });
-    }
-
-    const userData = userDoc.data();
-    
-    // Verifica se o usuário está ativo ou é admin
-    if (userData.status !== UserStatus.ATIVO && userData.status !== UserStatus.ADMIN) {
+    // Verifica se o usuário tem acesso pago
+    if (!decodedToken.paid && !decodedToken.admin) {
       return res.status(403).json({ 
         error: 'Assinatura necessária',
         code: 'subscription_required'
       });
     }
 
-    // Adiciona os dados do usuário ao request
-    req.user = {
-      ...decodedToken,
-      status: userData.status
-    };
-    
+    req.user = decodedToken;
     next();
   } catch (error) {
     console.error('Erro de autenticação:', error);
@@ -105,6 +88,86 @@ app.get('/api/radios', authenticateUser, async (req, res) => {
     res.json(radios);
   } catch (error) {
     console.error('GET /api/radios - Erro:', error);
+    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
+  }
+});
+
+// Nova rota para status das rádios e favoritos
+app.get('/api/radios/status', authenticateUser, async (req, res) => {
+  try {
+    // Buscar o último registro de cada rádio
+    const query = `
+      WITH latest_entries AS (
+        SELECT 
+          name,
+          MAX(date + time::time) as last_update
+        FROM music_log
+        GROUP BY name
+      )
+      SELECT 
+        name,
+        last_update
+      FROM latest_entries
+      ORDER BY name
+    `;
+
+    const result = await pool.query(query);
+    
+    // Buscar rádios favoritas do usuário
+    const userRef = db.collection('users').doc(req.user.uid);
+    const userDoc = await userRef.get();
+    const userData = userDoc.data();
+    const favoriteRadios = userData?.favoriteRadios || [];
+
+    const currentTime = new Date();
+    const radiosStatus = result.rows.map(row => {
+      const lastUpdate = new Date(row.last_update);
+      const timeDiff = currentTime.getTime() - lastUpdate.getTime();
+      const isOnline = timeDiff <= 30 * 60 * 1000; // 30 minutes
+
+      return {
+        name: row.name,
+        status: isOnline ? 'ONLINE' : 'OFFLINE',
+        lastUpdate: row.last_update,
+        isFavorite: favoriteRadios.includes(row.name)
+      };
+    });
+
+    res.json(radiosStatus);
+  } catch (error) {
+    console.error('GET /api/radios/status - Erro:', error);
+    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
+  }
+});
+
+// Rota para favoritar/desfavoritar rádios
+app.post('/api/radios/favorite', authenticateUser, async (req, res) => {
+  try {
+    const { radioName, favorite } = req.body;
+    const userRef = db.collection('users').doc(req.user.uid);
+    
+    const userDoc = await userRef.get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    const userData = userDoc.data();
+    let favoriteRadios = userData.favoriteRadios || [];
+
+    if (favorite && !favoriteRadios.includes(radioName)) {
+      favoriteRadios.push(radioName);
+    } else if (!favorite) {
+      favoriteRadios = favoriteRadios.filter(radio => radio !== radioName);
+    }
+
+    await userRef.update({
+      favoriteRadios,
+      updatedAt: new Date().toISOString()
+    });
+
+    res.json({ success: true, favoriteRadios });
+  } catch (error) {
+    console.error('POST /api/radios/favorite - Erro:', error);
     res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
   }
 });
@@ -193,6 +256,12 @@ app.get('/api/dashboard', authenticateUser, async (req, res) => {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - 7);
 
+    // Buscar rádios favoritas do usuário
+    const userRef = db.collection('users').doc(req.user.uid);
+    const userDoc = await userRef.get();
+    const userData = userDoc.data();
+    const favoriteRadios = userData?.favoriteRadios || [];
+
     // Query para buscar dados do dashboard
     const query = `
       WITH adjusted_dates AS (
@@ -268,11 +337,17 @@ app.get('/api/dashboard', authenticateUser, async (req, res) => {
       color: getGenreColor(item.genre)
     }));
 
+    // Selecionar 3 rádios favoritas aleatoriamente
+    const shuffledFavorites = favoriteRadios
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 3);
+
     res.json({
       totalExecutions,
       uniqueArtists,
       uniqueSongs,
       activeRadios: dashboardData.activeRadios,
+      favoriteRadios: shuffledFavorites,
       topSongs: dashboardData.topSongs,
       artistData: dashboardData.artistData,
       genreData
@@ -367,16 +442,7 @@ app.get('/api/ranking', authenticateUser, async (req, res) => {
     const result = await pool.query(query, params);
     console.log('GET /api/ranking - Linhas encontradas:', result.rows.length);
 
-    const rankingData = result.rows.map(row => ({
-      id: row.id,
-      rank: row.id,
-      artist: row.artist,
-      song_title: row.song_title,
-      genre: row.genre,
-      executions: parseInt(row.executions)
-    }));
-
-    res.json(rankingData);
+    res.json(result.rows);
   } catch (error) {
     console.error('GET /api/ranking - Erro:', error);
     res.status(500).json({ error: 'Erro interno do servidor', details: error.message });

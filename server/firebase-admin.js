@@ -9,19 +9,30 @@ const __dirname = dirname(__filename);
 
 dotenv.config({ path: path.join(dirname(__dirname), '.env') });
 
+// Log das variáveis de ambiente para debug
+console.log('Verificando variáveis de ambiente do Firebase Admin:', {
+  project_id: process.env.FIREBASE_PROJECT_ID,
+  client_email: process.env.FIREBASE_CLIENT_EMAIL,
+  private_key_exists: !!process.env.FIREBASE_PRIVATE_KEY
+});
+
 const serviceAccount = {
   type: "service_account",
-  project_id: process.env.VITE_FIREBASE_PROJECT_ID,
-  private_key_id: "80c8ca01639a85b223ace46943e8b6df6a375941",
+  project_id: process.env.FIREBASE_PROJECT_ID,
+  private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
   private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
   client_email: process.env.FIREBASE_CLIENT_EMAIL,
-  client_id: "116930545188921634887",
+  client_id: process.env.FIREBASE_CLIENT_ID,
   auth_uri: "https://accounts.google.com/o/oauth2/auth",
   token_uri: "https://oauth2.googleapis.com/token",
   auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
-  client_x509_cert_url: "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-y55zb%40dataradio-823f1.iam.gserviceaccount.com",
+  client_x509_cert_url: process.env.FIREBASE_CLIENT_X509_CERT_URL,
   universe_domain: "googleapis.com"
 };
+
+// Log do objeto serviceAccount para debug (removendo a private_key por segurança)
+const debugServiceAccount = { ...serviceAccount, private_key: '[REDACTED]' };
+console.log('Service Account configurado:', debugServiceAccount);
 
 // Inicializa o Firebase Admin se ainda não estiver inicializado
 let app;
@@ -38,8 +49,8 @@ export const db = app.firestore();
 
 // Tipos de status do usuário
 export const UserStatus = {
-  NOT_PAID: 'NOT_PAID',
-  PAID: 'PAID',
+  INATIVO: 'INATIVO',
+  ATIVO: 'ATIVO',
   ADMIN: 'ADMIN'
 };
 
@@ -51,7 +62,7 @@ export const checkUserPaymentStatus = async (userId) => {
       return false;
     }
     const userData = userDoc.data();
-    return userData.status === UserStatus.PAID || userData.status === UserStatus.ADMIN;
+    return userData.status === UserStatus.ATIVO || userData.status === UserStatus.ADMIN;
   } catch (error) {
     console.error('Erro ao verificar status do usuário:', error);
     return false;
@@ -66,11 +77,11 @@ export const updateUserStatus = async (userId, status) => {
       updatedAt: new Date().toISOString()
     });
     
-    // Se o status for PAID, adiciona claims personalizadas ao token do usuário
-    if (status === UserStatus.PAID) {
-      await auth.setCustomUserClaims(userId, { paid: true });
+    // Configura as claims baseado no status
+    if (status === UserStatus.ADMIN) {
+      await auth.setCustomUserClaims(userId, { admin: true });
     } else {
-      await auth.setCustomUserClaims(userId, { paid: false });
+      await auth.setCustomUserClaims(userId, { admin: false });
     }
     
     return true;
@@ -85,7 +96,7 @@ export const createUser = async (userId, email) => {
   try {
     await db.collection('users').doc(userId).set({
       email,
-      status: UserStatus.NOT_PAID,
+      status: UserStatus.INATIVO,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });

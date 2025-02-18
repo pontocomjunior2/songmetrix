@@ -12,7 +12,7 @@ export default function Register() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signUpWithEmail, redirectToStripeCheckout } = useAuth();
+  const { signUpWithEmail } = useAuth();
   const navigate = useNavigate();
 
   const validatePassword = (password: string): boolean => {
@@ -38,7 +38,7 @@ export default function Register() {
       setError('');
       setLoading(true);
       await signUpWithEmail(email, password);
-      await redirectToStripeCheckout();
+      navigate('/pending-approval');
     } catch (error) {
       console.error('Erro no registro:', error);
       setError('Falha ao criar conta. Por favor, tente novamente.');
