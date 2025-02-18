@@ -46,14 +46,14 @@ export default function Header({
   return (
     <header className="fixed top-0 right-0 left-64 h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 z-10">
       <div className="h-full px-6 flex items-center justify-between">
-        <h2 className="text-xl font-semibold">
+        <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-200">
           {currentView.charAt(0).toUpperCase() + currentView.slice(1)}
         </h2>
         <div className="flex items-center gap-4">
           {/* Theme Toggle */}
           <button
             onClick={toggleTheme}
-            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200"
           >
             {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
@@ -62,7 +62,7 @@ export default function Header({
           <div className="relative">
             <button
               onClick={() => setShowNotifications(!showNotifications)}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 relative"
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 relative"
             >
               <Bell className="w-5 h-5" />
               {notifications.some(n => !n.read) && (
@@ -74,8 +74,8 @@ export default function Header({
               <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
                 <div className="p-4">
                   <div className="flex justify-between items-center mb-2">
-                    <h3 className="text-lg font-semibold">Notificações</h3>
-                    <button className="text-sm text-blue-600 hover:text-blue-700">
+                    <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200">Notificações</h3>
+                    <button className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">
                       Marcar todas como lidas
                     </button>
                   </div>
@@ -89,7 +89,7 @@ export default function Header({
                       >
                         <div className="flex items-center gap-2">
                           <div className={`w-2 h-2 rounded-full ${notification.read ? 'bg-gray-400' : 'bg-green-500'}`} />
-                          <p className="text-sm flex-1">{notification.message}</p>
+                          <p className="text-sm flex-1 text-gray-700 dark:text-gray-200">{notification.message}</p>
                         </div>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 ml-4">
                           {notification.date}
@@ -116,11 +116,11 @@ export default function Header({
                     size="sm"
                   />
                 )}
-                <span className="text-sm font-medium hidden md:block">
+                <span className="text-sm font-medium hidden md:block text-gray-700 dark:text-gray-200">
                   {currentUser?.email}
                 </span>
               </div>
-              <ChevronDown className="w-4 h-4" />
+              <ChevronDown className="w-4 h-4 text-gray-700 dark:text-gray-200" />
             </button>
 
             {showProfileMenu && (
@@ -135,10 +135,10 @@ export default function Header({
                       />
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-600 dark:text-gray-400 truncate">
+                      <p className="text-sm text-gray-700 dark:text-gray-200 truncate">
                         {currentUser?.email}
                       </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                         {isAdmin ? 'Administrador' : 'Usuário'}
                       </p>
                     </div>
@@ -148,17 +148,17 @@ export default function Header({
                   {isAdmin && (
                     <button 
                       onClick={() => navigate('/admin/users')}
-                      className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200"
                     >
                       <Users className="w-4 h-4" />
                       Gerenciar Usuários
                     </button>
                   )}
-                  <button className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700">
+                  <button className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200">
                     <HelpCircle className="w-4 h-4" />
                     Ajuda
                   </button>
-                  <button className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700">
+                  <button className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200">
                     <Settings className="w-4 h-4" />
                     Configurações
                   </button>
