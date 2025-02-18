@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { format, startOfToday, parseISO } from 'date-fns';
-import { Search, Loader2 } from 'lucide-react';
+import { format, parseISO } from 'date-fns';
+import { Search, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 interface Filters {
@@ -48,6 +48,8 @@ export default function RealTime() {
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [radios, setRadios] = useState<string[]>([]);
+  const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  const [expandedRadio, setExpandedRadio] = useState<number | null>(null);
 
   useEffect(() => {
     if (currentUser) {
@@ -133,6 +135,14 @@ export default function RealTime() {
       console.error('Error formatting date:', error);
       return dateStr;
     }
+  };
+
+  const toggleRow = (id: number) => {
+    setExpandedRow(expandedRow === id ? null : id);
+  };
+
+  const toggleRadio = (id: number) => {
+    setExpandedRadio(expandedRadio === id ? null : id);
   };
 
   return (
@@ -247,77 +257,128 @@ export default function RealTime() {
       </div>
 
       {/* Results Table */}
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b dark:border-gray-700">
-              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Data</th>
-              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Hora</th>
-              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Rádio</th>
-              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Artista</th>
-              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Música</th>
-              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">ISRC</th>
-              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Cidade</th>
-              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Estado</th>
-              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Região</th>
-              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Segmento</th>
-              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Gênero</th>
-              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Gravadora</th>
-            </tr>
-          </thead>
-          <tbody>
-            {executions.map((execution) => (
-              <tr
-                key={execution.id}
-                className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
-              >
-                <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{formatDisplayDate(execution.date)}</td>
-                <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.time}</td>
-                <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.radio_name}</td>
-                <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.artist}</td>
-                <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.song_title}</td>
-                <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.isrc}</td>
-                <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.city}</td>
-                <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.state}</td>
-                <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.region}</td>
-                <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.segment}</td>
-                <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.genre}</td>
-                <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.label}</td>
+      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b dark:border-gray-700">
+                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Data</th>
+                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Hora</th>
+                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Rádio</th>
+                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Artista</th>
+                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Música</th>
+                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Cidade</th>
+                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Estado</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {executions.map((execution) => (
+                <React.Fragment key={execution.id}>
+                  <tr className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{formatDisplayDate(execution.date)}</td>
+                    <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.time}</td>
+                    <td className="px-4 py-2 text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                      {execution.radio_name}
+                      <button
+                        onClick={() => toggleRadio(execution.id)}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded"
+                      >
+                        {expandedRadio === execution.id ? (
+                          <ChevronDown className="w-4 h-4 text-gray-500" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-gray-500" />
+                        )}
+                      </button>
+                    </td>
+                    <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.artist}</td>
+                    <td className="px-4 py-2 text-gray-700 dark:text-gray-200 flex items-center gap-2">
+                      {execution.song_title}
+                      <button
+                        onClick={() => toggleRow(execution.id)}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded"
+                      >
+                        {expandedRow === execution.id ? (
+                          <ChevronDown className="w-4 h-4 text-gray-500" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-gray-500" />
+                        )}
+                      </button>
+                    </td>
+                    <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.city}</td>
+                    <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.state}</td>
+                  </tr>
+                  {expandedRadio === execution.id && (
+                    <tr className="bg-gray-50 dark:bg-gray-700">
+                      <td colSpan={7} className="px-4 py-2">
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="font-medium text-gray-700 dark:text-gray-200">Região:</span>
+                            <span className="ml-2 text-gray-600 dark:text-gray-300">{execution.region}</span>
+                          </div>
+                          <div>
+                            <span className="font-medium text-gray-700 dark:text-gray-200">Segmento:</span>
+                            <span className="ml-2 text-gray-600 dark:text-gray-300">{execution.segment}</span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {expandedRow === execution.id && (
+                    <tr className="bg-gray-50 dark:bg-gray-700">
+                      <td colSpan={7} className="px-4 py-2">
+                        <div className="grid grid-cols-3 gap-4 text-sm">
+                          <div>
+                            <span className="font-medium text-gray-700 dark:text-gray-200">ISRC:</span>
+                            <span className="ml-2 text-gray-600 dark:text-gray-300">{execution.isrc}</span>
+                          </div>
+                          <div>
+                            <span className="font-medium text-gray-700 dark:text-gray-200">Gênero:</span>
+                            <span className="ml-2 text-gray-600 dark:text-gray-300">{execution.genre}</span>
+                          </div>
+                          <div>
+                            <span className="font-medium text-gray-700 dark:text-gray-200">Gravadora:</span>
+                            <span className="ml-2 text-gray-600 dark:text-gray-300">{execution.label}</span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
 
-        {executions.length === 0 && !loading && (
-          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-            Nenhum registro encontrado
-          </div>
-        )}
+          {executions.length === 0 && !loading && (
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+              Nenhum registro encontrado
+            </div>
+          )}
 
-        {hasMore && (
-          <div className="mt-4 text-center">
-            <button
-              onClick={() => fetchExecutions()}
-              disabled={loading}
-              className="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Carregando...
-                </span>
-              ) : (
-                'Carregar Mais'
-              )}
-            </button>
-          </div>
-        )}
+          {hasMore && (
+            <div className="mt-4 text-center">
+              <button
+                onClick={() => fetchExecutions()}
+                disabled={loading}
+                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Carregando...
+                  </span>
+                ) : (
+                  'Carregar Mais'
+                )}
+              </button>
+            </div>
+          )}
 
-        {!hasMore && executions.length > 0 && (
-          <div className="mt-4 text-center text-gray-500 dark:text-gray-400">
-            Todos os dados foram carregados
-          </div>
-        )}
+          {!hasMore && executions.length > 0 && (
+            <div className="mt-4 text-center text-gray-500 dark:text-gray-400">
+              Todos os dados foram carregados
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
