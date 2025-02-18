@@ -178,6 +178,10 @@
 
 /* Dark mode overrides */
 @media (prefers-color-scheme: dark) {
+  .ranking-container {
+    background-color: #1a1f2e;
+  }
+
   .ranking-filters,
   .ranking-table-container {
     background-color: #1f2937;
@@ -191,38 +195,47 @@
   .ranking-filter-group select,
   .ranking-filter-group input,
   .react-select__control {
-    background-color: #374151 !important;
-    border-color: #4b5563 !important;
+    background-color: #111827 !important;
+    border-color: #374151 !important;
     color: #e5e7eb !important;
   }
 
+  .ranking-filter-group input[type="date"],
+  .ranking-filter-group input[type="time"] {
+    color-scheme: dark;
+  }
+
+  .ranking-table {
+    background-color: #1f2937;
+  }
+
   .ranking-table th {
-    background-color: #374151;
+    background-color: #111827;
     color: #e5e7eb;
-    border-bottom: 1px solid #4b5563;
+    border-bottom: 1px solid #374151;
   }
 
   .ranking-table td {
-    border-bottom: 1px solid #4b5563;
+    border-bottom: 1px solid #374151;
     color: #e5e7eb;
   }
 
   .ranking-table tr:hover {
-    background-color: #374151;
+    background-color: #111827;
   }
 
   .react-select__menu {
-    background-color: #374151 !important;
-    border: 1px solid #4b5563;
+    background-color: #111827 !important;
+    border: 1px solid #374151;
   }
 
   .react-select__option {
-    background-color: #374151 !important;
+    background-color: #111827 !important;
     color: #e5e7eb !important;
   }
 
   .react-select__option--is-focused {
-    background-color: #4b5563 !important;
+    background-color: #1f2937 !important;
   }
 
   .react-select__option--is-selected {
@@ -230,7 +243,7 @@
   }
 
   .react-select__multi-value {
-    background-color: #4b5563 !important;
+    background-color: #1f2937 !important;
   }
 
   .react-select__multi-value__label {
@@ -242,17 +255,18 @@
   }
 
   .react-select__multi-value__remove:hover {
-    background-color: #6b7280 !important;
+    background-color: #374151 !important;
     color: #e5e7eb !important;
   }
 
   .ranking-btn-secondary {
-    background-color: #374151;
+    background-color: #111827;
     color: #e5e7eb;
+    border: 1px solid #374151;
   }
 
   .ranking-btn-secondary:hover {
-    background-color: #4b5563;
+    background-color: #1f2937;
   }
 
   .error-message {
@@ -263,5 +277,15 @@
   /* Loading indicator */
   .loading-indicator {
     color: #e5e7eb;
+  }
+
+  /* Placeholder text color */
+  .react-select__placeholder {
+    color: #6b7280 !important;
+  }
+
+  /* Input placeholder color */
+  input::placeholder {
+    color: #6b7280;
   }
 }
