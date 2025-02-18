@@ -1,21 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bell, ChevronDown, HelpCircle, LogOut, Moon, Settings, Sun } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import Sidebar from './Layout/Sidebar';
 import UserAvatar from './Common/UserAvatar';
 
 interface LayoutProps {
-  children: React.ReactNode;
   currentView: string;
   onNavigate: (view: string) => void;
 }
 
-export default function Layout({ children, currentView, onNavigate }: LayoutProps) {
+export default function Layout({ currentView, onNavigate }: LayoutProps) {
   const { theme, toggleTheme } = useTheme();
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
@@ -32,6 +32,20 @@ export default function Layout({ children, currentView, onNavigate }: LayoutProp
     } catch (error) {
       console.error('Erro ao fazer logout:', error);
     }
+  };
+
+  // Update currentView based on location
+  useEffect(() => {
+    const path = location.pathname.substring(1);
+    if (path) {
+      onNavigate(path);
+    }
+  }, [location, onNavigate]);
+
+  // Handle navigation
+  const handleNavigate = (view: string) => {
+    onNavigate(view);
+    navigate(`/${view}`);
   };
 
   return (
@@ -135,11 +149,13 @@ export default function Layout({ children, currentView, onNavigate }: LayoutProp
       </header>
 
       {/* Sidebar */}
-      <Sidebar currentView={currentView} onNavigate={onNavigate} />
+      <Sidebar currentView={currentView} onNavigate={handleNavigate} />
 
       {/* Main Content */}
       <main className="ml-64 pt-16">
-        <div className="p-6">{children}</div>
+        <div className="p-6">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

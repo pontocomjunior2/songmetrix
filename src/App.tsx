@@ -30,23 +30,19 @@ function App() {
           <Route path="/pending-approval" element={<PendingApproval />} />
           <Route path="/payment/success" element={<PaymentSuccess />} />
           <Route path="/payment/canceled" element={<PaymentCanceled />} />
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <Layout currentView={currentView} onNavigate={handleNavigate}>
-                  <Routes>
-                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                    <Route path="/dashboard" element={<Dashboard />} />
-                    <Route path="/ranking" element={<Ranking />} />
-                    <Route path="/realtime" element={<RealTime />} />
-                    <Route path="/radios" element={<Radios />} />
-                    <Route path="/admin/users" element={<UserList />} />
-                  </Routes>
-                </Layout>
-              </ProtectedRoute>
-            }
-          />
+          
+          <Route path="/" element={
+            <ProtectedRoute>
+              <Layout currentView={currentView} onNavigate={handleNavigate} />
+            </ProtectedRoute>
+          }>
+            <Route index element={<Navigate to="/dashboard" />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="ranking" element={<Ranking />} />
+            <Route path="realtime" element={<RealTime />} />
+            <Route path="radios" element={<Radios />} />
+            <Route path="admin/users" element={<UserList />} />
+          </Route>
         </Routes>
       </AuthProvider>
     </Router>
