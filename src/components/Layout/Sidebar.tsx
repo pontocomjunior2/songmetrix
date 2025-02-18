@@ -1,5 +1,7 @@
 import React from 'react';
-import { LayoutDashboard, Radio, BarChart3, Clock } from 'lucide-react';
+import { LayoutDashboard, Radio, BarChart3, Clock, Users } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
+import { UserStatus } from '../../lib/firebase';
 
 interface SidebarProps {
   currentView: string;
@@ -7,6 +9,8 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ currentView, onNavigate }: SidebarProps) {
+  const { userStatus } = useAuth();
+
   const menuItems = [
     {
       name: 'Painel',
@@ -29,6 +33,15 @@ export default function Sidebar({ currentView, onNavigate }: SidebarProps) {
       view: 'realtime'
     }
   ];
+
+  // Adiciona o menu de gerenciamento de usuários apenas para administradores
+  if (userStatus === UserStatus.ADMIN) {
+    menuItems.push({
+      name: 'Gerenciar Usuários',
+      icon: Users,
+      view: 'admin/users'  // Atualizado para corresponder à rota correta
+    });
+  }
 
   return (
     <aside className="fixed top-0 left-0 w-64 h-screen bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { format, parseISO } from 'date-fns';
 import { Search, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import FavoriteRadios from './FavoriteRadios';
+import { RadioStatus } from '../types/components';
 
 interface Filters {
   radio: string;
@@ -47,9 +49,10 @@ export default function RealTime() {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
-  const [radios, setRadios] = useState<string[]>([]);
+  const [radios, setRadios] = useState<RadioStatus[]>([]);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [expandedRadio, setExpandedRadio] = useState<number | null>(null);
+  const [showFavoriteRadios, setShowFavoriteRadios] = useState(false);
 
   useEffect(() => {
     if (currentUser) {
@@ -69,10 +72,14 @@ export default function RealTime() {
   const fetchRadios = async () => {
     try {
       const headers = await getAuthHeaders();
-      const response = await fetch('/api/radios', { headers });
+      const response = await fetch('/api/radios/status', { headers });
       if (!response.ok) throw new Error('Failed to fetch radios');
-      const data = await response.json();
+      const data: RadioStatus[] = await response.json();
       setRadios(data);
+
+      // Verificar se o usuário tem rádios favoritas
+      const hasFavorites = data.some(radio => radio.isFavorite);
+      setShowFavoriteRadios(!hasFavorites);
     } catch (error) {
       console.error('Error fetching radios:', error);
     }
@@ -145,240 +152,245 @@ export default function RealTime() {
     setExpandedRadio(expandedRadio === id ? null : id);
   };
 
+  const handleSaveFavorites = async (selectedRadios: string[]) => {
+    try {
+      const headers = await getAuthHeaders();
+      const promises = selectedRadios.map(radio => 
+        fetch('/api/radios/favorite', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            radioName: radio,
+            favorite: true
+          })
+        })
+      );
+
+      await Promise.all(promises);
+      setShowFavoriteRadios(false);
+      fetchRadios(); // Recarregar a lista de rádios para atualizar os favoritos
+      fetchExecutions(true); // Recarregar as execuções
+    } catch (error) {
+      console.error('Failed to save favorite radios:', error);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
-        <form onSubmit={handleSearch} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                Rádio
-              </label>
-              <select
-                className="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-                value={filters.radio}
-                onChange={(e) => setFilters({ ...filters, radio: e.target.value })}
-              >
-                <option value="">Todas as Rádios</option>
-                {radios.map((radio) => (
-                  <option key={radio} value={radio}>
-                    {radio}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                Artista
-              </label>
-              <input
-                type="text"
-                className="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-                value={filters.artist}
-                onChange={(e) => setFilters({ ...filters, artist: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                Música
-              </label>
-              <input
-                type="text"
-                className="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-                value={filters.song}
-                onChange={(e) => setFilters({ ...filters, song: e.target.value })}
-              />
-            </div>
+      {showFavoriteRadios && (
+        <FavoriteRadios onSave={handleSaveFavorites} />
+      )}
+      
+      <form onSubmit={handleSearch} className="space-y-4 bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Rádio
+            </label>
+            <select
+              value={filters.radio}
+              onChange={(e) => setFilters({ ...filters, radio: e.target.value })}
+              className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            >
+              <option value="">Todas as Rádios</option>
+              {radios.map((radio) => (
+                <option key={radio.name} value={radio.name}>
+                  {radio.name}
+                </option>
+              ))}
+            </select>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Artista
+            </label>
+            <input
+              type="text"
+              value={filters.artist}
+              onChange={(e) => setFilters({ ...filters, artist: e.target.value })}
+              className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              placeholder="Nome do artista"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Música
+            </label>
+            <input
+              type="text"
+              value={filters.song}
+              onChange={(e) => setFilters({ ...filters, song: e.target.value })}
+              className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              placeholder="Nome da música"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Data Inicial
+            </label>
+            <input
+              type="date"
+              value={filters.startDate}
+              onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+              className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Data Final
+            </label>
+            <input
+              type="date"
+              value={filters.endDate}
+              onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+              className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                Data Início
-              </label>
-              <input
-                type="date"
-                className="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-                value={filters.startDate}
-                onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                Data Fim
-              </label>
-              <input
-                type="date"
-                className="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
-                value={filters.endDate}
-                onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                Hora Início
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Hora Inicial
               </label>
               <input
                 type="time"
-                className="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
                 value={filters.startTime}
                 onChange={(e) => setFilters({ ...filters, startTime: e.target.value })}
+                className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                Hora Fim
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Hora Final
               </label>
               <input
                 type="time"
-                className="w-full rounded-lg border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
                 value={filters.endTime}
                 onChange={(e) => setFilters({ ...filters, endTime: e.target.value })}
+                className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500"
               />
             </div>
           </div>
+        </div>
 
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={!validateDates() || loading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Search className="w-4 h-4" />
-              )}
-              Pesquisar
-            </button>
-          </div>
-        </form>
-      </div>
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            disabled={!validateDates()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            <Search className="w-4 h-4" />
+            Buscar
+          </button>
+        </div>
+      </form>
 
-      {/* Results Table */}
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b dark:border-gray-700">
-                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Data</th>
-                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Hora</th>
-                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Rádio</th>
-                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Artista</th>
-                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Música</th>
-                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Cidade</th>
-                <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-200">Estado</th>
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-700">
+              <tr>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Data/Hora
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Rádio
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Artista
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Música
+                </th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
               {executions.map((execution) => (
                 <React.Fragment key={execution.id}>
-                  <tr className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
-                    <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{formatDisplayDate(execution.date)}</td>
-                    <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.time}</td>
-                    <td className="px-4 py-2 text-gray-700 dark:text-gray-200 flex items-center gap-2">
-                      {execution.radio_name}
-                      <button
-                        onClick={() => toggleRadio(execution.id)}
-                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded"
-                      >
-                        {expandedRadio === execution.id ? (
-                          <ChevronDown className="w-4 h-4 text-gray-500" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4 text-gray-500" />
-                        )}
-                      </button>
+                  <tr className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                      {formatDisplayDate(execution.date)} {execution.time}
                     </td>
-                    <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.artist}</td>
-                    <td className="px-4 py-2 text-gray-700 dark:text-gray-200 flex items-center gap-2">
-                      {execution.song_title}
-                      <button
-                        onClick={() => toggleRow(execution.id)}
-                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded"
-                      >
-                        {expandedRow === execution.id ? (
-                          <ChevronDown className="w-4 h-4 text-gray-500" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4 text-gray-500" />
-                        )}
-                      </button>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => toggleRadio(execution.id)}
+                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                        >
+                          {expandedRadio === execution.id ? (
+                            <ChevronDown className="w-5 h-5" />
+                          ) : (
+                            <ChevronRight className="w-5 h-5" />
+                          )}
+                        </button>
+                        {execution.radio_name}
+                      </div>
+                      {expandedRadio === execution.id && (
+                        <div className="mt-2 pl-7 text-sm text-gray-600 dark:text-gray-400">
+                          <div>Cidade: {execution.city}</div>
+                          <div>Estado: {execution.state}</div>
+                          <div>Região: {execution.region}</div>
+                        </div>
+                      )}
                     </td>
-                    <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.city}</td>
-                    <td className="px-4 py-2 text-gray-700 dark:text-gray-200">{execution.state}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                      {execution.artist}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => toggleRow(execution.id)}
+                          className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                        >
+                          {expandedRow === execution.id ? (
+                            <ChevronDown className="w-5 h-5" />
+                          ) : (
+                            <ChevronRight className="w-5 h-5" />
+                          )}
+                        </button>
+                        {execution.song_title}
+                      </div>
+                      {expandedRow === execution.id && (
+                        <div className="mt-2 pl-7 text-sm text-gray-600 dark:text-gray-400">
+                          <div>ISRC: {execution.isrc}</div>
+                          <div>Gravadora: {execution.label}</div>
+                          <div>Gênero: {execution.genre}</div>
+                        </div>
+                      )}
+                    </td>
                   </tr>
-                  {expandedRadio === execution.id && (
-                    <tr className="bg-gray-50 dark:bg-gray-700">
-                      <td colSpan={7} className="px-4 py-2">
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <span className="font-medium text-gray-700 dark:text-gray-200">Região:</span>
-                            <span className="ml-2 text-gray-600 dark:text-gray-300">{execution.region}</span>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-700 dark:text-gray-200">Segmento:</span>
-                            <span className="ml-2 text-gray-600 dark:text-gray-300">{execution.segment}</span>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  {expandedRow === execution.id && (
-                    <tr className="bg-gray-50 dark:bg-gray-700">
-                      <td colSpan={7} className="px-4 py-2">
-                        <div className="grid grid-cols-3 gap-4 text-sm">
-                          <div>
-                            <span className="font-medium text-gray-700 dark:text-gray-200">ISRC:</span>
-                            <span className="ml-2 text-gray-600 dark:text-gray-300">{execution.isrc}</span>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-700 dark:text-gray-200">Gênero:</span>
-                            <span className="ml-2 text-gray-600 dark:text-gray-300">{execution.genre}</span>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-700 dark:text-gray-200">Gravadora:</span>
-                            <span className="ml-2 text-gray-600 dark:text-gray-300">{execution.label}</span>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
                 </React.Fragment>
               ))}
             </tbody>
           </table>
-
-          {executions.length === 0 && !loading && (
-            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-              Nenhum registro encontrado
-            </div>
-          )}
-
-          {hasMore && (
-            <div className="mt-4 text-center">
-              <button
-                onClick={() => fetchExecutions()}
-                disabled={loading}
-                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? (
-                  <span className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Carregando...
-                  </span>
-                ) : (
-                  'Carregar Mais'
-                )}
-              </button>
-            </div>
-          )}
-
-          {!hasMore && executions.length > 0 && (
-            <div className="mt-4 text-center text-gray-500 dark:text-gray-400">
-              Todos os dados foram carregados
-            </div>
-          )}
         </div>
+
+        {loading ? (
+          <div className="flex justify-center items-center p-4">
+            <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+          </div>
+        ) : hasMore ? (
+          <div className="flex justify-center p-4">
+            <button
+              onClick={() => fetchExecutions()}
+              className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+            >
+              Carregar mais
+            </button>
+          </div>
+        ) : executions.length > 0 ? (
+          <div className="text-center p-4 text-gray-500 dark:text-gray-400">
+            Fim dos resultados
+          </div>
+        ) : (
+          <div className="text-center p-4 text-gray-500 dark:text-gray-400">
+            Nenhum resultado encontrado
+          </div>
+        )}
       </div>
     </div>
   );

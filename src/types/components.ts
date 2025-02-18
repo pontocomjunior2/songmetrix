@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { UserStatus } from '../lib/firebase';
 
 // Layout Types
 export interface LayoutProps {
@@ -8,71 +9,53 @@ export interface LayoutProps {
 }
 
 // Auth Types
-export type UserStatusType = 'INATIVO' | 'ATIVO' | 'ADMIN';
+export type UserStatusType = typeof UserStatus[keyof typeof UserStatus];
 
-export interface AuthState {
-  currentUser: any;
-  userStatus: UserStatusType | null;
-  loading: boolean;
-}
-
-export interface AuthContextType extends AuthState {
-  signInWithEmail: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
-  signUpWithEmail: (email: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
-  updateUserStatus?: (uid: string, status: UserStatusType) => Promise<void>;
-}
-
-// Common Component Types
-export interface LoadingProps {
-  size?: 'small' | 'medium' | 'large';
-  message?: string;
-}
-
-export interface AlertProps {
-  type: 'success' | 'error' | 'warning' | 'info';
-  message: string;
-  onClose?: () => void;
-}
-
-export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'danger';
-  size?: 'small' | 'medium' | 'large';
-  isLoading?: boolean;
-  fullWidth?: boolean;
-  icon?: ReactNode;
-}
-
-export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
-  label?: string;
-  error?: string;
-  icon?: ReactNode;
-  helperText?: string;
-}
-
-// Data Types
 export interface User {
   uid: string;
   email: string | null;
-  photoURL?: string | null;
   displayName?: string | null;
+  photoURL?: string | null;
   status: UserStatusType;
-  createdAt: string;
+  createdAt?: string;
   updatedAt?: string;
-  favoriteRadios?: string[];
 }
 
-export interface Filters {
-  radio: string;
-  artist: string;
-  song: string;
-  startDate: string;
-  endDate: string;
-  startTime: string;
-  endTime: string;
+// Radio Types
+export interface RadioStatus {
+  name: string;
+  status: 'ONLINE' | 'OFFLINE';
+  lastUpdate: string;
+  isFavorite: boolean;
 }
 
+export interface Radio {
+  name: string;
+  status: 'online' | 'offline';
+  lastUpdate?: string;
+}
+
+export interface FavoriteRadio {
+  name: string;
+  addedAt: string;
+}
+
+// Dashboard Types
+export interface DashboardData {
+  activeRadios: number;
+  totalExecutions: number;
+  topArtists: {
+    name: string;
+    count: number;
+  }[];
+  topSongs: {
+    title: string;
+    artist: string;
+    count: number;
+  }[];
+}
+
+// Execution Types
 export interface Execution {
   id: number;
   date: string;
@@ -89,24 +72,46 @@ export interface Execution {
   label: string;
 }
 
-export interface RankingItem {
-  id: number;
-  artist: string;
-  song_title: string;
-  genre: string;
-  executions: number;
+// Alert Types
+export interface AlertProps {
+  message: string;
+  onClose?: () => void;
+  type?: 'success' | 'error' | 'warning' | 'info';
 }
 
-export interface Radio {
-  name: string;
-  status: 'ONLINE' | 'OFFLINE';
-  lastUpdate: string;
-  isFavorite: boolean;
+// Button Types
+export interface ButtonProps {
+  children: ReactNode;
+  onClick?: () => void;
+  type?: 'button' | 'submit' | 'reset';
+  disabled?: boolean;
+  className?: string;
+  variant?: 'primary' | 'secondary' | 'danger';
+  size?: 'sm' | 'md' | 'lg';
 }
 
-export interface RadioStatus {
-  name: string;
-  status: 'ONLINE' | 'OFFLINE';
-  lastUpdate: string;
-  isFavorite: boolean;
+// Input Types
+export interface InputProps {
+  type?: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  placeholder?: string;
+  label?: string;
+  error?: string;
+  required?: boolean;
+  className?: string;
+}
+
+// Loading Types
+export interface LoadingProps {
+  size?: 'small' | 'medium' | 'large';
+  message?: string;
+}
+
+// UserAvatar Types
+export interface UserAvatarProps {
+  email: string;
+  photoURL?: string | null;
+  size?: 'sm' | 'md' | 'lg';
+  className?: string;
 }

@@ -36,9 +36,15 @@ export default function Layout({ currentView, onNavigate }: LayoutProps) {
 
   // Update currentView based on location
   useEffect(() => {
-    const path = location.pathname.substring(1);
+    const path = location.pathname.substring(1); // Remove leading slash
     if (path) {
-      onNavigate(path);
+      // Se a rota começa com 'admin/', use o caminho completo como view
+      if (path.startsWith('admin/')) {
+        onNavigate(path);
+      } else {
+        // Para outras rotas, use apenas o primeiro segmento
+        onNavigate(path.split('/')[0]);
+      }
     }
   }, [location, onNavigate]);
 
@@ -48,13 +54,21 @@ export default function Layout({ currentView, onNavigate }: LayoutProps) {
     navigate(`/${view}`);
   };
 
+  // Get the display title based on currentView
+  const getDisplayTitle = () => {
+    if (currentView === 'admin/users') {
+      return 'Gerenciar Usuários';
+    }
+    return currentView.charAt(0).toUpperCase() + currentView.slice(1);
+  };
+
   return (
     <div className={`min-h-screen ${theme === 'dark' ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
       {/* Header */}
       <header className="fixed top-0 right-0 left-64 h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 z-10">
         <div className="h-full px-6 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-200">
-            {currentView.charAt(0).toUpperCase() + currentView.slice(1)}
+            {getDisplayTitle()}
           </h2>
           <div className="flex items-center gap-4">
             <button

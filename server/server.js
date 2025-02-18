@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
 import { format } from 'date-fns';
-import { auth, db } from './firebase-admin.js';
+import { auth, db, createUser, verifyAndUpdateClaims } from './firebase-admin.js';
 import { createCheckoutSession, handleWebhook } from './stripe.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,7 +23,41 @@ app.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);
 app.use(cors());
 app.use(express.json());
 
-// Middleware de autenticação
+// Middleware de autenticação básica (sem verificação de paid/admin)
+const authenticateBasicUser = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Token não fornecido' });
+    }
+
+    const token = authHeader.split('Bearer ')[1];
+    const decodedToken = await auth.verifyIdToken(token);
+
+    // Buscar dados do usuário no Firestore
+    const userRef = db.collection('users').doc(decodedToken.uid);
+    const userDoc = await userRef.get();
+    
+    if (!userDoc.exists) {
+      // Se o usuário não existe no Firestore, criar um novo documento
+      await createUser(decodedToken.uid, decodedToken.email);
+      const newUserDoc = await userRef.get();
+      req.user = { ...decodedToken, ...newUserDoc.data() };
+    } else {
+      // Verificar e atualizar claims se necessário
+      await verifyAndUpdateClaims(decodedToken.uid);
+      const userData = userDoc.data();
+      req.user = { ...decodedToken, ...userData };
+    }
+
+    next();
+  } catch (error) {
+    console.error('Erro de autenticação:', error);
+    res.status(401).json({ error: 'Token inválido' });
+  }
+};
+
+// Middleware de autenticação com verificação de paid/admin
 const authenticateUser = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -34,15 +68,25 @@ const authenticateUser = async (req, res, next) => {
     const token = authHeader.split('Bearer ')[1];
     const decodedToken = await auth.verifyIdToken(token);
     
-    // Verifica se o usuário tem acesso pago
-    if (!decodedToken.paid && !decodedToken.admin) {
+    // Buscar dados do usuário no Firestore
+    const userRef = db.collection('users').doc(decodedToken.uid);
+    const userDoc = await userRef.get();
+    
+    if (!userDoc.exists) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    const userData = userDoc.data();
+    
+    // Verifica se o usuário tem acesso pago ou é admin
+    if (userData.status !== 'ATIVO' && userData.status !== 'ADMIN') {
       return res.status(403).json({ 
         error: 'Assinatura necessária',
         code: 'subscription_required'
       });
     }
 
-    req.user = decodedToken;
+    req.user = { ...decodedToken, ...userData };
     next();
   } catch (error) {
     console.error('Erro de autenticação:', error);
@@ -76,24 +120,8 @@ pool.connect((err, client, done) => {
 // Rotas públicas
 app.post('/api/create-checkout-session', createCheckoutSession);
 
-// Rotas protegidas
-app.get('/api/radios', authenticateUser, async (req, res) => {
-  try {
-    console.log('GET /api/radios - Buscando rádios...');
-    const result = await pool.query(
-      'SELECT DISTINCT name FROM music_log ORDER BY name'
-    );
-    console.log('GET /api/radios - Rádios encontradas:', result.rows);
-    const radios = result.rows.map(row => row.name);
-    res.json(radios);
-  } catch (error) {
-    console.error('GET /api/radios - Erro:', error);
-    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
-  }
-});
-
-// Nova rota para status das rádios e favoritos
-app.get('/api/radios/status', authenticateUser, async (req, res) => {
+// Rotas com autenticação básica (sem verificação de paid/admin)
+app.get('/api/radios/status', authenticateBasicUser, async (req, res) => {
   try {
     // Buscar o último registro de cada rádio
     const query = `
@@ -140,8 +168,7 @@ app.get('/api/radios/status', authenticateUser, async (req, res) => {
   }
 });
 
-// Rota para favoritar/desfavoritar rádios
-app.post('/api/radios/favorite', authenticateUser, async (req, res) => {
+app.post('/api/radios/favorite', authenticateBasicUser, async (req, res) => {
   try {
     const { radioName, favorite } = req.body;
     const userRef = db.collection('users').doc(req.user.uid);
@@ -172,6 +199,7 @@ app.post('/api/radios/favorite', authenticateUser, async (req, res) => {
   }
 });
 
+// Rotas protegidas (requerem paid ou admin)
 app.post('/api/executions', authenticateUser, async (req, res) => {
   const { filters, page = 0 } = req.body;
   const offset = page * 100;

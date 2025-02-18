@@ -54,6 +54,29 @@ export const UserStatus = {
   ADMIN: 'ADMIN'
 };
 
+// Função para configurar claims iniciais do usuário
+export const setInitialUserClaims = async (userId) => {
+  try {
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return;
+    }
+
+    const userData = userDoc.data();
+    const claims = {
+      admin: userData.status === UserStatus.ADMIN,
+      paid: userData.status === UserStatus.ATIVO || userData.status === UserStatus.ADMIN,
+      status: userData.status
+    };
+
+    await auth.setCustomUserClaims(userId, claims);
+    return claims;
+  } catch (error) {
+    console.error('Erro ao configurar claims iniciais:', error);
+    throw error;
+  }
+};
+
 // Função para verificar o status de pagamento do usuário
 export const checkUserPaymentStatus = async (userId) => {
   try {
@@ -78,12 +101,13 @@ export const updateUserStatus = async (userId, status) => {
     });
     
     // Configura as claims baseado no status
-    if (status === UserStatus.ADMIN) {
-      await auth.setCustomUserClaims(userId, { admin: true });
-    } else {
-      await auth.setCustomUserClaims(userId, { admin: false });
-    }
+    const claims = {
+      admin: status === UserStatus.ADMIN,
+      paid: status === UserStatus.ATIVO || status === UserStatus.ADMIN,
+      status
+    };
     
+    await auth.setCustomUserClaims(userId, claims);
     return true;
   } catch (error) {
     console.error('Erro ao atualizar status do usuário:', error);
@@ -94,15 +118,57 @@ export const updateUserStatus = async (userId, status) => {
 // Função para criar um novo usuário
 export const createUser = async (userId, email) => {
   try {
-    await db.collection('users').doc(userId).set({
+    const userData = {
       email,
       status: UserStatus.INATIVO,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    });
+      updatedAt: new Date().toISOString(),
+      favoriteRadios: []
+    };
+
+    await db.collection('users').doc(userId).set(userData);
+    
+    // Configura as claims iniciais
+    await setInitialUserClaims(userId);
+    
     return true;
   } catch (error) {
     console.error('Erro ao criar usuário:', error);
     return false;
+  }
+};
+
+// Função para verificar e atualizar claims do usuário
+export const verifyAndUpdateClaims = async (userId) => {
+  try {
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return null;
+    }
+
+    const userData = userDoc.data();
+    const currentClaims = (await auth.getUser(userId)).customClaims || {};
+
+    // Verifica se as claims estão desatualizadas
+    if (
+      currentClaims.status !== userData.status ||
+      currentClaims.admin !== (userData.status === UserStatus.ADMIN) ||
+      currentClaims.paid !== (userData.status === UserStatus.ATIVO || userData.status === UserStatus.ADMIN)
+    ) {
+      // Atualiza as claims
+      const newClaims = {
+        admin: userData.status === UserStatus.ADMIN,
+        paid: userData.status === UserStatus.ATIVO || userData.status === UserStatus.ADMIN,
+        status: userData.status
+      };
+      
+      await auth.setCustomUserClaims(userId, newClaims);
+      return newClaims;
+    }
+
+    return currentClaims;
+  } catch (error) {
+    console.error('Erro ao verificar/atualizar claims:', error);
+    throw error;
   }
 };
