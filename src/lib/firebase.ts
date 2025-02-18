@@ -32,26 +32,54 @@ auth.setPersistence(browserLocalPersistence);
 
 // User status constants
 export const UserStatus: { [key: string]: UserStatusType } = {
-  NOT_PAID: 'NOT_PAID',
-  PAID: 'PAID',
+  INATIVO: 'INATIVO',
+  ATIVO: 'ATIVO',
   ADMIN: 'ADMIN'
 } as const;
 
 // Function to refresh auth token
 export const refreshAuthToken = async (): Promise<string | null> => {
   try {
+    console.log('Iniciando refresh do token...');
     const user = auth.currentUser;
-    if (!user) return null;
+    if (!user) {
+      console.log('Nenhum usuário logado');
+      return null;
+    }
 
-    // Force token refresh
+    console.log('Forçando refresh do token...');
     const token = await user.getIdToken(true);
     
-    // Wait for token propagation
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Wait longer for token propagation (5 seconds)
+    console.log('Aguardando propagação do token (5 segundos)...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    
+    // Verify if admin claim is present
+    console.log('Verificando claims do token...');
+    const decodedToken = await user.getIdTokenResult(true);
+    
+    // Log detalhado do token
+    const tokenInfo = {
+      claims: decodedToken.claims,
+      isAdmin: decodedToken.claims.admin === true,
+      token: {
+        authTime: decodedToken.authTime,
+        issuedAtTime: decodedToken.issuedAtTime,
+        expirationTime: decodedToken.expirationTime,
+        signInProvider: decodedToken.signInProvider,
+      }
+    };
+    console.log('Token atualizado:', JSON.stringify(tokenInfo, null, 2));
+    
+    // Verifica se as claims admin estão presentes
+    if (!decodedToken.claims.admin) {
+      console.warn('Alerta: Token não possui a claim admin!');
+      console.log('Claims disponíveis:', Object.keys(decodedToken.claims));
+    }
     
     return token;
   } catch (error) {
-    console.error('Error refreshing auth token:', error);
+    console.error('Erro detalhado ao atualizar token:', error);
     return null;
   }
 };
