@@ -1,5 +1,10 @@
 /* Dark mode styles for components */
 @media (prefers-color-scheme: dark) {
+  /* Base background colors */
+  body {
+    background-color: #1a1f2e !important;
+  }
+
   /* Common container styles */
   .bg-white {
     background-color: #1f2937 !important;
@@ -10,7 +15,7 @@
   }
 
   .dark\:bg-gray-700 {
-    background-color: #374151 !important;
+    background-color: #111827 !important;
   }
 
   /* Border colors */
@@ -19,7 +24,7 @@
   }
 
   .border-gray-300.dark\:border-gray-600 {
-    border-color: #4b5563 !important;
+    border-color: #374151 !important;
   }
 
   /* Text colors */
@@ -34,40 +39,52 @@
   input[type="time"],
   select,
   .react-select__control {
-    background-color: #374151 !important;
-    border-color: #4b5563 !important;
+    background-color: #111827 !important;
+    border-color: #374151 !important;
     color: #e5e7eb !important;
   }
 
+  input[type="date"],
+  input[type="time"] {
+    color-scheme: dark;
+  }
+
   /* Table styles */
+  table {
+    background-color: #1f2937 !important;
+  }
+
   table thead {
-    background-color: #374151 !important;
+    background-color: #111827 !important;
   }
 
   table th {
     color: #e5e7eb !important;
+    border-bottom: 1px solid #374151 !important;
   }
 
   table td {
     color: #e5e7eb !important;
+    border-bottom: 1px solid #374151 !important;
   }
 
   tr:hover {
-    background-color: #374151 !important;
+    background-color: #111827 !important;
   }
 
   /* React-select customization */
   .react-select__menu {
-    background-color: #374151 !important;
+    background-color: #111827 !important;
+    border: 1px solid #374151 !important;
   }
 
   .react-select__option {
-    background-color: #374151 !important;
+    background-color: #111827 !important;
     color: #e5e7eb !important;
   }
 
   .react-select__option--is-focused {
-    background-color: #4b5563 !important;
+    background-color: #1f2937 !important;
   }
 
   .react-select__option--is-selected {
@@ -75,26 +92,45 @@
   }
 
   .react-select__multi-value {
-    background-color: #4b5563 !important;
+    background-color: #1f2937 !important;
   }
 
   .react-select__multi-value__label {
     color: #e5e7eb !important;
   }
 
+  .react-select__placeholder {
+    color: #6b7280 !important;
+  }
+
   /* Button styles */
   .ranking-btn-secondary {
-    background-color: #374151 !important;
+    background-color: #111827 !important;
     color: #e5e7eb !important;
+    border: 1px solid #374151 !important;
   }
 
   .ranking-btn-secondary:hover {
-    background-color: #4b5563 !important;
+    background-color: #1f2937 !important;
   }
 
   /* Loading and empty states */
   .loading-indicator p,
   .text-gray-500.dark\:text-gray-400 {
     color: #9ca3af !important;
+  }
+
+  /* Scrollbar customization */
+  ::-webkit-scrollbar-thumb {
+    background-color: #374151 !important;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: #4b5563 !important;
+  }
+
+  /* Input placeholder color */
+  ::placeholder {
+    color: #6b7280 !important;
   }
 }
