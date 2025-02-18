@@ -4,6 +4,8 @@ import { AuthProvider } from './contexts/AuthContext';
 import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
 import ProtectedRoute from './components/Auth/ProtectedRoute';
+import AdminRoute from './components/Auth/AdminRoute';
+import FirstAccessRoute from './components/Auth/FirstAccessRoute';
 import PendingApproval from './components/Auth/PendingApproval';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
@@ -30,6 +32,7 @@ function App() {
           <Route path="/pending-approval" element={<PendingApproval />} />
           <Route path="/payment/success" element={<PaymentSuccess />} />
           <Route path="/payment/canceled" element={<PaymentCanceled />} />
+          <Route path="/first-access" element={<FirstAccessRoute />} />
           
           <Route path="/" element={
             <ProtectedRoute>
@@ -41,7 +44,11 @@ function App() {
             <Route path="ranking" element={<Ranking />} />
             <Route path="realtime" element={<RealTime />} />
             <Route path="radios" element={<Radios />} />
-            <Route path="admin/users" element={<UserList />} />
+            <Route path="admin/users" element={
+              <AdminRoute>
+                <UserList />
+              </AdminRoute>
+            } />
           </Route>
         </Routes>
       </AuthProvider>

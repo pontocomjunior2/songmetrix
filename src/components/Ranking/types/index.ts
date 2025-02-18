@@ -1,9 +1,9 @@
 export interface RankingItem {
-  id: number;
+  id: string | number;
   artist: string;
   song_title: string;
   genre: string;
-  executions: number;
+  executions: string | number;
 }
 
 export interface SpotifyTokenData {
@@ -22,4 +22,11 @@ export interface RankingFilters {
   hourStart: string;
   hourEnd: string;
   selectedRadios: string[];
+}
+
+export interface RadioStatus {
+  name: string;
+  status: 'ONLINE' | 'OFFLINE';
+  lastUpdate: string;
+  isFavorite: boolean;
 }

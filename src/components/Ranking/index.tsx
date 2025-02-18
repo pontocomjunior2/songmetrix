@@ -6,7 +6,7 @@ import { LazyLoadImage } from 'react-lazy-load-image-component';
 import 'react-lazy-load-image-component/src/effects/blur.css';
 import './styles/Ranking.css';
 import { fetchSpotifyToken, fetchArtistImageFromSpotify } from './services/spotify';
-import { RankingItem, SpotifyTokenData, ArtistImages, RankingFilters } from './types';
+import { RankingItem, SpotifyTokenData, ArtistImages, RankingFilters, RadioStatus } from './types';
 import { MultiValue } from 'react-select';
 import { Loader2 } from 'lucide-react';
 
@@ -92,10 +92,13 @@ export default function Ranking() {
   const fetchRadios = async () => {
     try {
       const headers = await getAuthHeaders();
-      const response = await fetch('/api/radios', { headers });
+      const response = await fetch('/api/radios/status', { headers });
       if (!response.ok) throw new Error('Failed to fetch radios');
-      const data = await response.json();
-      const options = data.map((radio: string) => ({ value: radio, label: radio }));
+      const data: RadioStatus[] = await response.json();
+      const options = data.map(radio => ({ 
+        value: radio.name, 
+        label: radio.name
+      }));
       setRadiosOptions(options);
     } catch (error) {
       console.error('Error fetching radios:', error);
