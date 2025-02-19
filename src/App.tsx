@@ -15,6 +15,7 @@ import Radios from './components/Radios';
 import UserList from './components/Admin/UserList';
 import PaymentSuccess from './components/Payment/PaymentSuccess';
 import PaymentCanceled from './components/Payment/PaymentCanceled';
+import Relatorios from './components/Relatorios';
 
 function App() {
   const [currentView, setCurrentView] = useState('dashboard');
@@ -44,6 +45,7 @@ function App() {
             <Route path="ranking" element={<Ranking />} />
             <Route path="realtime" element={<RealTime />} />
             <Route path="radios" element={<Radios />} />
+            <Route path="relatorios" element={<Relatorios />} />
             <Route path="admin/users" element={
               <AdminRoute>
                 <UserList />

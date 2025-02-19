@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Radio, BarChart3, Clock, Users } from 'lucide-react';
+import { LayoutDashboard, Radio, BarChart3, Clock, Users, FileText } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserStatus } from '../../lib/firebase';
 
@@ -31,6 +31,11 @@ export default function Sidebar({ currentView, onNavigate }: SidebarProps) {
       name: 'Tempo Real',
       icon: Clock,
       view: 'realtime'
+    },
+    {
+      name: 'Relatórios',
+      icon: FileText,
+      view: 'relatorios'
     }
   ];
 

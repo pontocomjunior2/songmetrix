@@ -8,6 +8,7 @@ import path from 'path';
 import { format } from 'date-fns';
 import { auth, db, createUser, verifyAndUpdateClaims } from './firebase-admin.js';
 import { createCheckoutSession, handleWebhook } from './stripe.js';
+import { reportQuery } from './report-query.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -535,6 +536,25 @@ function getGenreColor(genre) {
   };
   return colors[genre] || '#6B7280'; // Cor padrão para gêneros não mapeados
 }
+
+app.get('/api/report', authenticateUser, async (req, res) => {
+  try {
+    const { startDate, endDate, radios, limit } = req.query;
+    
+    if (!startDate || !endDate || !radios || !limit) {
+      return res.status(400).json({ error: 'Parâmetros obrigatórios não fornecidos' });
+    }
+
+    const radiosList = radios.split(',');
+    const params = [startDate, endDate, radiosList, parseInt(limit)];
+
+    const result = await safeQuery(reportQuery, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('GET /api/report - Erro:', error);
+    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
+  }
+});
 
 app.get('/api/ranking', authenticateUser, async (req, res) => {
   try {
