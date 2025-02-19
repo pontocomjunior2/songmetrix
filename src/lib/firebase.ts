@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, setPersistence, browserSessionPersistence } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -19,7 +19,19 @@ export const UserStatus = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+const auth = getAuth(app);
+
+// Set persistence to session
+setPersistence(auth, browserSessionPersistence)
+  .then(() => {
+    console.log("Persistência configurada para session");
+    return auth.signOut();
+  })
+  .catch((error) => {
+    console.error("Erro ao configurar persistência:", error);
+  });
+
+export { auth };
 export const db = getFirestore(app);
 
 export const refreshAuthToken = async () => {

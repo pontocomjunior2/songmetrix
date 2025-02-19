@@ -7,7 +7,7 @@ import {
   createUserWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
-  browserLocalPersistence,
+  browserSessionPersistence,
   setPersistence,
   deleteUser
 } from 'firebase/auth';
@@ -145,7 +145,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInWithEmail = async (email: string, password: string) => {
     try {
-      await setPersistence(auth, browserLocalPersistence);
       const result = await signInWithEmailAndPassword(auth, email, password);
       await refreshAuthToken();
       await checkUserStatus(result.user);
