@@ -67,7 +67,7 @@ export default function Layout({ currentView, onNavigate }: LayoutProps) {
       {/* Conteúdo Principal */}
       <div className="flex-1 flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
         {/* Header */}
-        <header className="h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm">
+        <header className="relative z-30 h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm">
           <div className="h-full px-6 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">
@@ -94,7 +94,7 @@ export default function Layout({ currentView, onNavigate }: LayoutProps) {
                 </button>
 
                 {showNotifications && (
-                  <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+                  <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-40">
                     <div className="p-4">
                       <div className="flex justify-between items-center mb-2">
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -144,7 +144,7 @@ export default function Layout({ currentView, onNavigate }: LayoutProps) {
                 </button>
 
                 {showProfileMenu && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+                  <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-40">
                     <div className="py-1">
                       <button className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors">
                         <HelpCircle className="w-4 h-4" />
@@ -170,7 +170,7 @@ export default function Layout({ currentView, onNavigate }: LayoutProps) {
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 p-6">
+        <main className="relative z-20 flex-1 p-6">
           <Outlet />
         </main>
       </div>
