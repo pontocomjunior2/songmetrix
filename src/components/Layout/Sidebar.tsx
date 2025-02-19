@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Radio, BarChart3, Clock, Users, FileText } from 'lucide-react';
+import { LayoutDashboard, Radio, BarChart3, Clock, Users, FileText, Type } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserStatus } from '../../lib/firebase';
 
@@ -39,13 +39,20 @@ export default function Sidebar({ currentView, onNavigate }: SidebarProps) {
     }
   ];
 
-  // Adiciona o menu de gerenciamento de usuários apenas para administradores
+  // Adiciona os menus de administração apenas para administradores
   if (userStatus === UserStatus.ADMIN) {
-    menuItems.push({
-      name: 'Gerenciar Usuários',
-      icon: Users,
-      view: 'admin/users'  // Atualizado para corresponder à rota correta
-    });
+    menuItems.push(
+      {
+        name: 'Gerenciar Usuários',
+        icon: Users,
+        view: 'admin/users'
+      },
+      {
+        name: 'Abreviações',
+        icon: Type,
+        view: 'admin/abbreviations'
+      }
+    );
   }
 
   return (
