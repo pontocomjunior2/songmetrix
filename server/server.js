@@ -139,6 +139,7 @@ const safeQuery = async (query, params = []) => {
   }
 };
 
+
 // Rotas públicas
 app.post('/api/create-checkout-session', createCheckoutSession);
 
@@ -295,6 +296,99 @@ app.post('/api/radios/favorite', authenticateBasicUser, async (req, res) => {
     });
   } catch (error) {
     console.error('POST /api/radios/favorite - Erro:', error);
+    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
+  }
+});
+
+// Rotas de abreviações de rádios
+app.get('/api/radio-abbreviations', authenticateBasicUser, async (req, res) => {
+  try {
+    // Primeiro, buscar todas as rádios únicas
+    const query = `
+      SELECT DISTINCT name as radio_name, 
+        COALESCE(
+          MAX(abbreviation) FILTER (WHERE abbreviation IS NOT NULL),
+          UPPER(SUBSTRING(name, 1, 3))
+        ) as abbreviation
+      FROM music_log 
+      WHERE name IS NOT NULL
+      GROUP BY name
+      ORDER BY name
+    `;
+    
+    const result = await safeQuery(query);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('GET /api/radio-abbreviations - Erro:', error);
+    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
+  }
+});
+
+app.post('/api/radio-abbreviations', authenticateBasicUser, async (req, res) => {
+  try {
+    // Verificar se o usuário é admin
+    if (req.user.status !== 'ADMIN') {
+      return res.status(403).json({ error: 'Apenas administradores podem gerenciar abreviações' });
+    }
+
+    const { radioName, abbreviation } = req.body;
+    
+    if (!radioName || !abbreviation) {
+      return res.status(400).json({ error: 'Nome da rádio e abreviação são obrigatórios' });
+    }
+
+    // Validar formato da abreviação (1 a 3 caracteres alfanuméricos maiúsculos)
+    if (!/^[A-Z0-9]{1,3}$/.test(abbreviation)) {
+      return res.status(400).json({ error: 'Abreviação deve conter de 1 a 3 caracteres (letras maiúsculas ou números)' });
+    }
+
+    // Verificar se a abreviação já está em uso por outra rádio
+    const duplicateQuery = `
+      SELECT DISTINCT name 
+      FROM music_log 
+      WHERE abbreviation = $1 
+      AND name != $2
+      LIMIT 1
+    `;
+    
+    const duplicateResult = await safeQuery(duplicateQuery, [abbreviation, radioName]);
+    
+    if (duplicateResult.rows.length > 0) {
+      return res.status(400).json({ 
+        error: `Abreviação "${abbreviation}" já está em uso pela rádio "${duplicateResult.rows[0].name}"`
+      });
+    }
+
+    // Verificar se a rádio existe
+    const checkQuery = `
+      SELECT DISTINCT name 
+      FROM music_log 
+      WHERE name = $1
+      LIMIT 1
+    `;
+    
+    const checkResult = await safeQuery(checkQuery, [radioName]);
+    
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Rádio não encontrada' });
+    }
+
+    // Atualizar a abreviação para todas as entradas da rádio
+    const updateQuery = `
+      UPDATE music_log 
+      SET abbreviation = $2
+      WHERE name = $1
+    `;
+    
+    await safeQuery(updateQuery, [radioName, abbreviation]);
+    
+    // Retornar os dados atualizados
+    res.json({
+      radio_name: radioName,
+      abbreviation: abbreviation
+    });
+  } catch (error) {
+    console.error('POST /api/radio-abbreviations - Erro:', error);
     res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
   }
 });
