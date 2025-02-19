@@ -22,9 +22,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);
 
 // Middlewares regulares
 app.use(cors({
-  origin: 'http://localhost:5173', // Allow requests from the frontend
+  origin: ['http://localhost:5173'], // Allow requests from the frontend
   credentials: true, // Allow credentials to be included in requests
-  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -785,7 +784,7 @@ app.get('/api/report', authenticateUser, async (req, res) => {
 
     // Adiciona filtro de rádios se fornecido
     if (radios) {
-      const radiosList = radios.split(',');
+      const radiosList = radios.split('||').map(r => r.trim());
       query += ` AND name = ANY($${++paramCount}::text[])`;
       params.push(radiosList);
     }
@@ -869,11 +868,12 @@ app.get('/api/ranking', authenticateUser, async (req, res) => {
     }
 
     if (radio) {
-      const radios = radio.split(',').filter(Boolean);
+      const radios = radio.split('||').map(r => r.trim()).filter(Boolean);
       if (radios.length > 0) {
-        query += ` AND name = ANY($${paramCount}::text[])`;
-        params.push(radios);
-        paramCount++;
+        const placeholders = radios.map((_, i) => `$${paramCount + i}`).join(',');
+        query += ` AND name IN (${placeholders})`;
+        params.push(...radios);
+        paramCount += radios.length;
       }
     }
 

@@ -45,14 +45,15 @@ router.get('/api/ranking', authenticateUser, async (req, res) => {
       paramCount += 2;
     }
 
-    if (radio) {
-      const radios = radio.split(',').filter(Boolean);
-      if (radios.length > 0) {
-        query += ` AND name = ANY($${paramCount}::text[])`;
-        params.push(radios);
-        paramCount++;
-      }
-    }
+if (radio) {
+  const radios = radio.split('||').map(r => r.trim()).filter(Boolean);
+  if (radios.length > 0) {
+    const placeholders = radios.map((_, i) => `$${paramCount + i}`).join(',');
+    query += ` AND name IN (${placeholders})`;
+    params.push(...radios);
+    paramCount += radios.length;
+  }
+}
 
     query += `
         GROUP BY artist, song_title, genre
