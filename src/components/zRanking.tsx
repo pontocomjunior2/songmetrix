@@ -58,7 +58,7 @@ export default function Ranking() {
         startDate,
         endDate,
         rankingSize,
-        ...(selectedRadios.length > 0 && { radio: selectedRadios.join(',') })
+...(selectedRadios.length > 0 && { radio: selectedRadios.join('||') })
       });
 
       const response = await fetch(`/api/ranking?${params.toString()}`, { headers });

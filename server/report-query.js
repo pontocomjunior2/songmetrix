@@ -8,7 +8,7 @@ export const reportQuery = `
     FROM music_log
     WHERE 
       date BETWEEN $1 AND $2
-      AND name = ANY($3)
+      AND name = ANY(SELECT unnest($3::text[]))
     GROUP BY song_title, artist, name
   ),
   TotalExecutions AS (

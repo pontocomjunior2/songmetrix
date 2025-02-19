@@ -49,25 +49,24 @@ const Relatorios: React.FC = () => {
   const [statesOptions, setStatesOptions] = useState<Array<{ value: string; label: string }>>([]);
 
   const getAuthHeaders = async () => {
-      try {
-        const token = await currentUser?.getIdToken(true); // Force token refresh
-        if (!token) {
-          throw new Error('No authentication token available');
-        }
-        return {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        };
-      } catch (error: any) {
-        console.error('Error getting auth headers:', error);
-        if (error?.code === 'auth/requires-recent-login') {
-          alert('Sua sessão expirou. Por favor, faça login novamente.');
-          // You might want to trigger a logout or redirect to login here
-        } else {
-          alert('Erro de autenticação. Por favor, tente novamente.');
-        }
-        throw error;
+    try {
+      const token = await currentUser?.getIdToken(true);
+      if (!token) {
+        throw new Error('No authentication token available');
       }
+      return {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      };
+    } catch (error: any) {
+      console.error('Error getting auth headers:', error);
+      if (error?.code === 'auth/requires-recent-login') {
+        alert('Sua sessão expirou. Por favor, faça login novamente.');
+      } else {
+        alert('Erro de autenticação. Por favor, tente novamente.');
+      }
+      throw error;
+    }
   };
 
   useEffect(() => {
@@ -76,10 +75,8 @@ const Relatorios: React.FC = () => {
         console.log('No user logged in, skipping data fetch');
         return;
       }
-      
       try {
         const headers = await getAuthHeaders();
-        
         const radiosResponse = await fetch('http://localhost:3001/api/radios/status', { 
           headers,
           credentials: 'include',
@@ -92,14 +89,12 @@ const Relatorios: React.FC = () => {
           label: radio.name,
         }));
         setRadiosOptions(options);
-
         const abbreviationsResponse = await fetch('http://localhost:3001/api/radio-abbreviations', { 
           headers,
           credentials: 'include'
         });
         if (!abbreviationsResponse.ok) throw new Error('Failed to fetch abbreviations');
         const abbreviationsData: RadioAbbreviation[] = await abbreviationsResponse.json();
-        
         const abbrevMap = abbreviationsData.reduce((acc, { radio_name, abbreviation }) => {
           acc[radio_name] = abbreviation;
           return acc;
@@ -118,7 +113,6 @@ const Relatorios: React.FC = () => {
     const fetchLocationData = async () => {
       try {
         const headers = await getAuthHeaders();
-
         const citiesResponse = await fetch('http://localhost:3001/api/cities', { 
           headers,
           credentials: 'include'
@@ -130,7 +124,6 @@ const Relatorios: React.FC = () => {
           label: city,
         }));
         setCitiesOptions(cityOptions);
-
         const statesResponse = await fetch('http://localhost:3001/api/states', { 
           headers,
           credentials: 'include'
@@ -160,17 +153,13 @@ const Relatorios: React.FC = () => {
 
   const generatePDF = () => {
     const doc = new jsPDF();
-    
     doc.setFontSize(16);
     doc.text('Relatório de Execuções', 14, 20);
-    
     doc.setFontSize(12);
     doc.text(`${chartSize.label}`, 14, 30);
     doc.text(`Período: ${moment(startDate).format('DD/MM/YYYY')} - ${moment(endDate).format('DD/MM/YYYY')}`, 14, 40);
-
     const selectedAbbreviations = selectedRadios.map(radio => getRadioAbbreviation(radio.label));
     const headers = ['POS', 'TÍTULO', 'ARTISTA', ...selectedAbbreviations, 'TOTAL'];
-
     let currentPosition = 1;
     let previousTotal = -1;
     const tableData = reportData.map((item, index) => {
@@ -178,16 +167,16 @@ const Relatorios: React.FC = () => {
         currentPosition = index + 1;
       }
       previousTotal = item.total;
-      
       return [
         `${currentPosition}º`,
         item.title,
         item.artist,
-        ...selectedRadios.map(radio => item.executions[radio.value] || 0),
+        ...selectedRadios.map(radio =>
+          item.executions[radio.value] !== undefined ? item.executions[radio.value] : 0
+        ),
         item.total
       ];
     });
-
     (doc as any).autoTable({
       head: [headers],
       body: tableData.slice(0, parseInt(chartSize.value)),
@@ -208,16 +197,13 @@ const Relatorios: React.FC = () => {
         2: { cellWidth: 40 },
       },
     });
-
     const legendY = (doc as any).lastAutoTable.finalY + 20;
     doc.setFontSize(10);
     doc.text('Legenda:', 14, legendY);
-    
     selectedRadios.forEach((radio, index) => {
       const abbrev = getRadioAbbreviation(radio.label);
       doc.text(`${abbrev} (${radio.label})`, 14, legendY + 10 + (index * 6));
     });
-
     doc.save(`relatorio-${moment().format('YYYY-MM-DD')}.pdf`);
   };
 
@@ -247,7 +233,6 @@ const Relatorios: React.FC = () => {
       const params = new URLSearchParams();
       if (city) params.append('city', city);
       if (state) params.append('state', state);
-      
       const response = await fetch(`http://localhost:3001/api/radios/by-location?${params.toString()}`, { 
         headers,
         credentials: 'include'
@@ -266,38 +251,25 @@ const Relatorios: React.FC = () => {
 
   const handleGenerateReport = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Verifica se há cidade ou estado selecionado
     const hasLocationFilter = selectedCity || selectedState;
-
-    // Se não há filtro de localização, então rádios é obrigatório
     if (!hasLocationFilter && selectedRadios.length === 0) {
       alert('Selecione rádios ou um filtro de localização (cidade/estado)');
       return;
     }
-
     setLoading(true);
     try {
       const headers = await getAuthHeaders();
-      
-      // Se tiver filtro de localização, sempre busca as rádios novamente
-      // para garantir que temos os dados mais atualizados
       let radiosToUse = selectedRadios;
       if (hasLocationFilter) {
-        // Adiciona um delay maior para garantir que o DB está pronto
         await new Promise(resolve => setTimeout(resolve, 7000));
-        
         const locationRadios = await fetchRadiosByLocation(
           selectedCity?.value,
           selectedState?.value
         );
-
-        // Se não houver rádios selecionadas, usa todas as rádios da localização
         if (selectedRadios.length === 0) {
           radiosToUse = locationRadios;
           setSelectedRadios(locationRadios);
         } else {
-          // Se houver rádios selecionadas, filtra apenas as que existem na localização
           const validRadios = selectedRadios.filter(radio => 
             locationRadios.some((locRadio: { value: string; label: string }) => 
               locRadio.value === radio.value
@@ -306,24 +278,19 @@ const Relatorios: React.FC = () => {
           radiosToUse = validRadios;
           setSelectedRadios(validRadios);
         }
-
-        // Se não encontrou nenhuma rádio, mostra alerta e interrompe
         if (radiosToUse.length === 0) {
           setLoading(false);
           alert('Nenhuma rádio encontrada para a localização selecionada');
           return;
         }
       }
-
       const params = new URLSearchParams({
         startDate,
         endDate,
         limit: chartSize.value
       });
-
-      // Adiciona os filtros
       if (radiosToUse.length > 0) {
-        params.append('radios', radiosToUse.map(r => r.value).join(','));
+        params.append('radios', radiosToUse.map(r => r.value).join('||'));
       }
       if (selectedCity) {
         params.append('city', selectedCity.value);
@@ -331,10 +298,7 @@ const Relatorios: React.FC = () => {
       if (selectedState) {
         params.append('state', selectedState.value);
       }
-
-      // Adiciona um delay maior antes de buscar o relatório
       await new Promise(resolve => setTimeout(resolve, 5000));
-      
       const response = await fetch(`http://localhost:3001/api/report?${params.toString()}`, { 
         headers,
         credentials: 'include'
@@ -380,7 +344,6 @@ const Relatorios: React.FC = () => {
             />
           </div>
         </div>
-
         <div className="ranking-filter-row">
           <div className="ranking-filter-group">
             <label htmlFor="chart-size">Chart:</label>
@@ -394,7 +357,6 @@ const Relatorios: React.FC = () => {
             />
           </div>
         </div>
-
         <div className="ranking-filter-row-datetime">
           <div className="ranking-filter-group">
             <label htmlFor="date-start">Data Início:</label>
@@ -405,7 +367,6 @@ const Relatorios: React.FC = () => {
               onChange={(e) => setStartDate(e.target.value)}
             />
           </div>
-
           <div className="ranking-filter-group">
             <label htmlFor="date-end">Data Fim:</label>
             <input
@@ -416,7 +377,6 @@ const Relatorios: React.FC = () => {
             />
           </div>
         </div>
-
         <div className="ranking-filter-row">
           <div className="ranking-filter-group">
             <label htmlFor="city-select">Cidade:</label>
@@ -425,13 +385,11 @@ const Relatorios: React.FC = () => {
               options={citiesOptions}
               value={selectedCity}
               onChange={async (newValue) => {
-                setSelectedRadios([]); // Limpa a seleção de rádios
+                setSelectedRadios([]);
                 setSelectedCity(newValue as { value: string; label: string } | null);
-                
                 if (newValue) {
                   try {
                     setLoadingLocation(true);
-                    // Se houver estado selecionado, valida se a cidade pertence ao estado
                     if (selectedState) {
                       const isValid = await validateLocation(newValue.value, selectedState.value);
                       if (!isValid) {
@@ -440,11 +398,7 @@ const Relatorios: React.FC = () => {
                         return;
                       }
                     }
-
-                    // Adiciona um delay maior antes de buscar as rádios
                     await new Promise(resolve => setTimeout(resolve, 7000));
-                    
-                    // Busca as rádios da cidade
                     const radios = await fetchRadiosByLocation(newValue.value);
                     setSelectedRadios(radios);
                   } catch (error: any) {
@@ -465,7 +419,6 @@ const Relatorios: React.FC = () => {
             />
           </div>
         </div>
-
         <div className="ranking-filter-row">
           <div className="ranking-filter-group">
             <label htmlFor="state-select">Estado:</label>
@@ -474,13 +427,11 @@ const Relatorios: React.FC = () => {
               options={statesOptions}
               value={selectedState}
               onChange={async (newValue) => {
-                setSelectedRadios([]); // Limpa a seleção de rádios
+                setSelectedRadios([]);
                 setSelectedState(newValue as { value: string; label: string } | null);
-                
                 if (newValue) {
                   try {
                     setLoadingLocation(true);
-                    // Se houver cidade selecionada, valida se pertence ao estado
                     if (selectedCity) {
                       const isValid = await validateLocation(selectedCity.value, newValue.value);
                       if (!isValid) {
@@ -489,11 +440,7 @@ const Relatorios: React.FC = () => {
                         return;
                       }
                     }
-
-                    // Adiciona um delay maior antes de buscar as rádios
                     await new Promise(resolve => setTimeout(resolve, 7000));
-                    
-                    // Busca as rádios do estado
                     const radios = await fetchRadiosByLocation(undefined, newValue.value);
                     setSelectedRadios(radios);
                   } catch (error: any) {
@@ -514,7 +461,6 @@ const Relatorios: React.FC = () => {
             />
           </div>
         </div>
-
         <div className="ranking-filter-buttons">
           <button 
             className="ranking-btn-primary" 
@@ -532,7 +478,6 @@ const Relatorios: React.FC = () => {
           </button>
         </div>
       </div>
-
       {loading && (
         <div className="loading-indicator">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -541,7 +486,6 @@ const Relatorios: React.FC = () => {
           </p>
         </div>
       )}
-
       {reportData.length > 0 && (
         <div className="ranking-table-container mt-6">
           <div className="flex justify-between items-center mb-4">
