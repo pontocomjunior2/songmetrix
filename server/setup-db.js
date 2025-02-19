@@ -24,6 +24,18 @@ const pool = new Pool({
 
 async function setupDatabase() {
   try {
+    // Create the radios table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS radios (
+        id SERIAL PRIMARY KEY,
+        name text UNIQUE NOT NULL,
+        abbreviation varchar(3),
+        created_at timestamptz DEFAULT now(),
+        updated_at timestamptz DEFAULT now()
+      );
+    `);
+    console.log('Radios table created successfully');
+
     // Create the executions table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS executions (

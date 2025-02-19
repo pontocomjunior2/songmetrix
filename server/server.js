@@ -21,7 +21,13 @@ const app = express();
 app.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);
 
 // Middlewares regulares
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:5173', // Allow requests from the frontend
+  credentials: true, // Allow credentials to be included in requests
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // Middleware de autenticação básica (sem verificação de paid/admin)
@@ -631,18 +637,189 @@ function getGenreColor(genre) {
   return colors[genre] || '#6B7280'; // Cor padrão para gêneros não mapeados
 }
 
-app.get('/api/report', authenticateUser, async (req, res) => {
+// Rotas para cidades e estados
+app.get('/api/cities', authenticateUser, async (req, res) => {
   try {
-    const { startDate, endDate, radios, limit } = req.query;
+    const query = `
+      SELECT DISTINCT cidade as city
+      FROM music_log
+      WHERE cidade IS NOT NULL
+      ORDER BY cidade
+    `;
+
+    const result = await safeQuery(query);
+    const cities = result.rows.map(row => row.city);
+    res.json(cities);
+  } catch (error) {
+    console.error('GET /api/cities - Erro:', error);
+    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
+  }
+});
+
+app.get('/api/validate-location', authenticateUser, async (req, res) => {
+  try {
+    const { city, state } = req.query;
     
-    if (!startDate || !endDate || !radios || !limit) {
-      return res.status(400).json({ error: 'Parâmetros obrigatórios não fornecidos' });
+    if (!city || !state) {
+      return res.status(400).json({ error: 'Cidade e estado são obrigatórios' });
     }
 
-    const radiosList = radios.split(',');
-    const params = [startDate, endDate, radiosList, parseInt(limit)];
+    const query = `
+      SELECT COUNT(*) as count
+      FROM (
+        SELECT DISTINCT cidade, estado
+        FROM music_log
+        WHERE cidade = $1 AND estado = $2
+      ) as location
+    `;
+    
+    const result = await safeQuery(query, [city, state]);
+    const isValid = result.rows[0].count > 0;
+    
+    res.json({ isValid });
+  } catch (error) {
+    console.error('GET /api/validate-location - Erro:', error);
+    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
+  }
+});
 
-    const result = await safeQuery(reportQuery, params);
+app.get('/api/radios/by-location', authenticateUser, async (req, res) => {
+  try {
+    const { city, state } = req.query;
+    
+    if (!city && !state) {
+      return res.status(400).json({ error: 'Cidade ou estado é obrigatório' });
+    }
+
+    let query = `
+      SELECT DISTINCT name
+      FROM music_log
+      WHERE 1=1
+    `;
+    
+    const params = [];
+    let paramCount = 1;
+
+    if (city) {
+      query += ` AND cidade = $${paramCount}`;
+      params.push(city);
+      paramCount++;
+    }
+
+    if (state) {
+      query += ` AND estado = $${paramCount}`;
+      params.push(state);
+      paramCount++;
+    }
+
+    query += ` ORDER BY name`;
+
+    const result = await safeQuery(query, params);
+    const radios = result.rows.map(row => row.name);
+    res.json(radios);
+  } catch (error) {
+    console.error('GET /api/radios/by-location - Erro:', error);
+    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
+  }
+});
+
+app.get('/api/states', authenticateUser, async (req, res) => {
+  try {
+    const query = `
+      SELECT DISTINCT estado as state
+      FROM music_log
+      WHERE estado IS NOT NULL
+      ORDER BY estado
+    `;
+
+    const result = await safeQuery(query);
+    const states = result.rows.map(row => row.state);
+    res.json(states);
+  } catch (error) {
+    console.error('GET /api/states - Erro:', error);
+    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
+  }
+});
+
+app.get('/api/report', authenticateUser, async (req, res) => {
+  try {
+    const { startDate, endDate, radios, limit, city, state } = req.query;
+    
+    // Verifica se pelo menos data início e fim foram fornecidos
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'Período (data início e fim) é obrigatório' });
+    }
+
+    // Verifica se há cidade ou estado selecionado
+    const hasLocationFilter = city || state;
+
+    // Se não há filtro de localização, então rádios é obrigatório
+    if (!hasLocationFilter && !radios) {
+      return res.status(400).json({ error: 'Selecione rádios ou um filtro de localização (cidade/estado)' });
+    }
+
+    // Prepara a query base
+    let query = `
+      WITH filtered_logs AS (
+        SELECT 
+          song_title as title,
+          artist,
+          name,
+          date
+        FROM music_log
+        WHERE date BETWEEN $1 AND $2
+    `;
+
+    const params = [startDate, endDate];
+    let paramCount = 2;
+
+    // Adiciona filtros de localização se fornecidos
+    if (city) {
+      query += ` AND cidade = $${++paramCount}`;
+      params.push(city);
+    }
+    if (state) {
+      query += ` AND estado = $${++paramCount}`;
+      params.push(state);
+    }
+
+    // Adiciona filtro de rádios se fornecido
+    if (radios) {
+      const radiosList = radios.split(',');
+      query += ` AND name = ANY($${++paramCount}::text[])`;
+      params.push(radiosList);
+    }
+
+    // Completa a query com a contagem de execuções
+    query += `
+      ),
+      executions_by_radio AS (
+        SELECT 
+          title,
+          artist,
+          name,
+          COUNT(*) as count
+        FROM filtered_logs
+        GROUP BY title, artist, name
+      ),
+      total_executions AS (
+        SELECT 
+          title,
+          artist,
+          jsonb_object_agg(name, count) as executions,
+          SUM(count) as total
+        FROM executions_by_radio
+        GROUP BY title, artist
+      )
+      SELECT *
+      FROM total_executions
+      ORDER BY total DESC
+      LIMIT $${++paramCount}
+    `;
+
+    params.push(parseInt(limit || '100'));
+
+    const result = await safeQuery(query, params);
     res.json(result.rows);
   } catch (error) {
     console.error('GET /api/report - Erro:', error);

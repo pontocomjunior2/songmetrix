@@ -13,6 +13,7 @@ import Ranking from './components/Ranking';
 import RealTime from './components/RealTime';
 import Radios from './components/Radios';
 import UserList from './components/Admin/UserList';
+import RadioAbbreviations from './components/Admin/RadioAbbreviations';
 import PaymentSuccess from './components/Payment/PaymentSuccess';
 import PaymentCanceled from './components/Payment/PaymentCanceled';
 import Relatorios from './components/Relatorios';
@@ -49,6 +50,11 @@ function App() {
             <Route path="admin/users" element={
               <AdminRoute>
                 <UserList />
+              </AdminRoute>
+            } />
+            <Route path="admin/abbreviations" element={
+              <AdminRoute>
+                <RadioAbbreviations />
               </AdminRoute>
             } />
           </Route>
