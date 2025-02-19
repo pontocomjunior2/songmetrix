@@ -39,7 +39,6 @@ export default function Sidebar({ currentView, onNavigate }: SidebarProps) {
     }
   ];
 
-  // Adiciona os menus de administração apenas para administradores
   if (userStatus === UserStatus.ADMIN) {
     menuItems.push(
       {
@@ -56,29 +55,50 @@ export default function Sidebar({ currentView, onNavigate }: SidebarProps) {
   }
 
   return (
-    <aside className="fixed top-0 left-0 w-64 h-screen bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">
-      <div className="h-16 flex items-center px-6 border-b border-gray-200 dark:border-gray-700">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-white">SongMetrix</h1>
+    <div className="w-full flex flex-col h-screen">
+      {/* Logo e Slogan */}
+      <div className="relative z-20 p-6 flex flex-col items-center">
+        <img
+          src="/logo-1280x256.png"
+          alt="SongMetrix"
+          className="w-48 h-auto mb-3"
+        />
+        <p className="text-white/90 text-sm font-medium text-center">
+          Inteligência musical para sua rádio
+        </p>
       </div>
-      <nav className="p-4">
+
+      {/* Menu de Navegação */}
+      <nav className="relative z-20 flex-1 px-4 pb-4">
         <ul className="space-y-2">
           {menuItems.map((item) => (
             <li key={item.view}>
               <button
                 onClick={() => onNavigate(item.view)}
-                className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
                   currentView === item.view
-                    ? 'bg-blue-50 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                    ? 'bg-white/10 text-white font-medium'
+                    : 'text-white/70 hover:bg-white/5 hover:text-white'
                 }`}
               >
-                <item.icon className="w-5 h-5" />
+                <item.icon className={`w-5 h-5 ${
+                  currentView === item.view
+                    ? 'text-white'
+                    : 'text-white/70'
+                }`} />
                 <span>{item.name}</span>
               </button>
             </li>
           ))}
         </ul>
       </nav>
-    </aside>
+
+      {/* Padrão de Fundo */}
+      <div className="absolute inset-0 z-10 bg-[radial-gradient(circle_at_30%_50%,rgba(255,255,255,0.05)_0%,rgba(255,255,255,0)_100%)]"></div>
+      <div className="absolute inset-0 z-10" style={{
+        backgroundImage: `radial-gradient(circle at 50% 50%, rgba(255,255,255,0.05) 1px, transparent 1px)`,
+        backgroundSize: '30px 30px'
+      }}></div>
+    </div>
   );
 }
