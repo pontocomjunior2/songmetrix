@@ -34,6 +34,7 @@ const Relatorios: React.FC = () => {
   const [selectedRadios, setSelectedRadios] = useState<Array<{ value: string; label: string }>>([]);
   const [radiosOptions, setRadiosOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [radioAbbreviations, setRadioAbbreviations] = useState<{ [key: string]: string }>({});
+  const [reportGenerated, setReportGenerated] = useState(false);
   
   const getRadioAbbreviation = (radioName: string): string => {
     return radioAbbreviations[radioName] || radioName.substring(0, 3).toUpperCase();
@@ -47,6 +48,13 @@ const Relatorios: React.FC = () => {
   const [selectedState, setSelectedState] = useState<{ value: string; label: string } | null>(null);
   const [citiesOptions, setCitiesOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [statesOptions, setStatesOptions] = useState<Array<{ value: string; label: string }>>([]);
+
+  const clearReportData = () => {
+    if (reportGenerated) {
+      setReportData([]);
+      setReportGenerated(false);
+    }
+  };
 
   const getAuthHeaders = async () => {
     try {
@@ -306,6 +314,7 @@ const Relatorios: React.FC = () => {
       if (!response.ok) throw new Error('Failed to fetch report data');
       const data = await response.json();
       setReportData(data);
+      setReportGenerated(true);
     } catch (error: any) {
       console.error('Error generating report:', error);
       if (error?.code === 'auth/requires-recent-login') {
@@ -337,7 +346,10 @@ const Relatorios: React.FC = () => {
               options={radiosOptions}
               isMulti
               value={selectedRadios}
-              onChange={(newValue) => setSelectedRadios(newValue as { value: string; label: string }[])}
+              onChange={(newValue) => {
+                clearReportData();
+                setSelectedRadios(newValue as { value: string; label: string }[]);
+              }}
               placeholder="Selecione as rádios"
               className="react-select-container"
               classNamePrefix="react-select"
@@ -351,7 +363,10 @@ const Relatorios: React.FC = () => {
               id="chart-size"
               options={chartSizeOptions}
               value={chartSize}
-              onChange={(newValue) => setChartSize(newValue as { value: string; label: string })}
+              onChange={(newValue) => {
+                clearReportData();
+                setChartSize(newValue as { value: string; label: string });
+              }}
               className="react-select-container"
               classNamePrefix="react-select"
             />
@@ -364,7 +379,10 @@ const Relatorios: React.FC = () => {
               type="date"
               id="date-start"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => {
+                clearReportData();
+                setStartDate(e.target.value);
+              }}
             />
           </div>
           <div className="ranking-filter-group">
@@ -373,7 +391,10 @@ const Relatorios: React.FC = () => {
               type="date"
               id="date-end"
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(e) => {
+                clearReportData();
+                setEndDate(e.target.value);
+              }}
             />
           </div>
         </div>
@@ -385,6 +406,7 @@ const Relatorios: React.FC = () => {
               options={citiesOptions}
               value={selectedCity}
               onChange={async (newValue) => {
+                clearReportData();
                 setSelectedRadios([]);
                 setSelectedCity(newValue as { value: string; label: string } | null);
                 if (newValue) {
@@ -427,6 +449,7 @@ const Relatorios: React.FC = () => {
               options={statesOptions}
               value={selectedState}
               onChange={async (newValue) => {
+                clearReportData();
                 setSelectedRadios([]);
                 setSelectedState(newValue as { value: string; label: string } | null);
                 if (newValue) {
