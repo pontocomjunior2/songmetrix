@@ -4,7 +4,7 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
-  darkMode: 'class', // Habilita o dark mode baseado em classes
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
@@ -19,6 +19,18 @@ export default {
           700: '#0369a1',
           800: '#075985',
           900: '#0c4a6e',
+        },
+        navy: {
+          50: '#f0f4ff',
+          100: '#e0e9ff',
+          200: '#c7d5fe',
+          300: '#a4bafd',
+          400: '#8098fb',
+          500: '#6374f7',
+          600: '#1e4db7', // Cor do gradiente to
+          700: '#1e3f9f', // Cor do gradiente via
+          800: '#1e3a8a', // Cor do gradiente from
+          900: '#172554',
         },
       },
       animation: {
