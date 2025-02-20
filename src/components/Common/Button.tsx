@@ -9,9 +9,9 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantStyles = {
-  primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500',
+  primary: 'bg-[#1a3891] text-white hover:bg-[#162d7a] focus:ring-[#122463]',
   secondary: 'bg-gray-200 text-gray-700 hover:bg-gray-300 focus:ring-gray-400',
-  outline: 'border border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-blue-500',
+  outline: 'border border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-[#1a3891]',
   danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
 };
 
@@ -39,7 +39,7 @@ export default function Button({
         ${sizeStyles[size]}
         ${fullWidth ? 'w-full' : ''}
         inline-flex items-center justify-center
-        font-medium rounded-md
+        font-medium rounded-lg
         focus:outline-none focus:ring-2 focus:ring-offset-2
         transition-colors duration-200
         disabled:opacity-50 disabled:cursor-not-allowed
