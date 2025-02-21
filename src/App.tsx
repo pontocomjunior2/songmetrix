@@ -42,7 +42,11 @@ function App() {
             </ProtectedRoute>
           }>
             <Route index element={<Navigate to="/dashboard" />} />
-            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="dashboard" element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            } />
             <Route path="ranking" element={<Ranking />} />
             <Route path="realtime" element={<RealTime />} />
             <Route path="radios" element={<Radios />} />
