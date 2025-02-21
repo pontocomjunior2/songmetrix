@@ -1,275 +1,368 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { 
-  User,
-  GoogleAuthProvider,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-  createUserWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged,
-  browserSessionPersistence,
-  setPersistence,
-  deleteUser
-} from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
-import { 
-  auth, 
-  db, 
-  UserStatus,
-  refreshAuthToken,
-  ensureValidToken
-} from '../lib/firebase';
-import { UserStatusType, User as UserType } from '../types/components';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { User, AuthError } from '@supabase/supabase-js';
+import { PostgrestError } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase-client';
+import { UserStatusType } from '../lib/auth';
+import { useNavigate } from 'react-router-dom';
+
+// Custom error type that includes both Auth and Postgrest errors
+class CustomAuthError extends AuthError {
+  constructor(message: string) {
+    super('Authentication error');
+    this.name = 'AuthError';
+    this.message = message;
+    this.__isAuthError = true;
+  }
+}
+
+interface DbUser {
+  id: string;
+  email: string;
+  status: UserStatusType;
+  created_at: string;
+  updated_at: string;
+  favorite_radios?: string[];
+}
 
 interface AuthContextType {
   currentUser: User | null;
   userStatus: UserStatusType | null;
   loading: boolean;
-  signInWithEmail: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
-  signUpWithEmail: (email: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
-  updateUserStatus: (uid: string, status: UserStatusType) => Promise<void>;
-  getAllUsers: () => Promise<UserType[]>;
-  removeUser: (uid: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<{ error: CustomAuthError | null }>;
+  signUp: (email: string, password: string) => Promise<{ error: AuthError | null }>;
+  signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<{ error: AuthError | null }>;
+  getAllUsers: () => Promise<DbUser[]>;
+  updateUserStatus: (userId: string, newStatus: UserStatusType) => Promise<void>;
+  removeUser: (userId: string) => Promise<void>;
+  updateFavoriteRadios: (radios: string[]) => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | null>(null);
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
-
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userStatus, setUserStatus] = useState<UserStatusType | null>(null);
   const [loading, setLoading] = useState(true);
-
-  // Function to check user status
-  const checkUserStatus = async (user: User) => {
-    try {
-      console.log('Verificando status do usuário:', user.email);
-      
-      await refreshAuthToken();
-      
-      const currentToken = await user.getIdTokenResult(true);
-      console.log('Claims atuais:', {
-        claims: JSON.stringify(currentToken.claims, null, 2),
-        isAdmin: currentToken.claims.admin === true
-      });
-
-      const userRef = doc(db, 'users', user.uid);
-      const docSnap = await getDoc(userRef);
-      
-      if (docSnap.exists()) {
-        const userData = docSnap.data();
-        console.log('Dados do usuário no Firestore:', userData);
-        
-        const updateData: any = {};
-        if (user.photoURL && user.photoURL !== userData.photoURL) {
-          updateData.photoURL = user.photoURL;
-        }
-        if (user.displayName && user.displayName !== userData.displayName) {
-          updateData.displayName = user.displayName;
-        }
-        if (Object.keys(updateData).length > 0) {
-          updateData.updatedAt = new Date().toISOString();
-          await updateDoc(userRef, updateData);
-        }
-        
-        if (userData.status === UserStatus.ADMIN) {
-          if (!currentToken.claims.admin) {
-            console.log('Usuário é ADMIN no Firestore, forçando atualização do token...');
-            await auth.currentUser?.getIdToken(true);
-            await refreshAuthToken();
-            const newToken = await user.getIdTokenResult(true);
-            if (newToken.claims.admin) {
-              setUserStatus(UserStatus.ADMIN);
-            } else {
-              console.warn('Usuário é ADMIN no Firestore mas não tem a claim admin no token!');
-              setUserStatus(UserStatus.INATIVO);
-            }
-          } else {
-            setUserStatus(UserStatus.ADMIN);
-          }
-        } else if (userData.status === UserStatus.ATIVO) {
-          setUserStatus(UserStatus.ATIVO);
-          if (currentToken.claims.admin) {
-            await auth.currentUser?.getIdToken(true);
-            await refreshAuthToken();
-          }
-        } else {
-          setUserStatus(UserStatus.INATIVO);
-          if (currentToken.claims.admin) {
-            await auth.currentUser?.getIdToken(true);
-            await refreshAuthToken();
-          }
-        }
-      } else {
-        console.log('Documento do usuário não existe, criando...');
-        await setDoc(userRef, {
-          uid: user.uid,
-          email: user.email,
-          displayName: user.displayName,
-          photoURL: user.photoURL,
-          status: UserStatus.INATIVO,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        });
-        setUserStatus(UserStatus.INATIVO);
-      }
-    } catch (error) {
-      console.error('Erro ao verificar status:', error);
-      setUserStatus(UserStatus.INATIVO);
-    }
-  };
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const handleBeforeUnload = () => {
+      sessionStorage.clear();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    // Verificar sessão inicial
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      console.log('Initial session check:', session);
+      const user = session?.user ?? null;
+      
       if (user) {
-        setCurrentUser(user);
-        await checkUserStatus(user);
+        const userStatus = user.user_metadata?.status;
+        console.log('User status from metadata:', userStatus);
+        
+        if (userStatus === 'ADMIN' || userStatus === 'ATIVO') {
+          setCurrentUser(user);
+          setUserStatus(userStatus);
+        } else {
+          console.log('User not active or admin, logging out');
+          await supabase.auth.signOut();
+          setCurrentUser(null);
+          setUserStatus(null);
+        }
       } else {
         setCurrentUser(null);
         setUserStatus(null);
       }
+      
       setLoading(false);
     });
 
-    return unsubscribe;
+    // Configurar listener para mudanças de auth
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state change:', { event, session });
+      const user = session?.user ?? null;
+      
+      if (user) {
+        const userStatus = user.user_metadata?.status;
+        console.log('User status from metadata:', userStatus);
+        
+        if (userStatus === 'ADMIN' || userStatus === 'ATIVO') {
+          setCurrentUser(user);
+          setUserStatus(userStatus);
+        } else {
+          console.log('User not active or admin, logging out');
+          await supabase.auth.signOut();
+          setCurrentUser(null);
+          setUserStatus(null);
+        }
+      } else {
+        setCurrentUser(null);
+        setUserStatus(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const signInWithEmail = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string) => {
+    console.log('Attempting sign in for:', email);
     try {
-      const result = await signInWithEmailAndPassword(auth, email, password);
-      await refreshAuthToken();
-      await checkUserStatus(result.user);
-    } catch (error: any) {
-      if (error.code === 'auth/invalid-credential') {
-        throw new Error('Email ou senha inválidos');
-      }
-      throw error;
-    }
-  };
-
-  const signInWithGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    const result = await signInWithPopup(auth, provider);
-    await refreshAuthToken();
-    await checkUserStatus(result.user);
-  };
-
-  const signUpWithEmail = async (email: string, password: string) => {
-    const result = await createUserWithEmailAndPassword(auth, email, password);
-    await refreshAuthToken();
-    
-    const userRef = doc(db, 'users', result.user.uid);
-    await setDoc(userRef, {
-      uid: result.user.uid,
-      email,
-      status: UserStatus.INATIVO,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    });
-    
-    await refreshAuthToken();
-    await checkUserStatus(result.user);
-  };
-
-  const updateUserStatus = async (uid: string, status: UserStatusType) => {
-    try {
-      const userRef = doc(db, 'users', uid);
-      await updateDoc(userRef, {
-        status,
-        updatedAt: new Date().toISOString()
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
       
-      if (currentUser?.uid === uid) {
-        setUserStatus(status);
-        if (status === UserStatus.ADMIN) {
-          await refreshAuthToken();
+      if (error) {
+        console.error('Sign in error:', error);
+        return { error };
+      }
+
+      if (!data.user) {
+        console.error('No user data returned');
+        return { error: new Error('No user data returned') as AuthError };
+      }
+
+      const userStatus = data.user.user_metadata?.status;
+      console.log('User status from metadata:', userStatus);
+
+      if (!userStatus) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
+
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('status')
+            .eq('id', data.user.id)
+            .single();
+
+          if (userError || !userData) {
+            console.error('Error fetching user status:', userError);
+            await supabase.auth.signOut();
+            return { error: new CustomAuthError('Error fetching user status') };
+          }
+
+          const status = userData.status;
+          console.log('User status from database:', status);
+
+          if (!status || (status !== 'ADMIN' && status !== 'ATIVO')) {
+            console.error('User not active or admin');
+            await supabase.auth.signOut();
+            return { error: new CustomAuthError('Usuário inativo. Entre em contato com o administrador.') };
+          }
+
+          await supabase.auth.updateUser({
+            data: { status }
+          });
+
+          setCurrentUser(data.user);
+          setUserStatus(status as UserStatusType);
+
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          // Always navigate to dashboard after successful login
+          navigate('/dashboard');
+          return { error: null };
+        } catch (error) {
+          console.error('Error checking user status:', error);
+          await supabase.auth.signOut();
+          return { error: new CustomAuthError('Error checking user status') };
         }
+      } else {
+        if (userStatus !== 'ADMIN' && userStatus !== 'ATIVO') {
+          console.error('User not active or admin');
+          await supabase.auth.signOut();
+          return { error: new CustomAuthError('Usuário inativo. Entre em contato com o administrador.') };
+        }
+
+        setCurrentUser(data.user);
+        setUserStatus(userStatus);
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Always navigate to dashboard after successful login
+        navigate('/dashboard');
+        return { error: null };
       }
     } catch (error) {
-      console.error('Erro ao atualizar status:', error);
-      throw error;
+      console.error('Unexpected error during sign in:', error);
+      return { error: error as AuthError };
     }
   };
 
-  const getAllUsers = async (): Promise<UserType[]> => {
+  const signUp = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { status: 'INATIVO' }
+      }
+    });
+    return { error };
+  };
+
+  const signOut = async () => {
+    setCurrentUser(null);
+    setUserStatus(null);
+    await supabase.auth.signOut();
+    navigate('/login');
+  };
+
+  const resetPassword = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${import.meta.env.VITE_APP_URL}/update-password`,
+    });
+    return { error };
+  };
+
+  const getAllUsers = async () => {
     try {
-      if (!auth.currentUser) {
-        throw new Error('Usuário não autenticado');
-      }
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
 
-      await refreshAuthToken();
-      const tokenResult = await auth.currentUser.getIdTokenResult(true);
+      const isAdmin = user.user_metadata?.status === 'ADMIN';
 
-      if (!tokenResult.claims.admin) {
+      if (!isAdmin) {
         throw new Error('Usuário não tem permissão de administrador');
       }
 
-      const userRef = doc(db, 'users', auth.currentUser.uid);
-      const userDoc = await getDoc(userRef);
-      
-      if (!userDoc.exists() || userDoc.data().status !== UserStatus.ADMIN) {
-        throw new Error('Usuário não tem permissão de administrador');
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching users:', error);
+        throw error;
       }
 
-      const usersRef = collection(db, 'users');
-      const snapshot = await getDocs(usersRef);
-      
-      return snapshot.docs.map((doc) => ({
-        ...doc.data(),
-        uid: doc.id
-      })) as UserType[];
+      return data || [];
     } catch (error) {
-      console.error('Erro ao buscar usuários:', error);
+      console.error('Error in getAllUsers:', error);
       throw error;
     }
   };
 
-  const removeUser = async (uid: string) => {
+  const updateUserStatus = async (userId: string, newStatus: UserStatusType) => {
     try {
-      if (!auth.currentUser) {
-        throw new Error('Usuário não autenticado');
-      }
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
 
-      const tokenResult = await auth.currentUser.getIdTokenResult(true);
-      if (!tokenResult.claims.admin) {
+      const isAdmin = user.user_metadata?.status === 'ADMIN';
+
+      if (!isAdmin) {
         throw new Error('Usuário não tem permissão de administrador');
       }
 
-      // Remove o documento do usuário no Firestore
-      const userRef = doc(db, 'users', uid);
-      await deleteDoc(userRef);
+      // Update user status in the database
+      const { error: dbError } = await supabase
+        .from('users')
+        .update({ 
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId);
 
-      console.log('Usuário removido com sucesso');
+      if (dbError) {
+        console.error('Error updating user status:', dbError);
+        throw dbError;
+      }
+
+      // Get the user's current metadata
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('email')
+        .eq('id', userId)
+        .single();
+
+      if (userError) {
+        console.error('Error fetching user data:', userError);
+        throw userError;
+      }
+
+      // Update user metadata through the API
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/users/update-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        },
+        body: JSON.stringify({
+          userId,
+          status: newStatus
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update user metadata');
+      }
+
     } catch (error) {
-      console.error('Erro ao remover usuário:', error);
+      console.error('Error in updateUserStatus:', error);
       throw error;
     }
   };
 
-  const logout = async () => {
-    await signOut(auth);
+  const removeUser = async (userId: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
+      const isAdmin = user.user_metadata?.status === 'ADMIN';
+
+      if (!isAdmin) {
+        throw new Error('Usuário não tem permissão de administrador');
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/users/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        },
+        body: JSON.stringify({ userId })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete user');
+      }
+
+    } catch (error) {
+      console.error('Error in removeUser:', error);
+      throw error;
+    }
+  };
+
+  const updateFavoriteRadios = async (radios: string[]) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await supabase.auth.updateUser({
+      data: {
+        ...user.user_metadata,
+        favorite_radios: radios
+      }
+    });
+
+    if (error) throw error;
   };
 
   const value = {
     currentUser,
     userStatus,
     loading,
-    signInWithEmail,
-    signInWithGoogle,
-    signUpWithEmail,
-    logout,
-    updateUserStatus,
+    signIn,
+    signUp,
+    signOut,
+    resetPassword,
     getAllUsers,
-    removeUser
+    updateUserStatus,
+    removeUser,
+    updateFavoriteRadios
   };
 
   return (
@@ -277,4 +370,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       {!loading && children}
     </AuthContext.Provider>
   );
-};
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+}
