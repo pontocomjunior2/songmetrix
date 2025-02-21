@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { format, parseISO } from 'date-fns';
 import { Search, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase-client';
 import FavoriteRadios from './FavoriteRadios';
 import { RadioStatus } from '../types/components';
 
@@ -62,7 +63,8 @@ export default function RealTime() {
   }, [currentUser]);
 
   const getAuthHeaders = async () => {
-    const token = await currentUser?.getIdToken();
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
     return {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',

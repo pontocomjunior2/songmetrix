@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { supabase } from '../../lib/supabase-client';
 import FavoriteRadios from '../FavoriteRadios';
 import { Loader2 } from 'lucide-react';
 import { RadioStatus } from '../../types/components';
@@ -15,27 +14,13 @@ export default function FirstAccessRoute() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const checkFavorites = async () => {
+    const checkFavorites = () => {
       if (!currentUser) return;
 
       try {
-        const token = await currentUser.getIdToken();
-        const response = await fetch('/api/radios/status', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-
-        if (response.ok) {
-          const data: RadioStatus[] = await response.json();
-          const favoriteRadios = data.filter(radio => radio.isFavorite);
-          setHasFavorites(favoriteRadios.length > 0);
-        } else if (response.status === 403) {
-          // Se receber 403, ainda permitimos continuar para selecionar favoritas
-          setHasFavorites(false);
-        } else {
-          throw new Error('Falha ao verificar rádios favoritas');
-        }
+        // Check favorite radios directly from user metadata
+        const favoriteRadios = currentUser.user_metadata?.favorite_radios || [];
+        setHasFavorites(favoriteRadios.length > 0);
       } catch (error) {
         console.error('Erro ao verificar rádios favoritas:', error);
         setError('Erro ao verificar rádios favoritas. Por favor, tente novamente.');
@@ -63,29 +48,18 @@ export default function FirstAccessRoute() {
     return <Navigate to="/dashboard" />;
   }
 
+  const { updateFavoriteRadios } = useAuth();
+
   const handleSaveFavorites = async (selectedRadios: string[]) => {
     if (!currentUser) return;
 
     try {
       setError('');
-      const token = await currentUser.getIdToken();
       
-      // Salvar cada rádio favorita
-      const promises = selectedRadios.map(radio => 
-        fetch('/api/radios/favorite', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            radioName: radio,
-            favorite: true
-          })
-        })
-      );
+      // Update favorite radios in user metadata
+      await updateFavoriteRadios(selectedRadios);
 
-      await Promise.all(promises);
+      // Navigate to dashboard
       navigate('/dashboard');
     } catch (error) {
       console.error('Erro ao salvar rádios favoritas:', error);

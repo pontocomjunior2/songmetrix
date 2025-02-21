@@ -162,7 +162,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           await new Promise(resolve => setTimeout(resolve, 100));
           
-          // Always navigate to dashboard after successful login
           navigate('/dashboard');
           return { error: null };
         } catch (error) {
@@ -182,7 +181,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         await new Promise(resolve => setTimeout(resolve, 100));
         
-        // Always navigate to dashboard after successful login
         navigate('/dashboard');
         return { error: null };
       }
@@ -312,24 +310,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!user) throw new Error('Usuário não autenticado');
 
       const isAdmin = user.user_metadata?.status === 'ADMIN';
-
       if (!isAdmin) {
         throw new Error('Usuário não tem permissão de administrador');
       }
 
-      const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch('/api/users/delete', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`
-        },
-        body: JSON.stringify({ userId })
+      // Call the stored procedure to delete the user
+      const { error } = await supabase.rpc('delete_user_admin', {
+        user_id: userId
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to delete user');
+      if (error) {
+        console.error('Error deleting user:', error);
+        throw new Error('Erro ao remover usuário');
       }
+
+      // Refresh the users list to update the UI
+      await supabase
+        .from('users')
+        .select()
+        .limit(1)
+        .single();
 
     } catch (error) {
       console.error('Error in removeUser:', error);

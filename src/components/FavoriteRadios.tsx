@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 import { RadioStatus } from '../types/components';
+import { supabase } from '../lib/supabase-client';
 
 interface FavoriteRadiosProps {
   onSave: (selectedRadios: string[]) => void;
 }
 
 const FavoriteRadios: React.FC<FavoriteRadiosProps> = ({ onSave }) => {
-  const { currentUser } = useAuth();
+  const { currentUser, updateFavoriteRadios } = useAuth();
   const [radios, setRadios] = useState<RadioStatus[]>([]);
   const [selectedRadios, setSelectedRadios] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,7 +28,8 @@ const FavoriteRadios: React.FC<FavoriteRadiosProps> = ({ onSave }) => {
       setLoading(true);
       setError('');
       
-      const token = await currentUser?.getIdToken(true); // Forçar atualização do token
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
       const response = await fetch('/api/radios/status', {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -84,6 +86,11 @@ const FavoriteRadios: React.FC<FavoriteRadiosProps> = ({ onSave }) => {
     try {
       setSaving(true);
       setError('');
+      
+      // Update favorite radios in user metadata
+      await updateFavoriteRadios(selectedRadios);
+
+      // Call the parent's onSave callback to update UI
       await onSave(selectedRadios);
     } catch (error) {
       console.error('Erro ao salvar rádios favoritas:', error);

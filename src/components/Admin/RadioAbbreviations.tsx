@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase-client';
 import { Loader2 } from 'lucide-react';
 
 interface RadioAbbreviation {
@@ -16,7 +17,8 @@ export default function RadioAbbreviations() {
   const [newAbbreviation, setNewAbbreviation] = useState('');
 
   const getAuthHeaders = async () => {
-    const token = await currentUser?.getIdToken();
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
     return {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',

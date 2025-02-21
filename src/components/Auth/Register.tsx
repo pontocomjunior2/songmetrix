@@ -5,6 +5,7 @@ import { EmailInput, PasswordInput } from '../Common/Input';
 import { PrimaryButton } from '../Common/Button';
 import { ErrorAlert } from '../Common/Alert';
 import Loading from '../Common/Loading';
+import { supabase } from '../../lib/supabase-client';
 
 export default function Register() {
   const [email, setEmail] = useState('');
@@ -12,7 +13,7 @@ export default function Register() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signUpWithEmail } = useAuth();
+  const { signUp } = useAuth();
   const navigate = useNavigate();
 
   const validatePassword = (password: string): boolean => {
@@ -37,11 +38,61 @@ export default function Register() {
     try {
       setError('');
       setLoading(true);
-      await signUpWithEmail(email, password);
-      navigate('/pending-approval');
-    } catch (error) {
+
+      // Sign up with Supabase Auth
+      const { data: { user }, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/pending-approval`,
+          data: {
+            status: 'INATIVO' // Set initial status in user metadata
+          }
+        }
+      });
+
+      if (signUpError) throw signUpError;
+      if (!user) throw new Error('No user data after signup');
+
+      // Create user record in public.users table
+      const { error: insertError } = await supabase
+        .from('users')
+        .insert({
+          id: user.id,
+          email: user.email,
+          status: 'INATIVO', // New users start as inactive
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+
+      if (insertError) {
+        console.error('Error creating user profile:', insertError);
+        // Even if there's an error creating the profile, the auth user was created
+        // So we should still show the email confirmation message
+      }
+
+      // Sign out the user and redirect to pending approval
+      await supabase.auth.signOut();
+      
+      navigate('/pending-approval', { 
+        state: { 
+          message: 'Por favor, verifique seu email para confirmar seu cadastro. Após a confirmação, nosso atendimento entrará em contato.' 
+        } 
+      });
+
+    } catch (error: any) {
       console.error('Erro no registro:', error);
-      setError('Falha ao criar conta. Por favor, tente novamente.');
+      let errorMessage = 'Falha ao criar conta. Por favor, tente novamente.';
+
+      if (error.message.includes('already registered')) {
+        errorMessage = 'Este email já está registrado.';
+      } else if (error.message.includes('valid email')) {
+        errorMessage = 'Por favor, forneça um email válido.';
+      } else if (error.message.includes('weak password')) {
+        errorMessage = 'A senha fornecida é muito fraca.';
+      }
+
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -52,26 +103,44 @@ export default function Register() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow-lg">
-        <div>
+    <div className="min-h-screen flex">
+      {/* Lado Esquerdo - Logo e Slogan */}
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-[#122463] via-[#162d7a] to-[#1a3891] items-center justify-center p-12 relative overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,rgba(255,255,255,0.1)_0%,rgba(255,255,255,0)_100%)]"></div>
+        <div className="absolute inset-0 opacity-20" style={{
+          backgroundImage: `radial-gradient(circle at 50% 50%, rgba(255,255,255,0.2) 1px, transparent 1px)`,
+          backgroundSize: '20px 20px'
+        }}></div>
+        <div className="max-w-lg relative z-10">
           <img
-            className="mx-auto h-12 w-auto"
-            src="/logo.svg"
+            src="/logo-1280x256.png"
             alt="SongMetrix"
+            className="w-full h-auto mb-8"
           />
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Criar nova conta
+          <h2 className="text-3xl font-bold text-white mb-4">
+            Inteligência musical para sua rádio
           </h2>
         </div>
+      </div>
 
-        {error && (
-          <ErrorAlert message={error} onClose={() => setError('')} />
-        )}
+      {/* Lado Direito - Formulário de Registro */}
+      <div className="flex-1 flex items-center justify-center p-8">
+        <div className="max-w-md w-full space-y-6">
+          <div className="text-center">
+            <h2 className="text-3xl font-bold text-gray-900">
+              Criar nova conta
+            </h2>
+            <p className="mt-2 text-sm text-gray-600">
+              Preencha os dados abaixo para se registrar
+            </p>
+          </div>
 
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="rounded-md shadow-sm -space-y-px">
-            <div className="mb-4">
+          {error && (
+            <ErrorAlert message={error} onClose={() => setError('')} />
+          )}
+
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            <div>
               <EmailInput
                 id="email"
                 value={email}
@@ -80,7 +149,7 @@ export default function Register() {
                 required
               />
             </div>
-            <div className="mb-4">
+            <div>
               <PasswordInput
                 id="password"
                 value={password}
@@ -98,35 +167,35 @@ export default function Register() {
                 required
               />
             </div>
-          </div>
 
-          <div>
-            <PrimaryButton
-              type="submit"
-              fullWidth
-              isLoading={loading}
+            <div>
+              <PrimaryButton
+                type="submit"
+                fullWidth
+                isLoading={loading}
+              >
+                Criar conta
+              </PrimaryButton>
+            </div>
+          </form>
+
+          <div className="text-sm text-center">
+            <Link
+              to="/login"
+              className="font-medium text-[#1a3891] hover:text-[#162d7a]"
             >
-              Criar conta
-            </PrimaryButton>
+              Já tem uma conta? Faça login
+            </Link>
           </div>
-        </form>
 
-        <div className="text-sm text-center">
-          <Link
-            to="/login"
-            className="font-medium text-blue-600 hover:text-blue-500"
-          >
-            Já tem uma conta? Faça login
-          </Link>
-        </div>
-
-        <div className="mt-4 text-xs text-gray-500">
-          <p>Requisitos da senha:</p>
-          <ul className="list-disc list-inside">
-            <li>Mínimo de 6 caracteres</li>
-            <li>Pelo menos 1 caractere especial (!@#$%^&*)</li>
-            <li>Pelo menos 1 letra maiúscula</li>
-          </ul>
+          <div className="mt-4 text-xs text-gray-500">
+            <p>Requisitos da senha:</p>
+            <ul className="list-disc list-inside">
+              <li>Mínimo de 6 caracteres</li>
+              <li>Pelo menos 1 caractere especial (!@#$%^&*)</li>
+              <li>Pelo menos 1 letra maiúscula</li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>

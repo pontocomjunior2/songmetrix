@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Select from 'react-select';
 import moment from 'moment';
+import { supabase } from '../../lib/supabase-client';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
 import 'react-lazy-load-image-component/src/effects/blur.css';
 import './styles/Ranking.css';
@@ -82,7 +83,8 @@ export default function Ranking() {
   }, [artistImages, loadSpotifyToken]);
 
   const getAuthHeaders = async () => {
-    const token = await currentUser?.getIdToken();
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
     return {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',

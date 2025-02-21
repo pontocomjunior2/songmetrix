@@ -1,7 +1,7 @@
 import React from 'react';
 import { LayoutDashboard, Radio, BarChart3, Clock, Users, FileText, Type } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { UserStatus } from '../../lib/firebase';
+import { UserStatus } from '../../lib/auth';
 
 interface SidebarProps {
   currentView: string;
@@ -10,8 +10,10 @@ interface SidebarProps {
 
 export default function Sidebar({ currentView, onNavigate }: SidebarProps) {
   const { userStatus } = useAuth();
+  const isAdmin = userStatus === UserStatus.ADMIN;
 
-  const menuItems = [
+  // Common menu items for all users
+  const commonMenuItems = [
     {
       name: 'Painel',
       icon: LayoutDashboard,
@@ -39,20 +41,22 @@ export default function Sidebar({ currentView, onNavigate }: SidebarProps) {
     }
   ];
 
-  if (userStatus === UserStatus.ADMIN) {
-    menuItems.push(
-      {
-        name: 'Gerenciar Usuários',
-        icon: Users,
-        view: 'admin/users'
-      },
-      {
-        name: 'Abreviações',
-        icon: Type,
-        view: 'admin/abbreviations'
-      }
-    );
-  }
+  // Admin-only menu items
+  const adminMenuItems = [
+    {
+      name: 'Gerenciar Usuários',
+      icon: Users,
+      view: 'admin/users'
+    },
+    {
+      name: 'Abreviações',
+      icon: Type,
+      view: 'admin/abbreviations'
+    }
+  ];
+
+  // Combine menu items based on user status
+  const menuItems = isAdmin ? [...commonMenuItems, ...adminMenuItems] : commonMenuItems;
 
   return (
     <div className="w-full flex flex-col h-screen">

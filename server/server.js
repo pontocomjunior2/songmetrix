@@ -1,19 +1,53 @@
-import express from 'express';
-import cors from 'cors';
-import pg from 'pg';
+// Load environment variables first
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
-import { format } from 'date-fns';
-import { auth, db, createUser, verifyAndUpdateClaims } from './firebase-admin.js';
-import { createCheckoutSession, handleWebhook } from './stripe.js';
-import { reportQuery } from './report-query.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-dotenv.config({ path: path.join(dirname(__dirname), '.env') });
+// Try to load environment variables from multiple locations
+const envPaths = [
+  path.join(__dirname, '.env'),
+  path.join(dirname(__dirname), '.env')
+];
+
+for (const envPath of envPaths) {
+  if (dotenv.config({ path: envPath }).error === undefined) {
+    console.log('Loaded environment variables from:', envPath);
+    break;
+  }
+}
+
+// Verify environment variables are loaded
+console.log('Environment variables loaded:', {
+  POSTGRES_USER: process.env.POSTGRES_USER,
+  POSTGRES_HOST: process.env.POSTGRES_HOST,
+  POSTGRES_DB: process.env.POSTGRES_DB,
+  POSTGRES_PORT: process.env.POSTGRES_PORT,
+  VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL,
+  NODE_ENV: process.env.NODE_ENV
+});
+
+// Log environment variables for debugging
+console.log('Loading environment variables...');
+console.log('Database configuration:', {
+  user: process.env.POSTGRES_USER,
+  host: process.env.POSTGRES_HOST,
+  database: process.env.POSTGRES_DB,
+  port: process.env.POSTGRES_PORT
+});
+
+// Import other dependencies after environment variables are loaded
+import express from 'express';
+import cors from 'cors';
+import pg from 'pg';
+import { format } from 'date-fns';
+import { authenticateBasicUser, authenticateUser } from './auth-middleware.js';
+import { createClient } from '@supabase/supabase-js';
+import { createCheckoutSession, handleWebhook } from './stripe.js';
+import { reportQuery } from './report-query.js';
 
 const app = express();
 
@@ -21,113 +55,90 @@ const app = express();
 app.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);
 
 // Middlewares regulares
+// Configurar CORS antes de qualquer rota
 app.use(cors({
-  origin: ['http://localhost:5173'], // Allow requests from the frontend
-  credentials: true, // Allow credentials to be included in requests
+  origin: ['http://localhost:5173', 'http://localhost:3000'],
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range']
 }));
+
+// Configurar body parser
 app.use(express.json());
 
-// Middleware de autenticação básica (sem verificação de paid/admin)
-const authenticateBasicUser = async (req, res, next) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Token não fornecido' });
-    }
+// Log de todas as requisições
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  console.log('Headers:', req.headers);
+  console.log('Body:', req.body);
+  next();
+});
 
-    const token = authHeader.split('Bearer ')[1];
-    const decodedToken = await auth.verifyIdToken(token);
+// Tratamento de erros global
+app.use((err, req, res, next) => {
+  console.error('Erro não tratado:', err);
+  res.status(500).json({ error: 'Erro interno do servidor', details: err.message });
+});
 
-    // Buscar dados do usuário no Firestore
-    const userRef = db.collection('users').doc(decodedToken.uid);
-    const userDoc = await userRef.get();
-    
-    if (!userDoc.exists) {
-      // Se o usuário não existe no Firestore, criar um novo documento
-      await createUser(decodedToken.uid, decodedToken.email);
-      const newUserDoc = await userRef.get();
-      req.user = { ...decodedToken, ...newUserDoc.data() };
-    } else {
-      // Verificar e atualizar claims se necessário
-      await verifyAndUpdateClaims(decodedToken.uid);
-      const userData = userDoc.data();
-      req.user = { ...decodedToken, ...userData };
-    }
-
-    next();
-  } catch (error) {
-    console.error('Erro de autenticação:', error);
-    res.status(401).json({ error: 'Token inválido' });
-  }
-};
-
-// Middleware de autenticação com verificação de paid/admin
-const authenticateUser = async (req, res, next) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Token não fornecido' });
-    }
-
-    const token = authHeader.split('Bearer ')[1];
-    const decodedToken = await auth.verifyIdToken(token);
-    
-    // Buscar dados do usuário no Firestore
-    const userRef = db.collection('users').doc(decodedToken.uid);
-    const userDoc = await userRef.get();
-    
-    if (!userDoc.exists) {
-      return res.status(404).json({ error: 'Usuário não encontrado' });
-    }
-
-    const userData = userDoc.data();
-    
-    // Verifica se o usuário tem acesso pago ou é admin
-    if (userData.status !== 'ATIVO' && userData.status !== 'ADMIN') {
-      return res.status(403).json({ 
-        error: 'Assinatura necessária',
-        code: 'subscription_required'
-      });
-    }
-
-    req.user = { ...decodedToken, ...userData };
-    next();
-  } catch (error) {
-    console.error('Erro de autenticação:', error);
-    res.status(401).json({ error: 'Token inválido' });
-  }
-};
 
 const { Pool } = pg;
 
-let pool;
+// Initialize database pool
+console.log('Initializing database pool with:', {
+  user: process.env.POSTGRES_USER,
+  host: process.env.POSTGRES_HOST,
+  database: process.env.POSTGRES_DB,
+  port: process.env.POSTGRES_PORT
+});
 
-try {
-  pool = new Pool({
-    user: process.env.POSTGRES_USER,
-    host: process.env.POSTGRES_HOST,
-    database: process.env.POSTGRES_DB,
-    password: process.env.POSTGRES_PASSWORD,
-    port: parseInt(process.env.POSTGRES_PORT),
-    ssl: {
-      rejectUnauthorized: false
+// Create Supabase admin client
+const supabaseAdmin = createClient(
+  process.env.VITE_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
     }
-  });
+  }
+);
 
-  // Test the connection
-  pool.connect((err, client, done) => {
-    if (err) {
-      console.error('Erro ao conectar ao banco de dados:', err);
-    } else {
-      console.log('Conexão com o banco de dados estabelecida com sucesso');
-      done();
-    }
-  });
-} catch (error) {
-  console.error('Erro ao criar pool de conexões:', error);
-}
+// Configure database pool
+const pool = new Pool({
+  user: process.env.POSTGRES_USER,
+  host: process.env.POSTGRES_HOST,
+  database: process.env.POSTGRES_DB,
+  password: process.env.POSTGRES_PASSWORD,
+  port: parseInt(process.env.POSTGRES_PORT || '5432'),
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
+
+// Log actual pool configuration for debugging
+console.log('Database configuration:', {
+  user: process.env.POSTGRES_USER,
+  host: '104.234.173.96',
+  database: process.env.POSTGRES_DB,
+  port: process.env.POSTGRES_PORT,
+  ssl: true
+});
+
+// Test database connection
+const testConnection = async () => {
+  try {
+    const client = await pool.connect();
+    console.log('Conexão com o banco de dados estabelecida com sucesso');
+    client.release();
+  } catch (err) {
+    console.error('Erro ao conectar ao banco de dados:', err);
+    console.log('Tentando reconectar em 5 segundos...');
+    setTimeout(testConnection, 5000);
+  }
+};
+
+testConnection();
 
 // Helper function to safely execute database queries
 const safeQuery = async (query, params = []) => {
@@ -137,9 +148,14 @@ const safeQuery = async (query, params = []) => {
   }
 
   try {
-    return await pool.query(query, params);
+    console.log('Executing query with params:', { query, params });
+    const result = await pool.query(query, params);
+    console.log('Query executed successfully:', result);
+    return result;
   } catch (error) {
     console.error('Erro ao executar query:', error);
+    console.error('Query details:', { query, params });
+    console.error('Error stack:', error.stack);
     return { rows: [] };
   }
 };
@@ -148,14 +164,44 @@ const safeQuery = async (query, params = []) => {
 // Rotas públicas
 app.post('/api/create-checkout-session', createCheckoutSession);
 
+// Rota para verificar status do usuário
+app.post('/api/users/status', authenticateBasicUser, async (req, res) => {
+  try {
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    console.log('Checking status for user:', userId);
+
+    const query = `
+      SELECT status
+      FROM users
+      WHERE id = $1
+    `;
+
+    const result = await safeQuery(query, [userId]);
+    console.log('Query result:', result);
+    
+    if (!result.rows || result.rows.length === 0) {
+      console.log('User not found in database');
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    console.log('User status:', result.rows[0].status);
+    res.json({ status: result.rows[0].status });
+  } catch (error) {
+    console.error('POST /api/users/status - Error:', error);
+    res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+});
+
 // Rotas com autenticação básica (sem verificação de paid/admin)
 app.get('/api/radios/status', authenticateBasicUser, async (req, res) => {
   try {
-    // Buscar rádios favoritas do usuário primeiro
-    const userRef = db.collection('users').doc(req.user.uid);
-    const userDoc = await userRef.get();
-    const userData = userDoc.data();
-    const favoriteRadios = userData?.favoriteRadios || [];
+    // Get favorite radios from user metadata
+    const favoriteRadios = req.user.user_metadata?.favorite_radios || [];
 
     // Buscar o último registro de cada rádio
     const query = `
@@ -170,11 +216,13 @@ app.get('/api/radios/status', authenticateBasicUser, async (req, res) => {
         name,
         last_update
       FROM latest_entries
-      ORDER BY name
+      ORDER BY name;
     `;
 
     try {
-    const result = await safeQuery(query);
+      console.log('Executing query:', query);
+      const result = await safeQuery(query);
+      console.log('Query result:', result);
       
       if (!result.rows || result.rows.length === 0) {
         // Se não há registros no banco, retornar apenas as rádios favoritas como offline
@@ -240,15 +288,8 @@ app.post('/api/radios/favorite', authenticateBasicUser, async (req, res) => {
       return res.status(400).json({ error: 'Nome da rádio não fornecido' });
     }
 
-    const userRef = db.collection('users').doc(req.user.uid);
-    const userDoc = await userRef.get();
-    
-    if (!userDoc.exists) {
-      return res.status(404).json({ error: 'Usuário não encontrado' });
-    }
-
-    const userData = userDoc.data();
-    let favoriteRadios = userData.favoriteRadios || [];
+    // Get current favorite radios from metadata
+    let favoriteRadios = req.user.user_metadata?.favorite_radios || [];
 
     if (favorite && !favoriteRadios.includes(radioName)) {
       favoriteRadios.push(radioName);
@@ -256,10 +297,21 @@ app.post('/api/radios/favorite', authenticateBasicUser, async (req, res) => {
       favoriteRadios = favoriteRadios.filter(radio => radio !== radioName);
     }
 
-    await userRef.update({
-      favoriteRadios,
-      updatedAt: new Date().toISOString()
-    });
+    // Update user metadata with new favorite radios
+    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+      req.user.id,
+      {
+        user_metadata: {
+          ...req.user.user_metadata,
+          favorite_radios: favoriteRadios
+        }
+      }
+    );
+
+    if (updateError) {
+      console.error('Erro ao atualizar usuário:', updateError);
+      return res.status(500).json({ error: 'Erro ao atualizar usuário' });
+    }
 
     // Buscar status atualizado das rádios
     const query = `
@@ -483,11 +535,8 @@ app.get('/api/dashboard', authenticateUser, async (req, res) => {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - 7);
 
-    // Buscar rádios favoritas do usuário
-    const userRef = db.collection('users').doc(req.user.uid);
-    const userDoc = await userRef.get();
-    const userData = userDoc.data();
-    const favoriteRadios = userData?.favoriteRadios || [];
+    // Get favorite radios from user metadata
+    const favoriteRadios = req.user.user_metadata?.favorite_radios || [];
 
     // Pegar rádios da query string
     const radios = req.query.radio;
@@ -511,7 +560,14 @@ app.get('/api/dashboard', authenticateUser, async (req, res) => {
     const invalidRadios = selectedRadios.filter(radio => !favoriteRadios.includes(radio));
     if (invalidRadios.length > 0) {
       console.log('GET /api/dashboard - Rádios inválidas:', invalidRadios);
-      return res.status(400).json({ error: 'Algumas rádios selecionadas não são favoritas' });
+      console.log('GET /api/dashboard - Rádios favoritas:', favoriteRadios);
+      console.log('GET /api/dashboard - User metadata:', req.user.user_metadata);
+      return res.status(400).json({ 
+        error: 'Algumas rádios selecionadas não são favoritas',
+        invalidRadios,
+        favoriteRadios,
+        userMetadata: req.user.user_metadata
+      });
     }
 
     console.log('GET /api/dashboard - Rádios selecionadas:', selectedRadios);
@@ -719,6 +775,58 @@ app.get('/api/radios/by-location', authenticateUser, async (req, res) => {
   } catch (error) {
     console.error('GET /api/radios/by-location - Erro:', error);
     res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
+  }
+});
+
+// Atualizar status do usuário
+app.put('/admin/users/:userId/status', authenticateUser, async (req, res) => {
+  const { userId } = req.params;
+  const { status } = req.body;
+
+  try {
+    // Validar o status
+    if (!['ADMIN', 'ATIVO', 'INATIVO'].includes(status)) {
+      return res.status(400).json({ message: 'Status inválido' });
+    }
+
+    // Verificar se o usuário que faz a requisição é um admin
+    const { data: adminUser, error: adminError } = await supabaseAdmin
+      .from('users')
+      .select('status')
+      .eq('id', req.user.id)
+      .single();
+
+    if (adminError || adminUser?.status !== 'ADMIN') {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+
+    // Verificar se o usuário a ser atualizado existe e atualizar em uma única operação
+    const { data: updatedUser, error: updateError } = await supabaseAdmin
+      .from('users')
+      .update({ 
+        status: status,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId)
+      .select('id, email, status, updated_at')
+      .maybeSingle();
+
+    if (updateError) {
+      console.error('Erro detalhado:', updateError);
+      throw updateError;
+    }
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+
+    res.json(updatedUser);
+  } catch (error) {
+    console.error('Erro ao atualizar status do usuário:', error);
+    res.status(500).json({ 
+      message: `Erro ao atualizar status do usuário: ${error.message}`,
+      details: error
+    });
   }
 });
 
