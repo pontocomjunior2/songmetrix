@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase-client';
 import { Radio as RadioIcon, Music } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
@@ -33,7 +34,8 @@ export default function Dashboard() {
       if (!currentUser) return;
 
       try {
-        const token = await currentUser.getIdToken();
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
         const response = await fetch('/api/dashboard', {
           headers: {
             'Authorization': `Bearer ${token}`,

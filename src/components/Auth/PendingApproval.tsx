@@ -1,87 +1,149 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import { PrimaryButton } from '../Common/Button';
+import { Link } from 'react-router-dom';
 
 export default function PendingApproval() {
-  const navigate = useNavigate();
-
-  const handleContactClick = () => {
-    window.open('https://wa.me/5511999999999', '_blank'); // Replace with your actual WhatsApp number
-  };
+  const features = [
+    {
+      icon: (
+        <svg className="w-12 h-12 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+        </svg>
+      ),
+      title: 'Análise em Tempo Real',
+      description: 'Monitore o desempenho das músicas com dados atualizados instantaneamente'
+    },
+    {
+      icon: (
+        <svg className="w-12 h-12 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+        </svg>
+      ),
+      title: 'IA Avançada',
+      description: 'Algoritmos inteligentes para otimizar sua programação musical'
+    },
+    {
+      icon: (
+        <svg className="w-12 h-12 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+        </svg>
+      ),
+      title: 'Relatórios Detalhados',
+      description: 'Relatórios completos para embasar suas decisões de programação musical'
+    }
+  ];
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-2xl w-full p-8 bg-white rounded-lg shadow-lg text-center">
-        <img
-          className="mx-auto h-12 w-auto mb-6"
-          src="/logo.svg"
-          alt="SongMetrix"
-        />
-        
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm text-yellow-700">
-                Sua assinatura está pendente de aprovação
-              </p>
-            </div>
-          </div>
-        </div>
-        
-        <h2 className="text-2xl font-bold text-gray-900 mb-4">
-          Conta Aguardando Aprovação
-        </h2>
-        
-        <div className="space-y-4 text-gray-600">
-          <p className="text-lg">
-            Seu login foi criado, porém para ter acesso ao sistema você precisa adquirir uma assinatura.
-          </p>
-          
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-blue-800 mb-2">Por que escolher o SongMetrix?</h3>
-            <ul className="text-left text-blue-700 space-y-2">
-              <li>✓ Análise em tempo real das músicas mais tocadas</li>
-              <li>✓ Insights valiosos para sua programação musical</li>
-              <li>✓ Relatórios detalhados de performance</li>
-              <li>✓ Suporte técnico especializado</li>
-            </ul>
-          </div>
-          
-          <p>
-            Entre em contato com nosso atendimento para ativar sua assinatura e começar a usar todas as funcionalidades do SongMetrix.
-          </p>
-          
-          <p className="font-medium text-blue-600">
-            Não perca a chance de ter inteligência musical a favor da sua rádio!
-          </p>
+    <div className="min-h-screen bg-gradient-to-br from-[#122463] via-[#162d7a] to-[#1a3891] relative overflow-hidden">
+      {/* Background Effects */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,rgba(255,255,255,0.1)_0%,rgba(255,255,255,0)_100%)]"></div>
+      <div className="absolute inset-0 opacity-20" style={{
+        backgroundImage: `radial-gradient(circle at 50% 50%, rgba(255,255,255,0.2) 1px, transparent 1px)`,
+        backgroundSize: '20px 20px'
+      }}></div>
+
+      {/* Floating Circles */}
+      <div className="absolute top-20 left-20 w-72 h-72 bg-blue-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse"></div>
+      <div className="absolute top-40 right-20 w-96 h-96 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse delay-1000"></div>
+      <div className="absolute bottom-20 left-1/3 w-80 h-80 bg-indigo-500 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse delay-2000"></div>
+
+      {/* Main Content */}
+      <div className="relative z-10 container mx-auto px-4 py-16">
+        {/* Logo and Header */}
+        <div className="max-w-5xl mx-auto text-center mb-20">
+          <img
+            src="/logo-1280x256.png"
+            alt="SongMetrix"
+            className="w-full max-w-2xl mx-auto h-auto mb-12 animate-fade-in"
+          />
+          <h1 className="text-5xl font-bold text-white mb-8 animate-fade-in">
+            Inteligência musical para sua rádio
+          </h1>
         </div>
 
-        <div className="mt-8 space-y-4">
-          <PrimaryButton
-            onClick={handleContactClick}
-            fullWidth
-            className="bg-green-600 hover:bg-green-700"
-          >
-            <div className="flex items-center justify-center">
-              <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
-              </svg>
-              Falar com Atendimento
+        {/* Welcome Card */}
+        <div className="max-w-4xl mx-auto bg-white/10 backdrop-blur-lg rounded-3xl p-12 mb-20 shadow-2xl transform hover:scale-[1.01] transition-all duration-300">
+          <div className="w-24 h-24 bg-gradient-to-br from-yellow-300 to-yellow-500 rounded-full flex items-center justify-center mx-auto mb-8 shadow-lg">
+            <svg
+              className="w-12 h-12 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+              ></path>
+            </svg>
+          </div>
+
+          <h2 className="text-4xl font-bold text-white mb-6 text-center">
+            Ótimo! Vamos transformar sua rádio juntos! 🚀
+          </h2>
+
+          <p className="text-2xl text-white/90 mb-6 text-center">
+            Sua conta foi criada com sucesso! Nossa equipe entrará em contato em breve para apresentar os planos personalizados do SongMetrix.
+          </p>
+
+          <p className="text-xl text-white/80 mb-8 text-center">
+            Não perca a oportunidade de revolucionar sua programação musical com a mais avançada tecnologia do mercado. Estamos ansiosos para mostrar como podemos impulsionar sua rádio ao próximo nível! ✨
+          </p>
+
+          <div className="text-center">
+            <Link
+              to="/login"
+              className="inline-block bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-lg font-medium px-10 py-4 rounded-full shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300"
+            >
+              Voltar para o Login
+            </Link>
+          </div>
+        </div>
+
+        {/* Features Grid */}
+        <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto mb-20">
+          {features.map((feature, index) => (
+            <div
+              key={index}
+              className="bg-white/5 backdrop-blur-lg p-8 rounded-2xl shadow-xl hover:bg-white/10 transition-all duration-300 transform hover:scale-105"
+            >
+              <div className="mb-6">{feature.icon}</div>
+              <h3 className="text-2xl font-semibold text-white mb-4">
+                {feature.title}
+              </h3>
+              <p className="text-lg text-white/70">
+                {feature.description}
+              </p>
             </div>
-          </PrimaryButton>
-          
-          <PrimaryButton
-            onClick={() => navigate('/login')}
-            fullWidth
-            className="bg-gray-600 hover:bg-gray-700"
-          >
-            Voltar para Login
-          </PrimaryButton>
+          ))}
+        </div>
+
+        {/* Benefits Section */}
+        <div className="max-w-4xl mx-auto bg-white/5 backdrop-blur-lg rounded-2xl p-10">
+          <h3 className="text-3xl font-semibold text-white mb-8 text-center">
+            Por que escolher o SongMetrix?
+          </h3>
+          <ul className="space-y-6">
+            <li className="flex items-start">
+              <svg className="w-8 h-8 text-green-400 mr-4 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+              <span className="text-white/90 text-xl">Tenha dados precisos sobre o histórico musical da sua rádio</span>
+            </li>
+            <li className="flex items-start">
+              <svg className="w-8 h-8 text-green-400 mr-4 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+              <span className="text-white/90 text-xl">Otimize sua programação musical com análises em tempo real</span>
+            </li>
+            <li className="flex items-start">
+              <svg className="w-8 h-8 text-green-400 mr-4 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+              <span className="text-white/90 text-xl">Tome decisões estratégicas com base em relatórios detalhados</span>
+            </li>
+          </ul>
         </div>
       </div>
     </div>

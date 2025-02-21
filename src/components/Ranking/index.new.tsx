@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { format, subDays } from 'date-fns';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase-client';
 import { Loader2 } from 'lucide-react';
 import './styles/Ranking.original.css';
 
@@ -33,7 +34,8 @@ export default function Ranking() {
   }, [currentUser]);
 
   const getAuthHeaders = async () => {
-    const token = await currentUser?.getIdToken();
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
     return {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',

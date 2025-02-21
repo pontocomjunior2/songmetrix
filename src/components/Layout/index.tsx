@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Bell, ChevronDown, HelpCircle, LogOut, Moon, Settings, Sun } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 import { useAuth } from '../../contexts/AuthContext';
+import { CustomUser } from '../../types/customUser';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import UserAvatar from '../Common/UserAvatar';
@@ -13,7 +14,7 @@ interface LayoutProps {
 
 export default function Layout({ currentView, onNavigate }: LayoutProps) {
   const { theme, toggleTheme } = useTheme();
-  const { currentUser, logout } = useAuth();
+  const { currentUser, signOut, userStatus } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [showNotifications, setShowNotifications] = useState(false);
@@ -27,8 +28,8 @@ export default function Layout({ currentView, onNavigate }: LayoutProps) {
 
   const handleLogout = async () => {
     try {
-      await logout();
-      navigate('/');
+      await signOut();
+      navigate('/login');
     } catch (error) {
       console.error('Erro ao fazer logout:', error);
     }
@@ -42,8 +43,12 @@ export default function Layout({ currentView, onNavigate }: LayoutProps) {
       } else {
         onNavigate(path.split('/')[0]);
       }
+    } else {
+      // Redirect to appropriate default page based on user status
+      const defaultPath = userStatus === 'ADMIN' ? '/dashboard' : '/ranking';
+      navigate(defaultPath);
     }
-  }, [location, onNavigate]);
+  }, [location, onNavigate, userStatus, navigate]);
 
   const handleNavigate = (view: string) => {
     onNavigate(view);
@@ -53,6 +58,9 @@ export default function Layout({ currentView, onNavigate }: LayoutProps) {
   const getDisplayTitle = () => {
     if (currentView === 'admin/users') {
       return 'Gerenciar Usuários';
+    }
+    if (currentView === 'admin/abbreviations') {
+      return 'Abreviações';
     }
     return currentView.charAt(0).toUpperCase() + currentView.slice(1);
   };
@@ -136,7 +144,7 @@ export default function Layout({ currentView, onNavigate }: LayoutProps) {
                   {currentUser && (
                     <UserAvatar
                       email={currentUser.email || ''}
-                      photoURL={currentUser.photoURL}
+                      photoURL={(currentUser as CustomUser).photoURL}
                       size="sm"
                     />
                   )}

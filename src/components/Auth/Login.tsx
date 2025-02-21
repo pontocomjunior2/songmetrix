@@ -1,43 +1,49 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
 import { EmailInput, PasswordInput } from '../Common/Input';
 import { PrimaryButton } from '../Common/Button';
 import { ErrorAlert } from '../Common/Alert';
 import Loading from '../Common/Loading';
+import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase-client';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signInWithEmail, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
+
+  const { signIn } = useAuth();
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       setError('');
       setLoading(true);
-      await signInWithEmail(email, password);
-      navigate('/');
-    } catch (error) {
-      setError('Falha ao fazer login. Verifique suas credenciais.');
-      console.error('Erro no login:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+      console.log('Attempting login with:', { email });
 
-  const handleGoogleLogin = async () => {
-    try {
-      setError('');
-      setLoading(true);
-      await signInWithGoogle();
-      navigate('/');
-    } catch (error) {
-      setError('Falha ao fazer login com Google.');
-      console.error('Erro no login com Google:', error);
+      console.log('Iniciando login com Supabase...');
+      const { error: signInError } = await signIn(email, password);
+      
+      if (signInError) {
+        throw signInError;
+      }
+
+      // signIn will handle navigation based on user status
+    } catch (error: any) {
+      console.error('Login error:', error);
+      let errorMessage = 'Falha ao fazer login. Verifique suas credenciais.';
+      
+      if (error.message === 'Invalid login credentials') {
+        errorMessage = 'Email ou senha incorretos.';
+      } else if (error.message === 'Email not confirmed') {
+        errorMessage = 'Por favor, confirme seu email antes de fazer login.';
+      } else if (error.message.includes('inativo')) {
+        errorMessage = error.message;
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -114,28 +120,6 @@ export default function Login() {
               </PrimaryButton>
             </div>
           </form>
-
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-200"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-gray-500">ou continue com</span>
-            </div>
-          </div>
-
-          <button
-            onClick={handleGoogleLogin}
-            disabled={loading}
-            className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#1a3891] transition-colors"
-          >
-            <img
-              className="h-5 w-5 mr-2"
-              src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
-              alt="Google logo"
-            />
-            Google
-          </button>
 
           <div className="text-sm text-center">
             <span className="text-gray-600">Não tem uma conta?</span>{' '}

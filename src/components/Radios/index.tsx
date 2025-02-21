@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Star, Radio, Loader2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../lib/supabase-client';
 import { RadioStatus } from '../../types/components';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useFavoriteRadios } from '../../hooks/useFavoriteRadios'; // Importando o hook
 
 export default function Radios() {
   const { currentUser } = useAuth();
+  const { refresh } = useFavoriteRadios(); // Adicionando a chamada ao hook
   const [radios, setRadios] = useState<RadioStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +21,8 @@ export default function Radios() {
   }, [currentUser]);
 
   const getAuthHeaders = async () => {
-    const token = await currentUser?.getIdToken();
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
     return {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
@@ -58,7 +62,10 @@ export default function Radios() {
 
       if (!response.ok) throw new Error('Failed to update favorite status');
 
-      // Update local state
+      // Força uma atualização do token
+      await supabase.auth.refreshSession();
+      
+      // Update local state and refresh favorite radios
       setRadios(prevRadios => 
         prevRadios.map(radio => 
           radio.name === radioName 
@@ -66,6 +73,11 @@ export default function Radios() {
             : radio
         )
       );
+      
+      // Aguarda um momento para garantir que o token foi atualizado
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      await refresh(); // Refresh favorite radios
     } catch (error) {
       console.error('Error updating favorite status:', error);
       setError('Erro ao atualizar favoritos. Por favor, tente novamente.');

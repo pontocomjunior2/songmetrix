@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
-import { RadioStatus } from '../../types/components';
+import { supabase } from '../../lib/supabase-client';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -10,45 +10,30 @@ interface ProtectedRouteProps {
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { currentUser, userStatus } = useAuth();
-  const [hasFavorites, setHasFavorites] = useState<boolean | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [hasFavorites, setHasFavorites] = useState<boolean | null>(null);
+  const location = useLocation();
 
   useEffect(() => {
-    const checkFavorites = async () => {
+    const checkUserFavorites = async () => {
       if (!currentUser) {
         setIsLoading(false);
         return;
       }
 
       try {
-        const token = await currentUser.getIdToken();
-        const response = await fetch('/api/radios/status', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-
-        if (response.ok) {
-          const data: RadioStatus[] = await response.json();
-          const favoriteRadios = data.filter(radio => radio.isFavorite);
-          setHasFavorites(favoriteRadios.length > 0);
-        } else if (response.status === 403) {
-          // Se receber 403, ainda permitimos continuar para selecionar favoritas
-          setHasFavorites(false);
-        } else {
-          throw new Error('Falha ao verificar rádios favoritas');
-        }
+        // Check user's favorite radios from metadata
+        const favorites = currentUser.user_metadata?.favorite_radios || [];
+        setHasFavorites(favorites.length > 0);
       } catch (error) {
-        console.error('Erro ao verificar rádios favoritas:', error);
-        setError('Erro ao verificar rádios favoritas');
+        console.error('Error checking favorite radios:', error);
         setHasFavorites(false);
       } finally {
         setIsLoading(false);
       }
     };
 
-    checkFavorites();
+    checkUserFavorites();
   }, [currentUser]);
 
   if (isLoading) {
@@ -60,27 +45,33 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (!currentUser) {
-    return <Navigate to="/login" />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   if (userStatus === 'INATIVO') {
-    return <Navigate to="/pending-approval" />;
+    return <Navigate to="/pending-approval" replace />;
   }
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="bg-red-50 dark:bg-red-900/50 text-red-600 dark:text-red-400 p-4 rounded-lg">
-          {error}
-        </div>
-      </div>
-    );
+  // For admin users, allow access to all routes
+  if (userStatus === 'ADMIN') {
+    return <>{children}</>;
   }
 
-  // Se o usuário não tem rádios favoritas, redireciona para a tela de primeiro acesso
-  if (hasFavorites === false) {
-    return <Navigate to="/first-access" />;
+  // For regular users
+  if (userStatus === 'ATIVO') {
+    // Only block access to admin-specific routes
+    if (location.pathname.startsWith('/admin/')) {
+      return <Navigate to="/ranking" replace />;
+    }
+
+    // If user hasn't selected favorite radios, redirect to first access
+    if (hasFavorites === false && location.pathname !== '/first-access') {
+      return <Navigate to="/first-access" replace />;
+    }
+
+    return <>{children}</>;
   }
 
-  return <>{children}</>;
+  // If we get here, something is wrong with the user's status
+  return <Navigate to="/login" replace />;
 }

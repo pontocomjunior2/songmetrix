@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Select from 'react-select';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase-client';
 import { Loader2, FileDown, Calendar, MapPin, Radio, ChevronRight } from 'lucide-react';
 import moment from 'moment';
 import { jsPDF } from 'jspdf';
@@ -81,7 +82,8 @@ const RelatoriosWizard: React.FC = () => {
 
   const getAuthHeaders = async () => {
     try {
-      const token = await currentUser?.getIdToken(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
       if (!token) {
         throw new Error('No authentication token available');
       }
@@ -91,11 +93,7 @@ const RelatoriosWizard: React.FC = () => {
       };
     } catch (error: any) {
       console.error('Error getting auth headers:', error);
-      if (error?.code === 'auth/requires-recent-login') {
-        alert('Sua sessão expirou. Por favor, faça login novamente.');
-      } else {
-        alert('Erro de autenticação. Por favor, tente novamente.');
-      }
+      alert('Erro de autenticação. Por favor, tente novamente.');
       throw error;
     }
   };

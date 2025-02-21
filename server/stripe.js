@@ -1,8 +1,20 @@
 import Stripe from 'stripe';
 import dotenv from 'dotenv';
-import { db, UserStatus } from './firebase-admin.js';
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
+
+// Create Supabase admin client
+const supabaseAdmin = createClient(
+  process.env.VITE_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
+);
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
@@ -11,28 +23,41 @@ export const createCheckoutSession = async (req, res) => {
   const { userId, priceId } = req.body;
 
   try {
-    // Verifica se o usuário existe no Firestore
-    const userDoc = await db.collection('users').doc(userId).get();
-    if (!userDoc.exists) {
+    // Verifica se o usuário existe no Supabase
+    const { data: user, error: userError } = await supabaseAdmin
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (userError || !user) {
       return res.status(404).json({ error: 'Usuário não encontrado' });
     }
 
     // Cria ou recupera o cliente no Stripe
-    let stripeCustomerId = userDoc.data().stripeCustomerId;
+    let stripeCustomerId = user.stripe_customer_id;
     
     if (!stripeCustomerId) {
       const customer = await stripe.customers.create({
-        email: userDoc.data().email,
+        email: user.email,
         metadata: {
-          firebaseUID: userId
+          supabaseUID: userId
         }
       });
       stripeCustomerId = customer.id;
       
-      // Atualiza o documento do usuário com o ID do cliente Stripe
-      await db.collection('users').doc(userId).update({
-        stripeCustomerId: customer.id
-      });
+      // Atualiza o usuário com o ID do cliente Stripe
+      const { error: updateError } = await supabaseAdmin
+        .from('users')
+        .update({
+          stripe_customer_id: customer.id,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId);
+
+      if (updateError) {
+        throw updateError;
+      }
     }
 
     // Cria a sessão de checkout
@@ -49,7 +74,7 @@ export const createCheckoutSession = async (req, res) => {
       success_url: `${FRONTEND_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${FRONTEND_URL}/payment-canceled`,
       metadata: {
-        firebaseUID: userId
+        supabaseUID: userId
       }
     });
 
@@ -79,17 +104,24 @@ export const handleWebhook = async (req, res) => {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object;
-        const userId = session.metadata.firebaseUID;
+        const userId = session.metadata.supabaseUID;
 
-        // Atualiza o status do usuário no Firestore
-        await db.collection('users').doc(userId).update({
-          status: UserStatus.PAID,
-          stripeCustomerId: session.customer,
-          subscriptionId: session.subscription,
-          updatedAt: new Date().toISOString(),
-          paymentStatus: 'active',
-          lastPaymentDate: new Date().toISOString()
-        });
+        // Atualiza o status do usuário no Supabase
+        const { error: updateError } = await supabaseAdmin
+          .from('users')
+          .update({
+            status: 'PAID',
+            stripe_customer_id: session.customer,
+            subscription_id: session.subscription,
+            updated_at: new Date().toISOString(),
+            payment_status: 'active',
+            last_payment_date: new Date().toISOString()
+          })
+          .eq('id', userId);
+
+        if (updateError) {
+          throw updateError;
+        }
 
         break;
       }
@@ -99,18 +131,31 @@ export const handleWebhook = async (req, res) => {
         const subscription = event.data.object;
         
         // Busca o usuário pelo ID do cliente Stripe
-        const usersRef = db.collection('users');
-        const snapshot = await usersRef.where('stripeCustomerId', '==', subscription.customer).get();
+        const { data: users, error: userError } = await supabaseAdmin
+          .from('users')
+          .select('*')
+          .eq('stripe_customer_id', subscription.customer);
 
-        if (!snapshot.empty) {
-          const userDoc = snapshot.docs[0];
-          const status = subscription.status === 'active' ? UserStatus.PAID : UserStatus.NOT_PAID;
+        if (userError) {
+          throw userError;
+        }
 
-          await userDoc.ref.update({
-            status,
-            paymentStatus: subscription.status,
-            updatedAt: new Date().toISOString()
-          });
+        if (users && users.length > 0) {
+          const user = users[0];
+          const status = subscription.status === 'active' ? 'PAID' : 'NOT_PAID';
+
+          const { error: updateError } = await supabaseAdmin
+            .from('users')
+            .update({
+              status,
+              payment_status: subscription.status,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', user.id);
+
+          if (updateError) {
+            throw updateError;
+          }
         }
 
         break;
@@ -120,16 +165,30 @@ export const handleWebhook = async (req, res) => {
         const invoice = event.data.object;
         
         // Busca o usuário pelo ID do cliente Stripe
-        const usersRef = db.collection('users');
-        const snapshot = await usersRef.where('stripeCustomerId', '==', invoice.customer).get();
+        const { data: users, error: userError } = await supabaseAdmin
+          .from('users')
+          .select('*')
+          .eq('stripe_customer_id', invoice.customer);
 
-        if (!snapshot.empty) {
-          const userDoc = snapshot.docs[0];
-          await userDoc.ref.update({
-            status: UserStatus.NOT_PAID,
-            paymentStatus: 'failed',
-            updatedAt: new Date().toISOString()
-          });
+        if (userError) {
+          throw userError;
+        }
+
+        if (users && users.length > 0) {
+          const user = users[0];
+          
+          const { error: updateError } = await supabaseAdmin
+            .from('users')
+            .update({
+              status: 'NOT_PAID',
+              payment_status: 'failed',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', user.id);
+
+          if (updateError) {
+            throw updateError;
+          }
         }
 
         break;
