@@ -9,6 +9,11 @@
   - Admin-only routes (/admin/*) remain protected by `AdminRoute`
   - Navigation menu items remain consistent with access permissions
 
+- Default landing page after login
+  - Changed navigation in `AuthContext.tsx` to always redirect to /dashboard
+  - Removed conditional navigation that was sending regular users to /ranking
+  - All active users (both ADMIN and ATIVO) now land on Dashboard after login
+
 ### Changed Files
 1. `src/App.tsx`
    ```diff
@@ -24,6 +29,10 @@
    + } />
    ```
 
+2. `src/contexts/AuthContext.tsx`
+   - Updated signIn function to always navigate to '/dashboard'
+   - Removed conditional navigation based on user status
+
 ### Access Control
 - ADMIN users: Full access to all routes including administrative areas
 - ATIVO users: Access to Dashboard and all non-administrative features
@@ -33,3 +42,7 @@
 - `ProtectedRoute`: Handles general route protection for authenticated users
 - `AdminRoute`: Specifically protects administrative routes
 - `Layout/Sidebar`: Shows navigation options based on user status
+
+### Restore Points
+1. Dashboard Access Fix: `ddc707da93b9d577d16448360f2e0b4d89c5eac8`
+2. Default Landing Page Fix: `270dfe6`
