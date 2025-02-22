@@ -177,7 +177,7 @@ export default function RealTime() {
   };
 
   return (
-<div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden">
       <div className="flex-none sticky top-0 z-10 bg-gray-50 dark:bg-gray-900">
         {showFavoriteRadios && (
           <div className="mb-6">
@@ -294,112 +294,107 @@ export default function RealTime() {
         </form>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm h-full">
-          <div className="overflow-x-auto">
-            <div className="inline-block min-w-full align-middle">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-700">
-                  <tr>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-[15%]">
-                      Data/Hora
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-[20%]">
-                      Rádio
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-[32%]">
-                      Artista
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-[33%]">
-                      Música
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                  {executions.map((execution) => (
-                    <React.Fragment key={execution.id}>
-                      <tr className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-[200px]">
-                          {formatDisplayDate(execution.date)} {execution.time}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 max-w-[200px]">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => toggleRadio(execution.id)}
-                              className="flex-none text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                            >
-                              {expandedRadio === execution.id ? (
-                                <ChevronDown className="w-5 h-5" />
-                              ) : (
-                                <ChevronRight className="w-5 h-5" />
-                              )}
-                            </button>
-                            <span>{execution.radio_name}</span>
-                          </div>
-                          {expandedRadio === execution.id && (
-                            <div className="mt-2 pl-7 text-sm text-gray-600 dark:text-gray-400">
-                              <div>Cidade: {execution.city}</div>
-                              <div>Estado: {execution.state}</div>
-                              <div>Região: {execution.region}</div>
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-                          <span>{execution.artist}</span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 max-w-[200px]">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => toggleRow(execution.id)}
-                              className="flex-none text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                            >
-                              {expandedRow === execution.id ? (
-                                <ChevronDown className="w-5 h-5" />
-                              ) : (
-                                <ChevronRight className="w-5 h-5" />
-                              )}
-                            </button>
-                            <span>{execution.song_title}</span>
-                          </div>
-                          {expandedRow === execution.id && (
-                            <div className="mt-2 pl-7 text-sm text-gray-600 dark:text-gray-400">
-                              <div>ISRC: {execution.isrc}</div>
-                              <div>Gravadora: {execution.label}</div>
-                              <div>Gênero: {execution.genre}</div>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    </React.Fragment>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+      {/* Table Section - Scrollable */}
+      <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+          <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0 z-10">
+            <tr>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-[15%]">
+                Data/Hora
+              </th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-[20%]">
+                Rádio
+              </th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-[32%]">
+                Artista
+              </th>
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-[33%]">
+                Música
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+            {executions.map((execution) => (
+              <React.Fragment key={execution.id}>
+                <tr className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-[200px]">
+                    {formatDisplayDate(execution.date)} {execution.time}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 max-w-[200px]">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => toggleRadio(execution.id)}
+                        className="flex-none text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                      >
+                        {expandedRadio === execution.id ? (
+                          <ChevronDown className="w-5 h-5" />
+                        ) : (
+                          <ChevronRight className="w-5 h-5" />
+                        )}
+                      </button>
+                      <span>{execution.radio_name}</span>
+                    </div>
+                    {expandedRadio === execution.id && (
+                      <div className="mt-2 pl-7 text-sm text-gray-600 dark:text-gray-400">
+                        <div>Cidade: {execution.city}</div>
+                        <div>Estado: {execution.state}</div>
+                        <div>Região: {execution.region}</div>
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                    <span>{execution.artist}</span>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 max-w-[200px]">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => toggleRow(execution.id)}
+                        className="flex-none text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                      >
+                        {expandedRow === execution.id ? (
+                          <ChevronDown className="w-5 h-5" />
+                        ) : (
+                          <ChevronRight className="w-5 h-5" />
+                        )}
+                      </button>
+                      <span>{execution.song_title}</span>
+                    </div>
+                    {expandedRow === execution.id && (
+                      <div className="mt-2 pl-7 text-sm text-gray-600 dark:text-gray-400">
+                        <div>ISRC: {execution.isrc}</div>
+                        <div>Gravadora: {execution.label}</div>
+                        <div>Gênero: {execution.genre}</div>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
 
-          {loading ? (
-            <div className="flex justify-center items-center p-4">
-              <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-            </div>
-          ) : hasMore ? (
-            <div className="flex justify-center p-4">
-              <button
-                onClick={() => fetchExecutions()}
-                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
-              >
-                Carregar mais
-              </button>
-            </div>
-          ) : executions.length > 0 ? (
-            <div className="text-center p-4 text-gray-500 dark:text-gray-400">
-              Fim dos resultados
-            </div>
-          ) : (
-            <div className="text-center p-4 text-gray-500 dark:text-gray-400">
-              Nenhum resultado encontrado
-            </div>
-          )}
-        </div>
+        {loading ? (
+          <div className="flex justify-center items-center p-4">
+            <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+          </div>
+        ) : hasMore ? (
+          <div className="flex justify-center p-4">
+            <button
+              onClick={() => fetchExecutions()}
+              className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+            >
+              Carregar mais
+            </button>
+          </div>
+        ) : executions.length > 0 ? (
+          <div className="text-center p-4 text-gray-500 dark:text-gray-400">
+            Fim dos resultados
+          </div>
+        ) : (
+          <div className="text-center p-4 text-gray-500 dark:text-gray-400">
+            Nenhum resultado encontrado
+          </div>
+        )}
       </div>
     </div>
   );

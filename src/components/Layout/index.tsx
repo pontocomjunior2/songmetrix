@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, ChevronDown, HelpCircle, LogOut, Moon, Settings, Sun } from 'lucide-react';
+import { Bell, ChevronDown, HelpCircle, LogOut, Moon, Settings, Sun, Menu, X } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 import { useAuth } from '../../contexts/AuthContext';
 import { CustomUser } from '../../types/customUser';
@@ -19,12 +19,7 @@ export default function Layout({ currentView, onNavigate }: LayoutProps) {
   const location = useLocation();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-
-  const notifications = [
-    { id: '1', message: 'Nativa FM - SP está online', date: '2024-02-13', read: false },
-    { id: '2', message: 'Alpha FM - SP está online', date: '2024-02-13', read: false },
-    { id: '3', message: 'Tropical FM - ES está online', date: '2024-02-13', read: false },
-  ];
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleLogout = async () => {
     try {
@@ -35,105 +30,90 @@ export default function Layout({ currentView, onNavigate }: LayoutProps) {
     }
   };
 
-  useEffect(() => {
-    const path = location.pathname.substring(1);
-    if (path) {
-      if (path.startsWith('admin/')) {
-        onNavigate(path);
-      } else {
-        onNavigate(path.split('/')[0]);
-      }
-    } else {
-      // Redirect to appropriate default page based on user status
-      const defaultPath = userStatus === 'ADMIN' ? '/dashboard' : '/ranking';
-      navigate(defaultPath);
-    }
-  }, [location, onNavigate, userStatus, navigate]);
-
   const handleNavigate = (view: string) => {
     onNavigate(view);
     navigate(`/${view}`);
+    setIsMobileMenuOpen(false); // Close mobile menu after navigation
   };
 
   const getDisplayTitle = () => {
-    if (currentView === 'admin/users') {
-      return 'Gerenciar Usuários';
-    }
-    if (currentView === 'admin/abbreviations') {
-      return 'Abreviações';
-    }
+    if (currentView === 'admin/users') return 'Gerenciar Usuários';
+    if (currentView === 'admin/abbreviations') return 'Abreviações';
     return currentView.charAt(0).toUpperCase() + currentView.slice(1);
   };
 
+  // Close mobile menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.mobile-menu') && !target.closest('.menu-button')) {
+        setIsMobileMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   return (
-    <div className={`min-h-screen flex ${theme === 'dark' ? 'dark' : ''}`}>
-      {/* Sidebar com gradiente navy */}
+    <div className={`min-h-screen ${theme === 'dark' ? 'dark' : ''}`}>
+      {/* Mobile Menu Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" 
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Mobile Sidebar */}
+      <div className={`
+        fixed top-0 left-0 h-full w-64 bg-gradient-to-b from-navy-600 via-navy-700 to-navy-800
+        transform transition-transform duration-300 ease-in-out z-50 lg:hidden
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <div className="flex justify-end p-4">
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="text-white hover:text-gray-200"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+        <div className="mobile-menu">
+          <Sidebar currentView={currentView} onNavigate={handleNavigate} />
+        </div>
+      </div>
+
+      {/* Desktop Sidebar */}
       <div className="hidden lg:flex lg:w-64 bg-gradient-to-b from-navy-600 via-navy-700 to-navy-800">
         <Sidebar currentView={currentView} onNavigate={handleNavigate} />
       </div>
 
-      {/* Conteúdo Principal */}
-      <div className="flex-1 flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900 lg:ml-64">
         {/* Header */}
         <header className="relative z-30 h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 shadow-sm">
-          <div className="h-full px-6 flex items-center justify-between">
+          <div className="h-full px-4 sm:px-6 flex items-center justify-between">
             <div className="flex items-center gap-4">
+              {/* Hamburger Menu Button */}
+              <button
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="menu-button p-2 text-gray-600 lg:hidden hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+              >
+                <Menu className="w-6 h-6" />
+              </button>
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">
                 {getDisplayTitle()}
               </h2>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
               <button
                 onClick={toggleTheme}
                 className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors"
               >
                 {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </button>
-
-              {/* Notifications */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowNotifications(!showNotifications)}
-                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 relative transition-colors"
-                >
-                  <Bell className="w-5 h-5" />
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-                </button>
-
-                {showNotifications && (
-                  <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-40">
-                    <div className="p-4">
-                      <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                          Notificações
-                        </h3>
-                        <button className="text-sm text-navy-600 hover:text-navy-500 transition-colors">
-                          Marcar todas como lidas
-                        </button>
-                      </div>
-                      <div className="space-y-2">
-                        {notifications.map((notification) => (
-                          <div
-                            key={notification.id}
-                            className={`p-3 rounded-lg ${
-                              notification.read ? 'bg-gray-50 dark:bg-gray-700' : 'bg-navy-50 dark:bg-navy-900/50'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              <div className={`w-2 h-2 rounded-full ${notification.read ? 'bg-gray-400' : 'bg-green-500'}`} />
-                              <p className="text-sm text-gray-700 dark:text-gray-200">{notification.message}</p>
-                            </div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 ml-4">
-                              {notification.date}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
 
               {/* Profile */}
               <div className="relative">
@@ -178,7 +158,7 @@ export default function Layout({ currentView, onNavigate }: LayoutProps) {
         </header>
 
         {/* Main Content */}
-        <main className="relative z-20 flex-1 p-6">
+        <main className="relative z-20 flex-1 p-4 sm:p-6">
           <Outlet />
         </main>
       </div>

@@ -1,0 +1,247 @@
+import express from 'express';
+import cors from 'cors';
+import pg from 'pg';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+import path from 'path';
+import { format } from 'date-fns';
+import { authenticateBasicUser, authenticateUser } from './auth-middleware.js'; // Middleware de autenticação Supabase
+import { createCheckoutSession, handleWebhook } from './stripe.js';
+import { reportQuery } from './report-query.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+dotenv.config({ path: path.join(dirname(__dirname), '.env') });
+
+const app = express();
+
+// Middleware para o webhook do Stripe (deve vir antes de express.json)
+app.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);
+
+// Middlewares regulares
+app.use(cors({
+  origin: ['http://localhost:5173'], // Allow requests from the frontend
+  credentials: true, // Allow credentials to be included in requests
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.use(express.json());
+
+const { Pool } = pg;
+
+let pool;
+
+try {
+  pool = new Pool({
+    user: process.env.POSTGRES_USER,
+    host: process.env.POSTGRES_HOST,
+    database: process.env.POSTGRES_DB,
+    password: process.env.POSTGRES_PASSWORD,
+    port: parseInt(process.env.POSTGRES_PORT),
+    ssl: {
+      rejectUnauthorized: false,
+      sslmode: 'require'
+    }
+  });
+
+  // Test the connection
+  pool.connect((err, client, done) => {
+    if (err) {
+      console.error('Erro ao conectar ao banco de dados:', err);
+    } else {
+      console.log('Conexão com o banco de dados estabelecida com sucesso');
+      done();
+    }
+  });
+} catch (error) {
+  console.error('Erro ao criar pool de conexões:', error);
+}
+
+// Helper function to safely execute database queries
+const safeQuery = async (query, params = []) => {
+  if (!pool) {
+    console.error('Pool de conexões não disponível');
+    return { rows: [] };
+  }
+
+  try {
+    return await pool.query(query, params);
+  } catch (error) {
+    console.error('Erro ao executar query:', error);
+    return { rows: [] };
+  }
+};
+
+// Rotas públicas
+app.post('/api/create-checkout-session', createCheckoutSession);
+
+// Rotas com autenticação básica (sem verificação de paid/admin)
+app.get('/api/radios/status', authenticateBasicUser, async (req, res) => {
+  try {
+    // Buscar rádios favoritas do usuário primeiro
+    const userRef = db.collection('users').doc(req.user.uid);
+    const userDoc = await userRef.get();
+    const userData = userDoc.data();
+    const favoriteRadios = userData?.favoriteRadios || [];
+
+    // Buscar o último registro de cada rádio
+    const query = `
+      WITH latest_entries AS (
+        SELECT 
+          name,
+          MAX(date + time::time) as last_update
+        FROM music_log
+        GROUP BY name
+      )
+      SELECT 
+        name,
+        last_update
+      FROM latest_entries
+      ORDER BY name
+    `;
+
+    try {
+      const result = await safeQuery(query);
+      
+      if (!result.rows || result.rows.length === 0) {
+        // Se não há registros no banco, retornar apenas as rádios favoritas como offline
+        const offlineRadios = favoriteRadios.map(name => ({
+          name,
+          status: 'OFFLINE',
+          lastUpdate: null,
+          isFavorite: true
+        }));
+        return res.json(offlineRadios);
+      }
+      
+      const currentTime = new Date();
+      const radiosStatus = result.rows.map(row => {
+        const lastUpdate = row.last_update ? new Date(row.last_update) : null;
+        const timeDiff = lastUpdate ? currentTime.getTime() - lastUpdate.getTime() : Infinity;
+        const isOnline = timeDiff <= 30 * 60 * 1000; // 30 minutes
+
+        return {
+          name: row.name,
+          status: isOnline ? 'ONLINE' : 'OFFLINE',
+          lastUpdate: row.last_update,
+          isFavorite: favoriteRadios.includes(row.name)
+        };
+      });
+
+      // Adicionar rádios favoritas que não estão no banco como offline
+      const existingRadios = new Set(radiosStatus.map(radio => radio.name));
+      const missingFavorites = favoriteRadios.filter(name => !existingRadios.has(name));
+      
+      missingFavorites.forEach(name => {
+        radiosStatus.push({
+          name,
+          status: 'OFFLINE',
+          lastUpdate: null,
+          isFavorite: true
+        });
+      });
+
+      res.json(radiosStatus);
+    } catch (dbError) {
+      console.error('Erro ao consultar banco de dados:', dbError);
+      // Se houver erro no banco, retornar apenas as rádios favoritas como offline
+      const offlineRadios = favoriteRadios.map(name => ({
+        name,
+        status: 'OFFLINE',
+        lastUpdate: null,
+        isFavorite: true
+      }));
+      return res.json(offlineRadios);
+    }
+  } catch (error) {
+    console.error('GET /api/radios/status - Erro:', error);
+    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
+  }
+});
+
+// Rotas protegidas (requerem paid ou admin)
+app.post('/api/executions', authenticateUser, async (req, res) => {
+  const { filters, page = 0 } = req.body;
+  const offset = page * 100;
+
+  try {
+    console.log('POST /api/executions - Corpo da requisição:', req.body);
+    let query = `
+      WITH adjusted_dates AS (
+        SELECT 
+          id,
+          (date + INTERVAL '3 hours')::date as date,
+          time::text,
+          name as radio_name,
+          artist,
+          song_title,
+          isrc,
+          cidade as city,
+          estado as state,
+          genre,
+          regiao as region,
+          segmento as segment,
+          label
+        FROM music_log
+      )
+      SELECT * FROM adjusted_dates
+      WHERE 1=1
+    `;
+    
+    const params = [];
+    let paramCount = 1;
+
+    if (filters.radio) {
+      query += ` AND radio_name = $${paramCount}`;
+      params.push(filters.radio);
+      paramCount++;
+    }
+
+    if (filters.artist) {
+      query += ` AND artist ILIKE $${paramCount}`;
+      params.push(`%${filters.artist}%`);
+      paramCount++;
+    }
+
+    if (filters.song) {
+      query += ` AND song_title ILIKE $${paramCount}`;
+      params.push(`%${filters.song}%`);
+      paramCount++;
+    }
+
+    if (filters.startDate && filters.endDate) {
+      query += ` AND date BETWEEN $${paramCount} AND $${paramCount + 1}`;
+      params.push(filters.startDate, filters.endDate);
+      paramCount += 2;
+    }
+
+    if (filters.startTime && filters.endTime) {
+      query += ` AND time BETWEEN $${paramCount} AND $${paramCount + 1}`;
+      params.push(filters.startTime, filters.endTime);
+      paramCount += 2;
+    }
+
+    query += ` ORDER BY date DESC, time DESC LIMIT 100 OFFSET $${paramCount}`;
+    params.push(offset);
+
+    console.log('POST /api/executions - Query:', query);
+    console.log('POST /api/executions - Parâmetros:', params);
+
+    const result = await safeQuery(query, params);
+    console.log('POST /api/executions - Linhas encontradas:', result.rows.length);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error('POST /api/executions - Erro:', error);
+    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
+  }
+});
+
+// Outras rotas...
+
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
+});
