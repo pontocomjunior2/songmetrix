@@ -136,7 +136,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Rádios Favoritas */}
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
           <div className="flex items-center justify-between mb-4">
@@ -182,7 +182,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Artistas Mais Tocados */}
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
           <div className="mb-4">
