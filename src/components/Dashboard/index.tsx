@@ -1,126 +1,99 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase-client';
-import { useFavoriteRadios } from '../../hooks/useFavoriteRadios';
-import { Radio as RadioIcon, Music } from 'lucide-react';
+import { Radio as RadioIcon, Music, Info } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 interface TopSong {
-  title: string;
+  song_title: string;
   artist: string;
-  plays: number;
+  executions: number;
 }
 
-interface RadioStation {
+interface ActiveRadio {
   name: string;
   isOnline: boolean;
 }
 
-interface ChartData {
-  name: string;
-  executions: number;
-}
-
-interface GenreData {
+interface GenreDistribution {
   name: string;
   value: number;
   color: string;
 }
 
+interface ArtistData {
+  artist: string;
+  executions: number;
+}
+
+const TooltipHeader: React.FC<{ title: string }> = ({ title }) => {
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  return (
+    <div className="relative flex items-center gap-2">
+      <span>{title}</span>
+      <div
+        className="cursor-help"
+        onMouseEnter={() => setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
+      >
+        <Info className="w-4 h-4 text-gray-400" />
+        {showTooltip && (
+          <div className="absolute z-10 px-3 py-2 text-sm text-white bg-gray-800 rounded shadow-lg -right-4 top-6 w-48">
+            Baseado nas suas rádios favoritas
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export default function Dashboard() {
   const { currentUser } = useAuth();
-  const { favoriteRadios, loading: loadingFavorites } = useFavoriteRadios();
   const [loading, setLoading] = useState(true);
-  const [activeRadios, setActiveRadios] = useState<RadioStation[]>([]);
+  const [activeRadios, setActiveRadios] = useState<ActiveRadio[]>([]);
   const [topSongs, setTopSongs] = useState<TopSong[]>([]);
-  const [artistChartData, setArtistChartData] = useState<ChartData[]>([]);
-  const [genreData, setGenreData] = useState<GenreData[]>([]);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [artistData, setArtistData] = useState<ArtistData[]>([]);
+  const [genreDistribution, setGenreDistribution] = useState<GenreDistribution[]>([]);
+  const [favoriteRadios, setFavoriteRadios] = useState<string[]>([]);
 
-  // Força re-seleção de rádios aleatórias a cada 5 minutos
+  // Buscar rádios favoritas do usuário
   useEffect(() => {
-    const interval = setInterval(() => {
-      setRefreshTrigger(prev => prev + 1);
-    }, 5 * 60 * 1000);
+    if (currentUser) {
+      const userFavorites = currentUser.user_metadata?.favorite_radios || [];
+      setFavoriteRadios(userFavorites);
+    }
+  }, [currentUser]);
 
-    return () => clearInterval(interval);
-  }, []);
-
-  // Atualiza o dashboard quando as rádios favoritas mudarem
-  useEffect(() => {
-    setRefreshTrigger(prev => prev + 1);
-  }, [favoriteRadios]);
-
-  const getAuthHeaders = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    return {
-      'Authorization': `Bearer ${session?.access_token}`,
-      'Content-Type': 'application/json',
-    };
-  }, []);
-
+  // Buscar dados do dashboard
   useEffect(() => {
     const fetchDashboardData = async () => {
-      if (!currentUser) return;
+      if (!currentUser || !favoriteRadios.length) {
+        setLoading(false);
+        return;
+      }
 
       try {
-        const clearDashboardData = () => {
-          setActiveRadios([]);
-          setTopSongs([]);
-          setArtistChartData([]);
-          setGenreData([]);
-        };
-
-        // Verifica se há rádios favoritas antes de fazer a requisição
-        if (!favoriteRadios.length) {
-          clearDashboardData();
-          setLoading(false);
-          return;
-        }
-
-        const headers = await getAuthHeaders();
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
         
-        // Construir a URL com as rádios favoritas como parâmetros
-        const params = new URLSearchParams();
-        favoriteRadios.forEach(radio => params.append('radio', radio));
-        const url = `/api/dashboard?${params.toString()}`;
-        
-        const response = await fetch(url, { headers });
-
-        if (!response.ok) {
-          if (response.status === 400) {
-            console.log('Limpando dados do dashboard devido à atualização das rádios favoritas');
-            clearDashboardData();
-            setLoading(false);
-            return;
+        // Construir a URL com as rádios favoritas
+        const radioParams = favoriteRadios.map(radio => `radio=${encodeURIComponent(radio)}`).join('&');
+        const response = await fetch(`/api/dashboard?${radioParams}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
           }
-          throw new Error('Falha ao carregar dados do dashboard');
-        }
+        });
+
+        if (!response.ok) throw new Error('Falha ao carregar dados do dashboard');
 
         const data = await response.json();
-        if (!data) {
-          console.error('Dados do dashboard vazios');
-          clearDashboardData();
-          return;
-        }
         
-        setActiveRadios(data.activeRadios.map((radio: any) => ({
-          name: radio.name,
-          isOnline: radio.is_online
-        })));
-
-        setTopSongs(data.topSongs.map((song: any) => ({
-          title: song.song_title,
-          artist: song.artist,
-          plays: song.executions
-        })));
-
-        setArtistChartData(data.artistData.map((artist: any) => ({
-          name: artist.artist,
-          executions: artist.executions
-        })));
-
-        setGenreData(data.genreData);
+        setActiveRadios(data.activeRadios || []);
+        setTopSongs(data.topSongs || []);
+        setArtistData(data.artistData || []);
+        setGenreDistribution(data.genreData || []);
 
       } catch (error) {
         console.error('Erro ao carregar dados:', error);
@@ -130,9 +103,9 @@ export default function Dashboard() {
     };
 
     fetchDashboardData();
-  }, [currentUser, getAuthHeaders, refreshTrigger, favoriteRadios]);
+  }, [currentUser, favoriteRadios]);
 
-  if (loading || loadingFavorites) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
@@ -140,15 +113,36 @@ export default function Dashboard() {
     );
   }
 
+  if (favoriteRadios.length === 0) {
+    return (
+      <div className="p-6">
+        <p className="text-gray-600">Você ainda não tem rádios favoritas. Adicione algumas rádios aos favoritos para ver o dashboard.</p>
+      </div>
+    );
+  }
+
+  // Customização do tooltip do gráfico de barras
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white p-2 border rounded shadow">
+          <p className="font-medium">{payload[0].payload.artist}</p>
+          <p>{payload[0].value} execuções</p>
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-6">
-        {/* Rádios Mais Ativas */}
+        {/* Rádios Favoritas */}
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <RadioIcon className="w-5 h-5" />
-              Rádios Mais Ativas
+              Rádios Favoritas
             </h2>
             <span className="text-yellow-500">⭐</span>
           </div>
@@ -169,18 +163,18 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <Music className="w-5 h-5" />
-              Top Músicas
+              <TooltipHeader title="Top Músicas" />
             </h2>
           </div>
           <div className="space-y-4">
             {topSongs.map((song, index) => (
               <div key={index} className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium text-gray-900 dark:text-gray-100">{song.title}</p>
+                  <p className="font-medium text-gray-900 dark:text-gray-100">{song.song_title}</p>
                   <p className="text-sm text-gray-500">{song.artist}</p>
                 </div>
                 <span className="text-sm text-gray-600 dark:text-gray-400">
-                  {song.plays} plays
+                  {song.executions} execuções
                 </span>
               </div>
             ))}
@@ -191,14 +185,16 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 gap-6">
         {/* Artistas Mais Tocados */}
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
-          <h2 className="text-lg font-semibold mb-4">Artistas Mais Tocados</h2>
+          <div className="mb-4">
+            <TooltipHeader title="Artistas Mais Tocados" />
+          </div>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={artistChartData}>
+              <BarChart data={artistData}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
+                <XAxis dataKey="artist" />
                 <YAxis />
-                <Tooltip />
+                <Tooltip content={<CustomTooltip />} />
                 <Bar dataKey="executions" fill="#3B82F6" />
               </BarChart>
             </ResponsiveContainer>
@@ -207,12 +203,14 @@ export default function Dashboard() {
 
         {/* Distribuição por Gênero */}
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
-          <h2 className="text-lg font-semibold mb-4">Distribuição por Gênero</h2>
+          <div className="mb-4">
+            <TooltipHeader title="Distribuição por Gênero" />
+          </div>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={genreData}
+                  data={genreDistribution}
                   dataKey="value"
                   nameKey="name"
                   cx="50%"
@@ -220,7 +218,7 @@ export default function Dashboard() {
                   outerRadius={80}
                   label={({ name, value }) => `${name} ${value}%`}
                 >
-                  {genreData.map((entry, index) => (
+                  {genreDistribution.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
