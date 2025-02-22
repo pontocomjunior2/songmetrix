@@ -37,7 +37,7 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
     {
       name: 'Relatórios',
       icon: FileText,
-      view: 'reports'
+      view: 'relatorios'
     }
   ];
 
