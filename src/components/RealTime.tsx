@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { format, parseISO } from 'date-fns';
 import { Search, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../hooks/useTheme';
 import { supabase } from '../lib/supabase-client';
 import FavoriteRadios from './FavoriteRadios';
 import { RadioStatus } from '../types/components';
+import './RealTime/styles/RealTime.css';
 
 interface Filters {
   radio: string;
@@ -34,8 +36,9 @@ interface Execution {
 
 export default function RealTime() {
   const { currentUser } = useAuth();
+  const { theme } = useTheme();
+  const isDarkMode = theme === 'dark';
   const today = format(new Date(), 'yyyy-MM-dd');
-  
   const [filters, setFilters] = useState<Filters>({
     radio: '',
     artist: '',
@@ -45,7 +48,6 @@ export default function RealTime() {
     startTime: '00:00',
     endTime: '23:59',
   });
-
   const [executions, setExecutions] = useState<Execution[]>([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
@@ -78,7 +80,6 @@ export default function RealTime() {
       if (!response.ok) throw new Error('Failed to fetch radios');
       const data: RadioStatus[] = await response.json();
       setRadios(data);
-
       const hasFavorites = data.some(radio => radio.isFavorite);
       setShowFavoriteRadios(!hasFavorites);
     } catch (error) {
@@ -88,10 +89,8 @@ export default function RealTime() {
 
   const fetchExecutions = async (reset = false) => {
     if (loading) return;
-
     setLoading(true);
     const currentPage = reset ? 0 : page;
-
     try {
       const headers = await getAuthHeaders();
       const response = await fetch('/api/executions', {
@@ -105,10 +104,8 @@ export default function RealTime() {
           page: currentPage,
         }),
       });
-      
       if (!response.ok) throw new Error('Failed to fetch executions');
       const data = await response.json();
-      
       if (Array.isArray(data)) {
         setExecutions(reset ? data : [...executions, ...data]);
         setHasMore(data.length === 100);
@@ -127,6 +124,18 @@ export default function RealTime() {
     setPage(0);
     setHasMore(true);
     fetchExecutions(true);
+  };
+
+  const clearFilters = () => {
+    setFilters({
+      radio: '',
+      artist: '',
+      song: '',
+      startDate: today,
+      endDate: today,
+      startTime: '00:00',
+      endTime: '23:59',
+    });
   };
 
   const validateDates = () => {
@@ -156,7 +165,7 @@ export default function RealTime() {
   const handleSaveFavorites = async (selectedRadios: string[]) => {
     try {
       const headers = await getAuthHeaders();
-      const promises = selectedRadios.map(radio => 
+      const promises = selectedRadios.map(radio =>
         fetch('/api/radios/favorite', {
           method: 'POST',
           headers,
@@ -166,7 +175,6 @@ export default function RealTime() {
           })
         })
       );
-
       await Promise.all(promises);
       setShowFavoriteRadios(false);
       fetchRadios();
@@ -177,24 +185,21 @@ export default function RealTime() {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex-none sticky top-0 z-10 bg-gray-50 dark:bg-gray-900">
-        {showFavoriteRadios && (
-          <div className="mb-6">
-            <FavoriteRadios onSave={handleSaveFavorites} />
-          </div>
-        )}
-        
-        <form onSubmit={handleSearch} className="mb-6 space-y-4 bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Rádio
-              </label>
+        <div className="realtime-container">
+        <div className="realtime-filters">
+          {showFavoriteRadios && (
+            <div className="mb-6">
+              <FavoriteRadios onSave={handleSaveFavorites} />
+            </div>
+          )}
+        <form onSubmit={handleSearch}>
+          <div className="realtime-filter-row">
+            <div className="realtime-filter-group">
+              <label htmlFor="radio-select">Rádio</label>
               <select
+                id="radio-select"
                 value={filters.radio}
                 onChange={(e) => setFilters({ ...filters, radio: e.target.value })}
-                className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500"
               >
                 <option value="">Todas as Rádios</option>
                 {radios.map((radio) => (
@@ -204,123 +209,99 @@ export default function RealTime() {
                 ))}
               </select>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Artista
-              </label>
+            <div className="realtime-filter-group">
+              <label htmlFor="artist-input">Artista</label>
               <input
+                id="artist-input"
                 type="text"
                 value={filters.artist}
                 onChange={(e) => setFilters({ ...filters, artist: e.target.value })}
-                className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                 placeholder="Nome do artista"
               />
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Música
-              </label>
+            <div className="realtime-filter-group">
+              <label htmlFor="song-input">Música</label>
               <input
+                id="song-input"
                 type="text"
                 value={filters.song}
                 onChange={(e) => setFilters({ ...filters, song: e.target.value })}
-                className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                 placeholder="Nome da música"
               />
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Data Inicial
-              </label>
+          </div>
+          <div className="realtime-filter-row-datetime">
+            <div className="realtime-filter-group">
+              <label htmlFor="start-date">Data Inicial</label>
               <input
+                id="start-date"
                 type="date"
                 value={filters.startDate}
                 onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-                className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500"
               />
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Data Final
-              </label>
+            <div className="realtime-filter-group">
+              <label htmlFor="end-date">Data Final</label>
               <input
+                id="end-date"
                 type="date"
                 value={filters.endDate}
                 onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-                className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500"
               />
             </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Hora Inicial
-                </label>
-                <input
-                  type="time"
-                  value={filters.startTime}
-                  onChange={(e) => setFilters({ ...filters, startTime: e.target.value })}
-                  className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Hora Final
-                </label>
-                <input
-                  type="time"
-                  value={filters.endTime}
-                  onChange={(e) => setFilters({ ...filters, endTime: e.target.value })}
-                  className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                />
-              </div>
+            <div className="realtime-filter-group">
+              <label htmlFor="start-time">Hora Inicial</label>
+              <input
+                id="start-time"
+                type="time"
+                value={filters.startTime}
+                onChange={(e) => setFilters({ ...filters, startTime: e.target.value })}
+              />
+            </div>
+            <div className="realtime-filter-group">
+              <label htmlFor="end-time">Hora Final</label>
+              <input
+                id="end-time"
+                type="time"
+                value={filters.endTime}
+                onChange={(e) => setFilters({ ...filters, endTime: e.target.value })}
+              />
             </div>
           </div>
-
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={!validateDates()}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              <Search className="w-4 h-4" />
-              Buscar
-            </button>
-          </div>
-        </form>
-      </div>
-
-      {/* Table Section - Scrollable */}
-      <div className="flex-1 overflow-auto bg-white dark:bg-gray-800 rounded-lg shadow-sm">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0 z-10">
+          <div className="realtime-filter-buttons">
+          <button
+            type="submit"
+            disabled={!validateDates()}
+            className="realtime-btn-primary"
+          >
+            Pesquisar
+          </button>
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="realtime-btn-secondary"
+          >
+            Limpar Filtros
+          </button>
+        </div>
+      </form>
+    </div>
+      <div className="realtime-table-container">
+        <table className="realtime-table">
+          <thead>
             <tr>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-[15%]">
-                Data/Hora
-              </th>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-[20%]">
-                Rádio
-              </th>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-[32%]">
-                Artista
-              </th>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider whitespace-nowrap w-[33%]">
-                Música
-              </th>
+              <th>Data/Hora</th>
+              <th>Rádio</th>
+              <th>Artista</th>
+              <th>Música</th>
             </tr>
           </thead>
-          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+          <tbody>
             {executions.map((execution) => (
               <React.Fragment key={execution.id}>
-                <tr className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 max-w-[200px]">
-                    {formatDisplayDate(execution.date)} {execution.time}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 max-w-[200px]">
+                <tr>
+                  <td>{formatDisplayDate(execution.date)} {execution.time}</td>
+                  <td>
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => toggleRadio(execution.id)}
@@ -342,10 +323,8 @@ export default function RealTime() {
                       </div>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-                    <span>{execution.artist}</span>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 max-w-[200px]">
+                  <td>{execution.artist}</td>
+                  <td>
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => toggleRow(execution.id)}
@@ -372,8 +351,7 @@ export default function RealTime() {
             ))}
           </tbody>
         </table>
-
-        {loading ? (
+        {loading && executions.length === 0 ? (
           <div className="flex justify-center items-center p-4">
             <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
           </div>
