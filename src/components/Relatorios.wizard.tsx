@@ -4,8 +4,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase-client';
 import { Loader2, FileDown, Calendar, MapPin, Radio, ChevronRight } from 'lucide-react';
 import moment from 'moment';
-import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
 import './Ranking/styles/Ranking.css';
 
 interface ReportData {
@@ -166,7 +167,8 @@ const RelatoriosWizard: React.FC = () => {
         item.total
       ];
     });
-    (doc as any).autoTable({
+    autoTable(doc, {
+
       head: [headers],
       body: tableData.slice(0, parseInt(chartSize.value)),
       startY: 50,
