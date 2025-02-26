@@ -17,6 +17,8 @@
     "@types/react-select": "^5.0.0",
     "@types/react-toastify": "^4.0.2",
     "date-fns": "^3.6.0",
+    "jspdf": "^3.0.0",
+    "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.344.0",
     "moment": "^2.30.1",
     "pg": "^8.11.3",
