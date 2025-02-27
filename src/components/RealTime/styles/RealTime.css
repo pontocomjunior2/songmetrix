@@ -1,0 +1,105 @@
+.realtime-container {
+  padding: 1.5rem;
+}
+
+.realtime-filters {
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  margin-bottom: 1.5rem;
+  @apply bg-white dark:bg-gray-800;
+}
+
+.realtime-filter-row,
+.realtime-filter-row-datetime {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.realtime-filter-group {
+  flex: 1;
+  min-width: 200px;
+}
+
+.realtime-filter-group label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  @apply text-gray-700 dark:text-gray-200;
+}
+
+.realtime-filter-group select,
+.realtime-filter-group input {
+  width: 100%;
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+  @apply border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200;
+}
+
+.realtime-filter-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+.realtime-btn-primary {
+  background-color: #2563eb;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.realtime-btn-primary:hover {
+  background-color: #1d4ed8;
+}
+
+.realtime-btn-primary:disabled {
+  background-color: #93c5fd;
+  cursor: not-allowed;
+}
+
+.realtime-btn-secondary {
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  font-weight: 500;
+  transition: background-color 0.2s;
+  @apply bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200;
+}
+
+.realtime-btn-secondary:hover {
+  @apply bg-gray-200 dark:bg-gray-600;
+}
+
+.realtime-table-container {
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  overflow-x: auto;
+  @apply bg-white dark:bg-gray-800;
+}
+
+.realtime-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.realtime-table th,
+.realtime-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  @apply border-b border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200;
+}
+
+.realtime-table th {
+  font-weight: 500;
+  @apply bg-gray-50 dark:bg-gray-700;
+}
+
+.realtime-table tr:hover {
+  @apply bg-gray-50 dark:bg-gray-700;
+}

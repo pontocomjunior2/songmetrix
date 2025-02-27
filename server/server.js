@@ -57,7 +57,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);
 // Middlewares regulares
 // Configurar CORS antes de qualquer rota
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000'],
+  origin: ['http://localhost:5173', 'http://localhost:3000', 'https://songmetrix.com.br'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],

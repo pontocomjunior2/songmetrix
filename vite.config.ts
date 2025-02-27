@@ -25,16 +25,11 @@ export default defineConfig({
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom'],
-
         },
       },
     },
   },
   optimizeDeps: {
     include: ['@stripe/stripe-js'],
-  },
-  define: {
-    // Necessário para o Firebase funcionar corretamente
-    global: 'globalThis',
   },
 });
