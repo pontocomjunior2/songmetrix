@@ -7,8 +7,8 @@ import ProtectedRoute from './components/Auth/ProtectedRoute';
 import AdminRoute from './components/Auth/AdminRoute';
 import FirstAccessRoute from './components/Auth/FirstAccessRoute';
 import PendingApproval from './components/Auth/PendingApproval';
-import Layout from './components/Layout';
-import Dashboard from './components/Dashboard/index';
+import MainLayout from './components/Layout/MainLayout';
+import Dashboard from './components/Dashboard';
 import Ranking from './components/Ranking';
 import RealTime from './components/RealTime';
 import Radios from './components/Radios';
@@ -38,15 +38,11 @@ function App() {
           
           <Route path="/" element={
             <ProtectedRoute>
-              <Layout currentView={currentView} onNavigate={handleNavigate} />
+              <MainLayout currentView={currentView} onNavigate={handleNavigate} />
             </ProtectedRoute>
           }>
-            <Route index element={<Navigate to="/dashboard" />} />
-            <Route path="dashboard" element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            } />
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
             <Route path="ranking" element={<Ranking />} />
             <Route path="realtime" element={<RealTime />} />
             <Route path="radios" element={<Radios />} />
