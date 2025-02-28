@@ -1,5 +1,6 @@
 export enum UserStatus {
   ADMIN = 'ADMIN',
   ATIVO = 'ATIVO',
-  INATIVO = 'INATIVO'
+  INATIVO = 'INATIVO',
+  TRIAL = 'TRIAL'
 }

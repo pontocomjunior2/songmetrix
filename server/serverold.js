@@ -203,7 +203,7 @@ app.get('/api/radios/status', authenticateBasicUser, async (req, res) => {
     // Get favorite radios from user metadata
     const favoriteRadios = req.user.user_metadata?.favorite_radios || [];
 
-    // Buscar o último registro de cada rádio
+    // Buscar o último registro de todas as rádios
     const query = `
       WITH latest_entries AS (
         SELECT 
@@ -220,8 +220,8 @@ app.get('/api/radios/status', authenticateBasicUser, async (req, res) => {
     `;
 
     try {
-      console.log('Executing query:', query);
-      const result = await safeQuery(query);
+      console.log('Executing query with favorite radios:', { query, favoriteRadios });
+      const result = await safeQuery(query, [favoriteRadios]);
       console.log('Query result:', result);
       
       if (!result.rows || result.rows.length === 0) {
@@ -247,19 +247,6 @@ app.get('/api/radios/status', authenticateBasicUser, async (req, res) => {
           lastUpdate: row.last_update,
           isFavorite: favoriteRadios.includes(row.name)
         };
-      });
-
-      // Adicionar rádios favoritas que não estão no banco como offline
-      const existingRadios = new Set(radiosStatus.map(radio => radio.name));
-      const missingFavorites = favoriteRadios.filter(name => !existingRadios.has(name));
-      
-      missingFavorites.forEach(name => {
-        radiosStatus.push({
-          name,
-          status: 'OFFLINE',
-          lastUpdate: null,
-          isFavorite: true
-        });
       });
 
       res.json(radiosStatus);
@@ -579,9 +566,9 @@ app.get('/api/dashboard', authenticateUser, async (req, res) => {
           song_title,
           genre,
           name,
-          (date + INTERVAL '3 hours')::date as date
+          date + time::time as datetime
         FROM music_log
-        WHERE (date + INTERVAL '3 hours')::date BETWEEN $1 AND $2
+        WHERE (date + INTERVAL '3 hours') BETWEEN $1 AND $2
           AND name = ANY($3::text[])
       ),
       artist_counts AS (
@@ -614,19 +601,23 @@ app.get('/api/dashboard', authenticateUser, async (req, res) => {
         LIMIT 3
       ),
       radio_status AS (
-        SELECT DISTINCT
+        SELECT 
           name,
-          true as is_online
+          MAX(datetime) as last_update,
+          CASE
+            WHEN MAX(datetime) >= (NOW() - INTERVAL '30 minutes') THEN true
+            ELSE false
+          END as is_online
         FROM adjusted_dates
-        WHERE date = $2
+        GROUP BY name
       )
-      SELECT
-        json_build_object(
-          'artistData', (SELECT json_agg(artist_counts.*) FROM artist_counts),
-          'genreData', (SELECT json_agg(genre_counts.*) FROM genre_counts),
-          'topSongs', (SELECT json_agg(song_counts.*) FROM song_counts),
-          'activeRadios', (SELECT json_agg(radio_status.*) FROM radio_status)
-        ) as dashboard_data
+SELECT
+  json_build_object(
+    'artistData', (SELECT json_agg(artist_counts.*) FROM artist_counts),
+    'genreData', (SELECT json_agg(genre_counts.*) FROM genre_counts),
+    'topSongs', (SELECT json_agg(song_counts.*) FROM song_counts)
+  ) as dashboard_data,
+  (SELECT json_agg(radio_status) FROM radio_status) as activeRadios
     `;
 
     const params = [
@@ -640,13 +631,12 @@ app.get('/api/dashboard', authenticateUser, async (req, res) => {
     console.log('GET /api/dashboard - Parâmetros formatados:', JSON.stringify(params, null, 2));
 
     const result = await safeQuery(query, params);
-
-    const dashboardData = result.rows[0]?.dashboard_data || {
-      artistData: [],
-      genreData: [],
-      topSongs: [],
-      activeRadios: []
-    };
+    const { dashboard_data: dashboardData, activeRadios: activeRadiosData = [] } = result.rows[0] || {};
+    const dashboardDataCorrected = dashboardData || {
+       artistData: [],
+       genreData: [],
+       topSongs: []
+     };
     
     // Calcular totais
     const totalExecutions = (dashboardData.artistData || [])
@@ -665,11 +655,41 @@ app.get('/api/dashboard', authenticateUser, async (req, res) => {
         }))
       : [];
 
+      const currentTime = new Date();
+      const activeRadios = activeRadiosData ? activeRadiosData.map(radio => ({
+        name: radio.name,
+        status: radio.is_online ? 'ONLINE' : 'OFFLINE',
+        lastUpdate: radio.last_update,
+        isFavorite: favoriteRadios.includes(radio.name)
+      })) : [];
+
+
+    // Adicionar rádios favoritas que não estão no banco como offline
+    const existingRadios = new Set(activeRadios.map(radio => radio.name));
+    const missingFavorites = favoriteRadios.filter(name => !existingRadios.has(name));
+      
+    missingFavorites.forEach(name => {
+      activeRadios.push({
+        name,
+        status: 'OFFLINE',
+        lastUpdate: null,
+        isFavorite: true
+      });
+    });
+    console.log('Resposta enviada para /api/dashboard:', {
+      totalExecutions,
+      uniqueArtists,
+      uniqueSongs,
+      activeRadios,
+      topSongs: dashboardData.topSongs,
+      artistData: dashboardData.artistData,
+      genreData
+    });
     res.json({
       totalExecutions,
       uniqueArtists,
       uniqueSongs,
-      activeRadios: dashboardData.activeRadios,
+      activeRadios,
       topSongs: dashboardData.topSongs,
       artistData: dashboardData.artistData,
       genreData
@@ -785,8 +805,7 @@ app.put('/admin/users/:userId/status', authenticateUser, async (req, res) => {
 
   try {
     // Validar o status
-    if (!['ADMIN', 'ATIVO', 'INATIVO', 'TRIAL'].includes(status)) {
-
+    if (!['ADMIN', 'ATIVO', 'INATIVO'].includes(status)) {
       return res.status(400).json({ message: 'Status inválido' });
     }
 

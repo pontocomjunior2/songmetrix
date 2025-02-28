@@ -1,0 +1,397 @@
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { User, AuthError } from '@supabase/supabase-js';
+import { PostgrestError } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase-client';
+import { UserStatusType } from '../lib/auth';
+import { useNavigate } from 'react-router-dom';
+
+// Custom error type that includes both Auth and Postgrest errors
+class CustomAuthError extends AuthError {
+  constructor(message: string) {
+    super('Authentication error');
+    this.name = 'AuthError';
+    this.message = message;
+    this.__isAuthError = true;
+  }
+}
+
+interface DbUser {
+  id: string;
+  email: string;
+  status: UserStatusType;
+  created_at: string;
+  updated_at: string;
+  favorite_radios?: string[];
+}
+
+interface AuthContextType {
+  currentUser: User | null;
+  userStatus: UserStatusType | null;
+  loading: boolean;
+  signIn: (email: string, password: string) => Promise<{ error: CustomAuthError | null }>;
+  signUp: (email: string, password: string) => Promise<{ error: AuthError | null }>;
+  signOut: () => Promise<void>;
+  resetPassword: (email: string) => Promise<{ error: AuthError | null }>;
+  getAllUsers: () => Promise<DbUser[]>;
+  updateUserStatus: (userId: string, newStatus: UserStatusType) => Promise<void>;
+  removeUser: (userId: string) => Promise<void>;
+  updateFavoriteRadios: (radios: string[]) => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [userStatus, setUserStatus] = useState<UserStatusType | null>(null);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      sessionStorage.clear();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    // Verificar sessão inicial
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      console.log('Initial session check:', session);
+      const user = session?.user ?? null;
+      
+      if (user) {
+        const userStatus = user.user_metadata?.status;
+        console.log('User status from metadata:', userStatus);
+        
+        if (userStatus === 'ADMIN' || userStatus === 'ATIVO') {
+          setCurrentUser(user);
+          setUserStatus(userStatus);
+        } else {
+          console.log('User not active or admin, logging out');
+          await supabase.auth.signOut();
+          setCurrentUser(null);
+          setUserStatus(null);
+        }
+      } else {
+        setCurrentUser(null);
+        setUserStatus(null);
+      }
+      
+      setLoading(false);
+    });
+
+    // Configurar listener para mudanças de auth
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state change:', { event, session });
+      const user = session?.user ?? null;
+      
+      if (user) {
+        const userStatus = user.user_metadata?.status;
+        console.log('User status from metadata:', userStatus);
+        
+        if (userStatus === 'ADMIN' || userStatus === 'ATIVO') {
+          setCurrentUser(user);
+          setUserStatus(userStatus);
+        } else {
+          console.log('User not active or admin, logging out');
+          await supabase.auth.signOut();
+          setCurrentUser(null);
+          setUserStatus(null);
+        }
+      } else {
+        setCurrentUser(null);
+        setUserStatus(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const signIn = async (email: string, password: string) => {
+    console.log('Attempting sign in for:', email);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      
+      if (error) {
+        console.error('Sign in error:', error);
+        return { error };
+      }
+
+      if (!data.user) {
+        console.error('No user data returned');
+        return { error: new Error('No user data returned') as AuthError };
+      }
+
+      const userStatus = data.user.user_metadata?.status;
+      console.log('User status from metadata:', userStatus);
+
+      if (!userStatus) {
+        const createdAt = new Date(data.user.created_at);
+        const now = new Date();
+        const isNewUser = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24) <= 7;
+
+        if (isNewUser) {
+          console.log('New user, granting temporary access');
+          await supabase.auth.updateUser({
+          data: { status: 'TRIAL' }
+          });
+          setCurrentUser(data.user);
+          setUserStatus('TRIAL');
+          await new Promise(resolve => setTimeout(resolve, 100));
+          navigate('/dashboard');
+          return { error: null };
+        }
+
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
+
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('status')
+            .eq('id', data.user.id)
+            .single();
+
+          if (userError || !userData) {
+            console.error('Error fetching user status:', userError);
+            await supabase.auth.signOut();
+            return { error: new CustomAuthError('Error fetching user status') };
+          }
+
+          const status = userData.status;
+          console.log('User status from database:', status);
+
+          if (!status || (status !== 'ADMIN' && status !== 'ATIVO')) {
+            console.error('User not active or admin');
+            await supabase.auth.signOut();
+            return { error: new CustomAuthError('Usuário inativo. Entre em contato com o administrador.') };
+          }
+
+          await supabase.auth.updateUser({
+            data: { status }
+          });
+
+          setCurrentUser(data.user);
+          setUserStatus(status as UserStatusType);
+
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          navigate('/dashboard');
+          return { error: null };
+        } catch (error) {
+          console.error('Error checking user status:', error);
+          await supabase.auth.signOut();
+          return { error: new CustomAuthError('Error checking user status') };
+        }
+      } else {
+        if (userStatus !== 'ADMIN' && userStatus !== 'ATIVO') {
+          console.error('User not active or admin');
+          await supabase.auth.signOut();
+          return { error: new CustomAuthError('Usuário inativo. Entre em contato com o administrador.') };
+        }
+
+        setCurrentUser(data.user);
+        setUserStatus(userStatus);
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        navigate('/dashboard');
+        return { error: null };
+      }
+    } catch (error) {
+      console.error('Unexpected error during sign in:', error);
+      return { error: error as AuthError };
+    }
+  };
+
+  const signUp = async (email: string, password: string) => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { status: 'INATIVO' }
+      }
+    });
+    return { error };
+  };
+
+  const signOut = async () => {
+    setCurrentUser(null);
+    setUserStatus(null);
+    await supabase.auth.signOut();
+    navigate('/login');
+  };
+
+  const resetPassword = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${import.meta.env.VITE_APP_URL}/update-password`,
+    });
+    return { error };
+  };
+
+  const getAllUsers = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
+      const isAdmin = user.user_metadata?.status === 'ADMIN';
+
+      if (!isAdmin) {
+        throw new Error('Usuário não tem permissão de administrador');
+      }
+
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching users:', error);
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Error in getAllUsers:', error);
+      throw error;
+    }
+  };
+
+  const updateUserStatus = async (userId: string, newStatus: UserStatusType) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
+      const isAdmin = user.user_metadata?.status === 'ADMIN';
+
+      if (!isAdmin) {
+        throw new Error('Usuário não tem permissão de administrador');
+      }
+
+      // Update user status in the database
+      const { error: dbError } = await supabase
+        .from('users')
+        .update({ 
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId);
+
+      if (dbError) {
+        console.error('Error updating user status:', dbError);
+        throw dbError;
+      }
+
+      // Get the user's current metadata
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('email')
+        .eq('id', userId)
+        .single();
+
+      if (userError) {
+        console.error('Error fetching user data:', userError);
+        throw userError;
+      }
+
+      // Update user metadata through the API
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/users/update-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        },
+        body: JSON.stringify({
+          userId,
+          status: newStatus
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update user metadata');
+      }
+
+    } catch (error) {
+      console.error('Error in updateUserStatus:', error);
+      throw error;
+    }
+  };
+
+  const removeUser = async (userId: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
+      const isAdmin = user.user_metadata?.status === 'ADMIN';
+      if (!isAdmin) {
+        throw new Error('Usuário não tem permissão de administrador');
+      }
+
+      // Call the stored procedure to delete the user
+      const { error } = await supabase.rpc('delete_user_admin', {
+        user_id: userId
+      });
+
+      if (error) {
+        console.error('Error deleting user:', error);
+        throw new Error('Erro ao remover usuário');
+      }
+
+      // Refresh the users list to update the UI
+      await supabase
+        .from('users')
+        .select()
+        .limit(1)
+        .single();
+
+    } catch (error) {
+      console.error('Error in removeUser:', error);
+      throw error;
+    }
+  };
+
+  const updateFavoriteRadios = async (radios: string[]) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { error } = await supabase.auth.updateUser({
+      data: {
+        ...user.user_metadata,
+        favorite_radios: radios
+      }
+    });
+
+    if (error) throw error;
+  };
+
+  const value = {
+    currentUser,
+    userStatus,
+    loading,
+    signIn,
+    signUp,
+    signOut,
+    resetPassword,
+    getAllUsers,
+    updateUserStatus,
+    removeUser,
+    updateFavoriteRadios
+  };
+
+  return (
+    <AuthContext.Provider value={value}>
+      {!loading && children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+}
