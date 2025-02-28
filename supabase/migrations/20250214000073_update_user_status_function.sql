@@ -26,7 +26,7 @@ BEGIN
   END IF;
 
   -- Check if status is valid
-  IF p_new_status NOT IN ('ADMIN', 'ATIVO', 'INATIVO') THEN
+  IF p_new_status NOT IN ('ADMIN', 'ATIVO', 'INATIVO', 'TRIAL') THEN
     RAISE EXCEPTION 'invalid status';
   END IF;
 

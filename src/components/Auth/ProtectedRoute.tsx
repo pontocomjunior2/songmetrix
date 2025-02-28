@@ -49,7 +49,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (userStatus === 'INATIVO') {
-    return <Navigate to="/pending-approval" replace />;
+    return <Navigate to="/plans" state={{ trialExpired: true, message: 'Seu período de avaliação gratuito expirou. Escolha um plano para continuar utilizando o sistema.' }} replace />;
   }
 
   // For admin users, allow access to all routes
@@ -58,7 +58,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   // For regular users
-  if (userStatus === 'ATIVO') {
+  if (userStatus === 'ATIVO' || userStatus === 'TRIAL') {
     // Only block access to admin-specific routes
     if (location.pathname.startsWith('/admin/')) {
       return <Navigate to="/ranking" replace />;

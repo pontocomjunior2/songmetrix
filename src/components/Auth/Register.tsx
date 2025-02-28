@@ -44,9 +44,9 @@ export default function Register() {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/pending-approval`,
+          emailRedirectTo: `${window.location.origin}/dashboard`,
           data: {
-            status: 'INATIVO' // Set initial status in user metadata
+            status: 'TRIAL' // Usuários começam com status TRIAL para período de teste de 7 dias
           }
         }
       });
@@ -60,7 +60,7 @@ export default function Register() {
         .insert({
           id: user.id,
           email: user.email,
-          status: 'INATIVO', // New users start as inactive
+          status: 'TRIAL', // Usuários começam com status TRIAL para período de teste de 7 dias
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
@@ -76,7 +76,7 @@ export default function Register() {
       
       navigate('/pending-approval', { 
         state: { 
-          message: 'Por favor, verifique seu email para confirmar seu cadastro. Após a confirmação, nosso atendimento entrará em contato.' 
+          message: 'Por favor, verifique seu email para confirmar seu cadastro. Após a confirmação, você terá acesso ao sistema com 7 dias gratuitos para testar todas as funcionalidades.' 
         } 
       });
 
@@ -133,6 +133,10 @@ export default function Register() {
             <p className="mt-2 text-sm text-gray-600">
               Preencha os dados abaixo para se registrar
             </p>
+            <div className="mt-2 p-3 bg-blue-50 rounded-md text-blue-700 text-sm">
+              <p className="font-medium">Período de avaliação gratuito!</p>
+              <p>Ao se cadastrar, você terá 7 dias gratuitos para testar todas as funcionalidades do sistema.</p>
+            </div>
           </div>
 
           {error && (

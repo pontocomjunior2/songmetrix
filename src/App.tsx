@@ -17,6 +17,7 @@ import RadioAbbreviations from './components/Admin/RadioAbbreviations';
 import PaymentSuccess from './components/Payment/PaymentSuccess';
 import PaymentCanceled from './components/Payment/PaymentCanceled';
 import Relatorios from './components/Relatorios';
+import Plans from './components/Plans';
 
 function App() {
   const [currentView, setCurrentView] = useState('dashboard');
@@ -35,6 +36,7 @@ function App() {
           <Route path="/payment/success" element={<PaymentSuccess />} />
           <Route path="/payment/canceled" element={<PaymentCanceled />} />
           <Route path="/first-access" element={<FirstAccessRoute />} />
+          <Route path="/plans" element={<Plans />} />
           
           <Route path="/" element={
             <ProtectedRoute>

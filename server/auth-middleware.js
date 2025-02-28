@@ -31,28 +31,151 @@ export const authenticateBasicUser = async (req, res, next) => {
     }
 
     const token = authHeader.split('Bearer ')[1];
-    console.log('Verifying token:', token.substring(0, 10) + '...');
-    
     const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
     
     if (error || !user) {
-      console.error('Authentication error:', error);
+      console.error('Invalid token or user not found:', error);
       return res.status(401).json({ error: 'Token inválido' });
     }
 
-    // Get user status directly from metadata
-    const userStatus = user.user_metadata?.status;
-    console.log('User status from metadata:', userStatus);
+    // Verificar se o usuário existe na tabela users
+    const { data: dbUser, error: dbError } = await supabaseAdmin
+      .from('users')
+      .select('id, email, status, created_at, updated_at')
+      .eq('id', user.id)
+      .single();
 
-    if (!userStatus || (userStatus !== 'ADMIN' && userStatus !== 'ATIVO')) {
-      console.log('Invalid user status:', userStatus);
+    if (dbError && dbError.code !== 'PGRST116') {
+      console.error('Error fetching user from database:', dbError);
+    }
+
+    console.log('User status from database:', dbUser?.status);
+
+    // Verificar se há inconsistência entre o status do banco e dos metadados
+    const userStatus = user.user_metadata?.status;
+    if (dbUser?.status && userStatus && dbUser.status !== userStatus) {
+      console.log(`Inconsistência detectada: status metadata=${userStatus}, status db=${dbUser.status}`);
+      
+      // Adicionar à fila de sincronização se houver inconsistência
+      const { error: insertError } = await supabaseAdmin
+        .from('auth_sync_queue')
+        .insert({
+          user_id: user.id,
+          status: dbUser.status, // Usar o status do banco como fonte da verdade
+          processed: false,
+          created_at: new Date().toISOString()
+        })
+        .select();
+      
+      if (insertError) {
+        console.error('Error adding user to sync queue:', insertError);
+      } else {
+        console.log(`Usuário ${user.id} adicionado à fila de sincronização`);
+      }
+    }
+
+    // Verificar se o usuário foi criado nos últimos 7 dias
+    const createdAt = new Date(user.created_at);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - createdAt.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const isNewUser = diffDays <= 7;
+    
+    console.log(`User ${user.id} created ${diffDays} days ago. Is new user: ${isNewUser}`);
+
+    // Determinar o status final
+    let finalStatus;
+    
+    // Se o status do banco é INATIVO, deve permanecer INATIVO
+    if (dbUser?.status === 'INATIVO') {
+      finalStatus = 'INATIVO';
+    }
+    // Se o status dos metadados é INATIVO, deve permanecer INATIVO
+    else if (userStatus === 'INATIVO') {
+      finalStatus = 'INATIVO';
+    }
+    // Se o usuário é novo (< 7 dias) e não é ADMIN/ATIVO, deve ser TRIAL
+    else if (isNewUser && (!userStatus || userStatus === 'TRIAL' || userStatus === 'INATIVO')) {
+      finalStatus = 'TRIAL';
+    }
+    // Em caso de inconsistência, priorizar o status mais permissivo
+    else if (dbUser?.status && userStatus && dbUser.status !== userStatus) {
+      if (dbUser.status === 'ADMIN' || userStatus === 'ADMIN') {
+        finalStatus = 'ADMIN';
+      } else if (dbUser.status === 'ATIVO' || userStatus === 'ATIVO') {
+        finalStatus = 'ATIVO';
+      } else if (dbUser.status === 'TRIAL' || userStatus === 'TRIAL') {
+        finalStatus = 'TRIAL';
+      } else {
+        finalStatus = 'INATIVO';
+      }
+    } 
+    // Usar o status existente se estiver definido
+    else if (userStatus) {
+      finalStatus = userStatus;
+    } 
+    // Usar o status do banco se o dos metadados não estiver definido
+    else if (dbUser?.status) {
+      finalStatus = dbUser.status;
+    }
+    // Padrão é INATIVO
+    else {
+      finalStatus = 'INATIVO';
+    }
+
+    console.log('Status final determinado:', finalStatus);
+
+    // Verificação estrita: rejeitar usuários com status INATIVO
+    if (finalStatus === 'INATIVO') {
+      console.log('Acesso negado para usuário inativo:', user.id);
       return res.status(403).json({ 
         error: 'Usuário inativo',
-        code: 'inactive_user'
+        code: 'inactive_user',
+        redirect: '/plans'
       });
     }
 
-    req.user = user;
+    // Se o usuário está no período trial, mas ele expirou
+    if (finalStatus === 'TRIAL' && !isNewUser) {
+      console.log('Trial period expired for user', user.id);
+      
+      // Atualizar o status do usuário para INATIVO em ambos os lugares
+      await Promise.all([
+        // Atualizar nos metadados
+        supabaseAdmin.auth.admin.updateUserById(
+          user.id,
+          { user_metadata: { ...user.user_metadata, status: 'INATIVO' } }
+        ),
+        
+        // Atualizar no banco de dados
+        supabaseAdmin
+          .from('users')
+          .update({
+            status: 'INATIVO',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', user.id)
+      ]);
+      
+      return res.status(403).json({ 
+        error: 'Período trial expirado',
+        code: 'trial_expired',
+        redirect: '/plans'
+      });
+    }
+    
+    // Adicionar informações ao objeto user para a solicitação
+    req.user = {
+      ...user,
+      dbStatus: dbUser?.status,
+      finalStatus: finalStatus
+    };
+    
+    // Adicionar dias restantes do trial se aplicável
+    if (finalStatus === 'TRIAL') {
+      req.user.trial_days_remaining = Math.max(0, 7 - diffDays);
+    }
+    
     next();
   } catch (error) {
     console.error('Authentication error:', error);
@@ -65,6 +188,7 @@ export const authenticateUser = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
+      console.log('No Bearer token provided');
       return res.status(401).json({ error: 'Token não fornecido' });
     }
 
@@ -72,23 +196,198 @@ export const authenticateUser = async (req, res, next) => {
     const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
     
     if (error || !user) {
+      console.error('Invalid token or user not found:', error);
       return res.status(401).json({ error: 'Token inválido' });
     }
 
     // Get user status directly from metadata
     const userStatus = user.user_metadata?.status;
+    console.log('User status from metadata:', userStatus);
 
-    if (!userStatus || (userStatus !== 'ADMIN' && userStatus !== 'ATIVO')) {
+    // Verificar se o usuário existe na tabela users
+    const { data: dbUser, error: dbError } = await supabaseAdmin
+      .from('users')
+      .select('id, email, status, created_at, updated_at')
+      .eq('id', user.id)
+      .single();
+
+    if (dbError && dbError.code !== 'PGRST116') {
+      console.error('Error fetching user from database:', dbError);
+    }
+
+    console.log('User status from database:', dbUser?.status);
+
+    // Verificar se o usuário foi criado nos últimos 7 dias
+    const createdAt = new Date(user.created_at);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - createdAt.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const isNewUser = diffDays <= 7;
+    
+    console.log(`User ${user.id} created ${diffDays} days ago. Is new user: ${isNewUser}`);
+
+    // Determinar o status correto
+    let correctStatus;
+
+    // Se o usuário é novo, deve ser TRIAL (prioridade máxima)
+    if (isNewUser) {
+      correctStatus = 'TRIAL';
+      console.log('Usuário novo, definindo status como TRIAL');
+    } 
+    // Se o usuário é ADMIN em qualquer lugar, manter como ADMIN
+    else if (userStatus === 'ADMIN' || dbUser?.status === 'ADMIN') {
+      correctStatus = 'ADMIN';
+      console.log('Usuário é ADMIN, mantendo status');
+    }
+    // Se o usuário é ATIVO em qualquer lugar, manter como ATIVO
+    else if (userStatus === 'ATIVO' || dbUser?.status === 'ATIVO') {
+      correctStatus = 'ATIVO';
+      console.log('Usuário é ATIVO, mantendo status');
+    }
+    // Se o usuário tem status TRIAL em qualquer lugar e ainda está no período de trial, manter como TRIAL
+    else if ((userStatus === 'TRIAL' || dbUser?.status === 'TRIAL') && isNewUser) {
+      correctStatus = 'TRIAL';
+      console.log('Usuário está no período TRIAL, mantendo status');
+    }
+    // Em todos os outros casos, o usuário é INATIVO
+    else {
+      correctStatus = 'INATIVO';
+      console.log('Definindo status como INATIVO por padrão');
+    }
+
+    console.log('Status correto determinado:', correctStatus);
+
+    // Verificar se há inconsistência entre o status determinado e os registros
+    const needsMetadataUpdate = correctStatus !== userStatus;
+    const needsDatabaseUpdate = dbUser && correctStatus !== dbUser.status;
+
+    // Se o status correto for diferente do que está nos metadados, atualizar
+    if (needsMetadataUpdate) {
+      console.log('Atualizando status nos metadados de', userStatus, 'para', correctStatus);
+      
+      try {
+        // Atualizar metadados
+        const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+          user.id,
+          { user_metadata: { ...user.user_metadata, status: correctStatus } }
+        );
+
+        if (updateError) {
+          console.error('Erro ao atualizar metadados do usuário:', updateError);
+        } else {
+          console.log('Metadados atualizados com sucesso');
+        }
+      } catch (error) {
+        console.error('Exceção ao atualizar metadados:', error);
+      }
+    }
+
+    // Se o status correto for diferente do que está no banco, atualizar
+    if (needsDatabaseUpdate) {
+      console.log('Atualizando status no banco de dados de', dbUser.status, 'para', correctStatus);
+      
+      try {
+        // Atualizar na tabela users
+        const { error: updateDbError } = await supabaseAdmin
+          .from('users')
+          .update({
+            status: correctStatus,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', user.id);
+          
+        if (updateDbError) {
+          console.error('Erro ao atualizar status no banco de dados:', updateDbError);
+        } else {
+          console.log('Status no banco de dados atualizado com sucesso');
+        }
+      } catch (error) {
+        console.error('Exceção ao atualizar banco de dados:', error);
+      }
+    }
+
+    // Se houve inconsistência, adicionar à fila de sincronização para garantir
+    if (needsMetadataUpdate || needsDatabaseUpdate) {
+      try {
+        const { error: queueError } = await supabaseAdmin
+          .from('auth_sync_queue')
+          .insert({
+            user_id: user.id,
+            status: correctStatus,
+            processed: false,
+            created_at: new Date().toISOString()
+          })
+          .select();
+          
+        if (queueError) {
+          console.error('Erro ao adicionar usuário à fila de sincronização:', queueError);
+        } else {
+          console.log('Usuário adicionado à fila de sincronização');
+        }
+      } catch (error) {
+        console.error('Exceção ao adicionar à fila de sincronização:', error);
+      }
+    }
+
+    // Verificar se o usuário tem permissão para acessar (ADMIN, ATIVO ou TRIAL válido)
+    if (correctStatus === 'INATIVO') {
+      console.log('Acesso negado para usuário inativo:', user.id);
       return res.status(403).json({ 
         error: 'Assinatura necessária',
-        code: 'subscription_required'
+        code: 'subscription_required',
+        redirect: '/plans'
       });
     }
 
-    req.user = user;
+    // Verificar se o usuário está no período trial e se ainda é válido
+    if (correctStatus === 'TRIAL' && !isNewUser) {
+      console.log('Período trial expirado para o usuário', user.id);
+      
+      try {
+        // Atualizar o status do usuário para INATIVO
+        await Promise.all([
+          // Atualizar nos metadados
+          supabaseAdmin.auth.admin.updateUserById(
+            user.id,
+            { user_metadata: { ...user.user_metadata, status: 'INATIVO' } }
+          ),
+          
+          // Atualizar na tabela users
+          supabaseAdmin
+            .from('users')
+            .update({
+              status: 'INATIVO',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', user.id)
+        ]);
+        
+        return res.status(403).json({ 
+          error: 'Período trial expirado',
+          code: 'trial_expired',
+          redirect: '/plans'
+        });
+      } catch (error) {
+        console.error('Erro ao atualizar status após expiração do trial:', error);
+        return res.status(500).json({ error: 'Erro interno do servidor' });
+      }
+    }
+    
+    // Adicionar informações ao objeto user para a solicitação
+    req.user = {
+      ...user,
+      dbStatus: dbUser?.status,
+      correctStatus: correctStatus
+    };
+    
+    // Adicionar dias restantes do trial se aplicável
+    if (correctStatus === 'TRIAL') {
+      req.user.trial_days_remaining = Math.max(0, 7 - diffDays);
+    }
+    
     next();
   } catch (error) {
-    console.error('Authentication error:', error);
+    console.error('Erro de autenticação:', error);
     res.status(401).json({ error: 'Token inválido' });
   }
 };

@@ -1,6 +1,6 @@
 import { supabase } from './supabase-client';
 
-export type UserStatus = 'ADMIN' | 'ATIVO' | 'INATIVO';
+export type UserStatus = 'ADMIN' | 'ATIVO' | 'INATIVO' | 'TRIAL';|export type UserStatus = 'ADMIN' | 'ATIVO' | 'INATIVO' | 'TRIAL';|export type UserStatus = 'ADMIN' | 'ATIVO' | 'INATIVO' | 'TRIAL';
 
 export interface User {
   id: string;

@@ -14,7 +14,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const { signIn } = useAuth();
+  const { login } = useAuth();
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,13 +24,13 @@ export default function Login() {
       console.log('Attempting login with:', { email });
 
       console.log('Iniciando login com Supabase...');
-      const { error: signInError } = await signIn(email, password);
+      const { error: signInError } = await login(email, password);
       
       if (signInError) {
         throw signInError;
       }
 
-      // signIn will handle navigation based on user status
+      // login will handle navigation based on user status
     } catch (error: any) {
       console.error('Login error:', error);
       let errorMessage = 'Falha ao fazer login. Verifique suas credenciais.';
