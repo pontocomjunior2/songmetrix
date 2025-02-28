@@ -153,7 +153,7 @@ useEffect(() => {
   if (favoriteRadios.length === 0) {
     return (
       <div className="p-6">
-        <p className="text-gray-600">Você ainda não tem rádios favoritas. Adicione algumas rádios aos favoritos para ver o dashboard.</p>
+        <p className="text-gray-600 dark:text-gray-300">Você ainda não tem rádios favoritas. Adicione algumas rádios aos favoritos para ver o dashboard.</p>
       </div>
     );
   }
@@ -162,9 +162,9 @@ useEffect(() => {
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-white p-2 border rounded shadow">
-          <p className="font-medium">{payload[0].payload.artist}</p>
-          <p>{payload[0].value} execuções</p>
+        <div className="bg-white dark:bg-gray-800 p-2 border rounded shadow">
+          <p className="font-medium text-gray-900 dark:text-white">{payload[0].payload.artist}</p>
+          <p className="text-gray-700 dark:text-gray-300">{payload[0].value} execuções</p>
         </div>
       );
     }
@@ -174,19 +174,19 @@ useEffect(() => {
   return (
     <div className="space-y-6">
       {userStatus === 'TRIAL' && trialDaysRemaining !== null && (
-        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4 rounded-md">
+        <div className="bg-blue-50 dark:bg-blue-900 border-l-4 border-blue-500 p-4 mb-4 rounded-md">
           <div className="flex items-center">
-            <Clock className="h-6 w-6 text-blue-500 mr-2" />
+            <Clock className="h-6 w-6 text-blue-500 dark:text-blue-400 mr-2" />
             <div>
-              <p className="font-medium text-blue-700">Período de avaliação</p>
-              <p className="text-blue-600">
+              <p className="font-medium text-blue-700 dark:text-blue-300">Período de avaliação</p>
+              <p className="text-blue-600 dark:text-blue-200">
                 {trialDaysRemaining > 1 
                   ? `Você tem ${trialDaysRemaining} dias restantes no seu período de avaliação gratuito.` 
                   : trialDaysRemaining === 1 
                     ? 'Você tem 1 dia restante no seu período de avaliação gratuito.' 
                     : 'Seu período de avaliação gratuito termina hoje.'}
               </p>
-              <p className="text-sm text-blue-500 mt-1">
+              <p className="text-sm text-blue-500 dark:text-blue-300 mt-1">
                 Após o término do período de avaliação, você precisará assinar um plano para continuar usando o sistema.
               </p>
             </div>
@@ -233,9 +233,9 @@ useEffect(() => {
               <div key={index} className="flex items-center justify-between">
                 <div>
                   <p className="font-medium text-gray-900 dark:text-gray-100">{song.song_title}</p>
-                  <p className="text-sm text-gray-500">{song.artist}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{song.artist}</p>
                 </div>
-                <span className="text-sm text-gray-600 dark:text-gray-400">
+                <span className="text-sm text-gray-600 dark:text-gray-300">
                   {song.executions} execuções
                 </span>
               </div>
@@ -257,7 +257,13 @@ useEffect(() => {
                 <XAxis dataKey="artist" />
                 <YAxis />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="executions" fill="#4F46E5" />
+                <defs>
+                  <linearGradient id="artistBarGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#1E3A8A" stopOpacity={0.9}/>
+                    <stop offset="95%" stopColor="#1E40AF" stopOpacity={0.8}/>
+                  </linearGradient>
+                </defs>
+                <Bar dataKey="executions" fill="url(#artistBarGradient)" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -279,9 +285,12 @@ useEffect(() => {
                   cy="50%"
                   outerRadius={80}
                   fill="#8884d8"
+                  label={({ name, value }) => `${name} ${value}%`}
+                  labelStyle={{ fill: '#ffffff', fontWeight: 500 }}
                 >
 {genreDistribution.map((entry: GenreDistribution, index: number) => {
-  const colors = ['#4F46E5', '#3B82F6', '#60A5FA', '#93C5FD', '#BFDBFE'];
+  // Gradiente de azul marinho para azul escuro
+  const colors = ['#1E3A8A', '#1E40AF', '#1D4ED8', '#2563EB', '#3B82F6'];
   return <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />;
 })}
 
