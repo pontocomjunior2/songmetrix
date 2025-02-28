@@ -1,5 +1,5 @@
 /* Dark mode styles for components */
-@media (prefers-color-scheme: dark) {
+.dark {
   /* Base background colors */
   body {
     background-color: #1a1f2e !important;
@@ -72,65 +72,24 @@
     background-color: #111827 !important;
   }
 
-  /* React-select customization */
-  .react-select__menu {
-    background-color: #111827 !important;
-    border: 1px solid #374151 !important;
+  /* Chart components */
+  .recharts-cartesian-grid-horizontal line,
+  .recharts-cartesian-grid-vertical line {
+    stroke: #374151 !important;
   }
 
-  .react-select__option {
-    background-color: #111827 !important;
-    color: #e5e7eb !important;
+  .recharts-text {
+    fill: #e5e7eb !important;
   }
 
-  .react-select__option--is-focused {
+  .recharts-tooltip-wrapper {
     background-color: #1f2937 !important;
+    border-color: #374151 !important;
   }
 
-  .react-select__option--is-selected {
-    background-color: #2563eb !important;
-  }
-
-  .react-select__multi-value {
+  .recharts-default-tooltip {
     background-color: #1f2937 !important;
-  }
-
-  .react-select__multi-value__label {
+    border-color: #374151 !important;
     color: #e5e7eb !important;
-  }
-
-  .react-select__placeholder {
-    color: #6b7280 !important;
-  }
-
-  /* Button styles */
-  .ranking-btn-secondary {
-    background-color: #111827 !important;
-    color: #e5e7eb !important;
-    border: 1px solid #374151 !important;
-  }
-
-  .ranking-btn-secondary:hover {
-    background-color: #1f2937 !important;
-  }
-
-  /* Loading and empty states */
-  .loading-indicator p,
-  .text-gray-500.dark\:text-gray-400 {
-    color: #9ca3af !important;
-  }
-
-  /* Scrollbar customization */
-  ::-webkit-scrollbar-thumb {
-    background-color: #374151 !important;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background-color: #4b5563 !important;
-  }
-
-  /* Input placeholder color */
-  ::placeholder {
-    color: #6b7280 !important;
   }
 }
