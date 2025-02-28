@@ -5,9 +5,9 @@ import Loading from '../Common/Loading';
 import { ErrorAlert } from '../Common/Alert';
 import UserAvatar from '../Common/UserAvatar';
 import { toast as reactToast } from 'react-toastify'; // Importing toast for notifications
-import { Trash2, Clock } from 'lucide-react';
+import { Trash2, Clock, RefreshCw } from 'lucide-react';
 import { supabase } from '../../lib/supabase-client';
-import { FaEdit, FaSync } from 'react-icons/fa';
+import { FaEdit } from 'react-icons/fa';
 
 type UserStatusType = 'ADMIN' | 'ATIVO' | 'INATIVO' | 'TRIAL';
 
@@ -37,14 +37,8 @@ export default function UserList() {
   const [statusFilter, setStatusFilter] = useState<UserStatusType | 'ALL'>('ALL');
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [newStatus, setNewStatus] = useState<UserStatusType>('INATIVO');
-  const [syncingStatus, setSyncingStatus] = useState(false);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
-  const [fixingNewUsers, setFixingNewUsers] = useState(false);
-  const [fixMessage, setFixMessage] = useState<string | null>(null);
-  const [isProcessingQueue, setIsProcessingQueue] = useState(false);
-  const [queueProcessResult, setQueueProcessResult] = useState<any>(null);
-  const [isSyncingNewUsers, setSyncingNewUsers] = useState(false);
-  const { getAllUsers, updateUserStatus, removeUser, currentUser, userStatus } = useAuth();
+  const [refreshing, setRefreshing] = useState(false);
+  const { updateUserStatus, currentUser, userStatus } = useAuth();
 
   useEffect(() => {
     loadUsers();
@@ -85,77 +79,8 @@ export default function UserList() {
       
       console.log('Usuários carregados:', usersData);
       
-      // Verificar usuários criados nos últimos 7 dias com status INATIVO
-      const usersToUpdate = [];
-      
-      for (const user of usersData) {
-        // Verificar se o usuário foi criado nos últimos 7 dias
-        const createdAt = new Date(user.created_at);
-        const now = new Date();
-        const diffTime = Math.abs(now.getTime() - createdAt.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        
-        // Se o usuário foi criado nos últimos 7 dias e está INATIVO, deve ser TRIAL
-        if (diffDays <= 7 && user.status === 'INATIVO') {
-          usersToUpdate.push({
-            id: user.id,
-            oldStatus: user.status,
-            newStatus: 'TRIAL'
-          });
-          
-          // Atualizar o status localmente
-          user.status = 'TRIAL';
-        }
-      }
-      
-      // Atualizar os usuários que precisam ser alterados
-      if (usersToUpdate.length > 0) {
-        console.log('Usuários que precisam de atualização:', usersToUpdate);
-        
-        const session = await supabase.auth.getSession();
-        if (!session.data.session) {
-          throw new Error('Sessão não encontrada');
-        }
-        
-        // Atualizar cada usuário
-        for (const userToUpdate of usersToUpdate) {
-          try {
-            // Atualizar no banco de dados
-            const { error: updateDbError } = await supabase
-              .from('users')
-              .update({
-                status: userToUpdate.newStatus,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', userToUpdate.id);
-              
-            if (updateDbError) {
-              console.error(`Erro ao atualizar status do usuário ${userToUpdate.id} no banco:`, updateDbError);
-              continue;
-            }
-            
-            // Atualizar os metadados via API
-            const response = await fetch('/api/users/update-status', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.data.session.access_token}`
-              },
-              body: JSON.stringify({
-                userId: userToUpdate.id,
-                newStatus: userToUpdate.newStatus
-              })
-            });
-            
-            if (!response.ok) {
-              const result = await response.json();
-              console.error(`Erro ao atualizar metadados do usuário ${userToUpdate.id}:`, result.error);
-            }
-          } catch (error) {
-            console.error(`Erro ao processar atualização do usuário ${userToUpdate.id}:`, error);
-          }
-        }
-      }
+      // Não vamos mais alterar automaticamente o status dos usuários
+      // Isso respeitará o status definido pelo administrador
       
       setUsers(usersData);
     } catch (error: any) {
@@ -249,11 +174,38 @@ export default function UserList() {
     if (window.confirm('Tem certeza que deseja remover este usuário?')) {
       try {
         setError('');
-        await removeUser(userId);
+        setLoading(true);
+        
+        // Obter a sessão atual
+        const session = await supabase.auth.getSession();
+        if (!session.data.session) {
+          throw new Error('Sessão não encontrada');
+        }
+        
+        // Chamar a API para remover o usuário
+        const response = await fetch('/api/users/remove', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.data.session.access_token}`
+          },
+          body: JSON.stringify({ userId })
+        });
+        
+        if (!response.ok) {
+          const result = await response.json();
+          throw new Error(result.error || 'Erro ao remover usuário');
+        }
+        
+        // Recarregar a lista de usuários
         await loadUsers();
+        reactToast.success('Usuário removido com sucesso');
       } catch (error: any) {
         setError('Erro ao remover usuário: ' + error.message);
         console.error('Erro ao remover usuário:', error);
+        reactToast.error('Erro ao remover usuário: ' + error.message);
+      } finally {
+        setLoading(false);
       }
     }
   };
@@ -313,147 +265,15 @@ export default function UserList() {
     }
   };
 
-  const handleSyncStatus = async () => {
+  const handleRefresh = async () => {
     try {
-      setSyncingStatus(true);
-      setSyncMessage(null);
-      
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) {
-        throw new Error('Sessão não encontrada');
-      }
-      
-      const response = await fetch('/api/users/sync-status', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.data.session.access_token}`
-        }
-      });
-      
-      const result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(result.error || 'Erro ao sincronizar status');
-      }
-      
-      setSyncMessage(`Sincronização concluída. ${result.updates.length} usuários atualizados.`);
-      
-      // Recarregar a lista de usuários
-      loadUsers();
-    } catch (error: any) {
-      console.error('Erro ao sincronizar status:', error);
-      setSyncMessage(`Erro: ${error.message}`);
-    } finally {
-      setSyncingStatus(false);
-    }
-  };
-
-  const handleFixNewUsers = async () => {
-    try {
-      setFixingNewUsers(true);
-      setFixMessage(null);
-      
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) {
-        throw new Error('Sessão não encontrada');
-      }
-      
-      const response = await fetch('/api/users/fix-new-users', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.data.session.access_token}`
-        }
-      });
-      
-      const result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(result.error || 'Erro ao corrigir status dos usuários novos');
-      }
-      
-      setFixMessage(`Correção concluída. ${result.updates.length} usuários atualizados. ${result.errors.length} erros.`);
-      
-      // Recarregar a lista de usuários
-      loadUsers();
-    } catch (error: any) {
-      console.error('Erro ao corrigir status dos usuários novos:', error);
-      setFixMessage(`Erro: ${error.message}`);
-    } finally {
-      setFixingNewUsers(false);
-    }
-  };
-
-  const handleProcessQueue = async () => {
-    try {
-      setIsProcessingQueue(true);
-      setQueueProcessResult(null);
-      
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) {
-        throw new Error('Sessão não encontrada');
-      }
-      
-      const response = await fetch('/api/users/process-sync-queue', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.data.session.access_token}`
-        }
-      });
-      
-      const result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(result.error || 'Erro ao processar fila de sincronização');
-      }
-      
-      setQueueProcessResult(result);
-      reactToast.success(`${result.processed} usuários atualizados com sucesso. ${result.errors.length} erros.`);
-      
-      // Recarregar a lista de usuários
-      loadUsers();
+      setRefreshing(true);
+      await loadUsers();
+      reactToast.success('Lista de usuários atualizada com sucesso');
     } catch (error) {
-      console.error('Erro ao processar fila de sincronização:', error);
-      reactToast.error(error instanceof Error ? error.message : 'Erro ao processar fila de sincronização');
+      reactToast.error('Erro ao atualizar lista de usuários');
     } finally {
-      setIsProcessingQueue(false);
-    }
-  };
-
-  const handleSyncNewUsers = async () => {
-    try {
-      setSyncingNewUsers(true);
-      
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) {
-        throw new Error('Sessão não encontrada');
-      }
-      
-      const response = await fetch('/api/users/sync-new-users', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.data.session.access_token}`
-        }
-      });
-      
-      const result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(result.error || 'Erro ao sincronizar novos usuários');
-      }
-      
-      reactToast.success(`${result.updated} usuários novos atualizados para TRIAL.`);
-      
-      // Recarregar a lista de usuários
-      loadUsers();
-    } catch (error) {
-      console.error('Erro ao sincronizar novos usuários:', error);
-      reactToast.error(error instanceof Error ? error.message : 'Erro ao sincronizar novos usuários');
-    } finally {
-      setSyncingNewUsers(false);
+      setRefreshing(false);
     }
   };
 
@@ -495,90 +315,24 @@ export default function UserList() {
         
         <div className="flex space-x-2">
           <button
-            onClick={handleSyncStatus}
-            disabled={syncingStatus}
+            onClick={handleRefresh}
+            disabled={refreshing}
             className="flex items-center bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded disabled:bg-blue-300"
           >
-            {syncingStatus ? (
+            {refreshing ? (
               <>
-                <FaSync className="animate-spin mr-2" />
-                Sincronizando...
+                <RefreshCw className="animate-spin mr-2" />
+                Atualizando...
               </>
             ) : (
               <>
-                <FaSync className="mr-2" />
-                Sincronizar Status
-              </>
-            )}
-          </button>
-          
-          <button
-            onClick={handleFixNewUsers}
-            disabled={fixingNewUsers}
-            className="flex items-center bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded disabled:bg-green-300"
-          >
-            {fixingNewUsers ? (
-              <>
-                <FaSync className="animate-spin mr-2" />
-                Corrigindo...
-              </>
-            ) : (
-              <>
-                <FaSync className="mr-2" />
-                Corrigir Novos Usuários
-              </>
-            )}
-          </button>
-          
-          <button
-            onClick={handleProcessQueue}
-            disabled={isProcessingQueue}
-            className="flex items-center bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded disabled:bg-purple-300"
-          >
-            {isProcessingQueue ? (
-              <>
-                <FaSync className="animate-spin mr-2" />
-                Processando...
-              </>
-            ) : (
-              <>
-                <FaSync className="mr-2" />
-                Processar Fila
-              </>
-            )}
-          </button>
-          
-          <button
-            onClick={handleSyncNewUsers}
-            disabled={isSyncingNewUsers}
-            className="flex items-center bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded disabled:bg-yellow-300"
-          >
-            {isSyncingNewUsers ? (
-              <>
-                <FaSync className="animate-spin mr-2" />
-                Sincronizando...
-              </>
-            ) : (
-              <>
-                <FaSync className="mr-2" />
-                Sincronizar Novos Usuários
+                <RefreshCw className="mr-2" />
+                Atualizar Lista
               </>
             )}
           </button>
         </div>
       </div>
-      
-      {syncMessage && (
-        <div className={`p-3 mb-4 rounded ${syncMessage.includes('Erro') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-          {syncMessage}
-        </div>
-      )}
-      
-      {fixMessage && (
-        <div className={`p-3 mb-4 rounded ${fixMessage.includes('Erro') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-          {fixMessage}
-        </div>
-      )}
 
       {error && (
         <ErrorAlert message={error} onClose={() => setError('')} />

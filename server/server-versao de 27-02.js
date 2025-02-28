@@ -785,8 +785,7 @@ app.put('/admin/users/:userId/status', authenticateUser, async (req, res) => {
 
   try {
     // Validar o status
-    if (!['ADMIN', 'ATIVO', 'INATIVO', 'TRIAL'].includes(status)) {
-
+    if (!['ADMIN', 'ATIVO', 'INATIVO'].includes(status)) {
       return res.status(400).json({ message: 'Status inválido' });
     }
 
@@ -1040,26 +1039,6 @@ app.post('/api/simulate-trial-end', authenticateUser, async (req, res) => {
       return res.status(500).json({ error: 'Erro ao obter metadados do usuário', details: userError });
     }
 
-    if (!userData || !userData.user) {
-      console.error(`Usuário ${userId} não encontrado`);
-      return res.status(404).json({ error: 'Usuário não encontrado' });
-    }
-
-    // Verificar se o usuário está em período trial
-    const currentStatus = userData.user.user_metadata?.status;
-    console.log(`Status atual do usuário ${userId}: ${currentStatus}`);
-    
-    if (currentStatus !== 'TRIAL') {
-      console.log(`Usuário ${userId} não está em período trial (status: ${currentStatus}`);
-      return res.status(400).json({ 
-        error: 'Usuário não está em período trial',
-        currentStatus 
-      });
-    }
-
-    // Registrar metadados atuais
-    console.log(`Metadados atuais do usuário ${userId}:`, userData.user.user_metadata);
-
     // Atualizar o status na tabela users
     const { error: updateDbError } = await supabaseAdmin
       .from('users')
@@ -1074,16 +1053,10 @@ app.post('/api/simulate-trial-end', authenticateUser, async (req, res) => {
       return res.status(500).json({ error: 'Erro ao atualizar status no banco de dados', details: updateDbError });
     }
 
-    console.log(`Status do usuário ${userId} atualizado no banco de dados para INATIVO`);
-
-    // Criar um novo objeto de metadados preservando os existentes
-    const updatedMetadata = { ...userData.user.user_metadata, status: 'INATIVO' };
-    console.log(`Novos metadados para o usuário ${userId}:`, updatedMetadata);
-
     // Atualizar os metadados
-    const { data: updateMetaData, error: updateMetaError } = await supabaseAdmin.auth.admin.updateUserById(
+    const { error: updateMetaError } = await supabaseAdmin.auth.admin.updateUserById(
       userId,
-      { user_metadata: updatedMetadata }
+      { user_metadata: { ...userData.user.user_metadata, status: 'INATIVO' } }
     );
     
     if (updateMetaError) {
@@ -1095,79 +1068,28 @@ app.post('/api/simulate-trial-end', authenticateUser, async (req, res) => {
       });
     }
 
-    console.log(`Metadados do usuário ${userId} atualizados com sucesso:`, updateMetaData);
-
-    // Verificar se o metadados foi realmente atualizado
-    const { data: verifyData, error: verifyError } = await supabaseAdmin.auth.admin.getUserById(userId);
-    
-    if (verifyError) {
-      console.error(`Erro ao verificar metadados do usuário ${userId} após atualização:`, verifyError);
-    } else {
-      console.log(`Metadados verificados do usuário ${userId} após atualização:`, verifyData.user.user_metadata);
-      
-      // Verificar se o status foi realmente atualizado
-      const updatedStatus = verifyData.user.user_metadata?.status;
-      if (updatedStatus !== 'INATIVO') {
-        console.error(`ATENÇÃO: Status do usuário ${userId} nos metadados não foi atualizado corretamente. Esperado: INATIVO, Atual: ${updatedStatus}`);
-        
-        // Tentar uma abordagem alternativa para atualizar os metadados
-        try {
-          console.log(`Tentando abordagem alternativa para atualizar metadados do usuário ${userId}`);
-          
-          // Atualizar apenas o campo status nos metadados
-          const { error: updateMetaRetryError } = await supabaseAdmin.auth.admin.updateUserById(
-            userId,
-            { user_metadata: { status: 'INATIVO' } }
-          );
-          
-          if (updateMetaRetryError) {
-            console.error(`Segunda tentativa de atualizar metadados falhou:`, updateMetaRetryError);
-          } else {
-            console.log(`Segunda tentativa de atualização de metadados concluída. Verificando resultado...`);
-            
-            // Verificar novamente
-            const { data: verifyRetryData, error: verifyRetryError } = await supabaseAdmin.auth.admin.getUserById(userId);
-            if (!verifyRetryError && verifyRetryData.user.user_metadata?.status === 'INATIVO') {
-              console.log(`Status atualizado com sucesso na segunda tentativa: ${verifyRetryData.user.user_metadata?.status}`);
-            } else {
-              console.error(`ALERTA: Segunda tentativa de atualizar status nos metadados também falhou`);
-            }
-          }
-        } catch (retryError) {
-          console.error(`Erro na segunda tentativa de atualizar metadados:`, retryError);
-        }
-      } else {
-        console.log(`Status nos metadados atualizado com sucesso para: ${updatedStatus}`);
-      }
-    }
-
-    // Tentar forçar invalidação de sessões (para garantir que o novo status seja aplicado)
+    // Adicionar à fila de sincronização para garantir
     try {
-      if (updatedStatus === 'INATIVO') {
-        // Para status INATIVO, forçamos o logout
-        const { error: signOutError } = await supabaseAdmin.auth.admin.signOut(userId);
-        if (signOutError) {
-          console.error(`Erro ao invalidar sessões do usuário ${userId}:`, signOutError);
-        } else {
-          console.log(`Sessões do usuário ${userId} invalidadas com sucesso`);
-        }
-      } else {
-        // Para outros status, o usuário precisará fazer logout e login novamente
-        console.log(`O usuário ${userId} precisará fazer logout e login novamente para que o novo status (${updatedStatus}) seja aplicado completamente.`);
+      const { error: queueError } = await supabaseAdmin
+        .from('auth_sync_queue')
+        .insert({
+          user_id: userId,
+          status: 'INATIVO',
+          processed: false,
+          created_at: new Date().toISOString()
+        })
+        .select();
+        
+      if (queueError) {
+        console.error(`Erro ao adicionar usuário ${userId} à fila de sincronização:`, queueError);
       }
     } catch (error) {
-      console.error(`Erro ao processar sessões do usuário ${userId}:`, error);
+      console.error(`Erro ao adicionar usuário ${userId} à fila de sincronização:`, error);
     }
-
-    console.log(`Simulação de fim do período trial concluída com sucesso para o usuário ${userId}`);
 
     res.status(200).json({ 
       message: 'Simulação de fim do período trial concluída com sucesso',
-      userId,
-      oldStatus: currentStatus,
-      newStatus: 'INATIVO',
-      oldMetadata: userData.user.user_metadata,
-      newMetadata: updatedMetadata
+      userId
     });
   } catch (error) {
     console.error('Erro ao simular fim do período trial:', error);
@@ -1197,6 +1119,12 @@ app.post('/api/users/sync-status', authenticateUser, async (req, res) => {
     // Para cada usuário, verificar e sincronizar o status
     for (const user of usersList) {
       try {
+        // Verificar se o usuário foi criado nos últimos 7 dias
+        const createdAt = new Date(user.created_at);
+        const now = new Date();
+        const diffTime = Math.abs(now.getTime() - createdAt.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
         // Obter os metadados do usuário
         const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(user.id);
         
@@ -1207,11 +1135,40 @@ app.post('/api/users/sync-status', authenticateUser, async (req, res) => {
         
         const metadataStatus = userData?.user?.user_metadata?.status;
         
-        // Determinar o status correto - Agora respeitamos o status do banco de dados
-        // Não forçamos mais usuários recém-criados a terem status TRIAL
+        // Determinar o status correto
         let correctStatus = user.status;
         
-        // Se o metadados tem um status diferente do banco, usamos o do banco
+        // Se o usuário foi criado nos últimos 7 dias, deve ser TRIAL
+        if (diffDays <= 7) {
+          correctStatus = 'TRIAL';
+        } 
+        // Se o metadados tem TRIAL e o banco não, usar TRIAL
+        else if (metadataStatus === 'TRIAL' && user.status !== 'TRIAL') {
+          correctStatus = 'TRIAL';
+        }
+        // Se o banco tem TRIAL e o metadados não, usar o do banco
+        else if (user.status === 'TRIAL' && metadataStatus !== 'TRIAL') {
+          correctStatus = 'TRIAL';
+        }
+        
+        // Se o status correto for diferente do atual, atualizar
+        if (correctStatus !== user.status) {
+          // Atualizar na tabela users
+          const { error: updateDbError } = await supabaseAdmin
+            .from('users')
+            .update({
+              status: correctStatus,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', user.id);
+            
+          if (updateDbError) {
+            console.error(`Erro ao atualizar status do usuário ${user.id} no banco:`, updateDbError);
+            continue;
+          }
+        }
+        
+        // Se o status nos metadados for diferente, atualizar
         if (metadataStatus !== correctStatus) {
           // Atualizar os metadados
           const { error: updateMetaError } = await supabaseAdmin.auth.admin.updateUserById(
@@ -1223,11 +1180,14 @@ app.post('/api/users/sync-status', authenticateUser, async (req, res) => {
             console.error(`Erro ao atualizar metadados do usuário ${user.id}:`, updateMetaError);
             continue;
           }
-          
+        }
+        
+        // Se houve alguma atualização, adicionar à lista
+        if (correctStatus !== user.status || metadataStatus !== correctStatus) {
           updates.push({
             id: user.id,
             email: user.email,
-            oldStatus: metadataStatus,
+            oldStatus: user.status,
             newStatus: correctStatus,
             metadataStatus: metadataStatus
           });
@@ -1283,11 +1243,6 @@ app.post('/api/users/update-status', authenticateUser, async (req, res) => {
       return res.status(404).json({ error: 'Usuário não encontrado' });
     }
 
-    // Registrar metadados atuais
-    console.log(`Metadados atuais do usuário ${userId}:`, userData.user.user_metadata);
-    const currentStatus = userData.user.user_metadata?.status || 'INATIVO';
-    console.log(`Status atual nos metadados: ${currentStatus}, Novo status: ${newStatus}`);
-
     // Atualizar na tabela users
     const { error: updateDbError } = await supabaseAdmin
       .from('users')
@@ -1302,18 +1257,10 @@ app.post('/api/users/update-status', authenticateUser, async (req, res) => {
       return res.status(500).json({ error: 'Erro ao atualizar status no banco de dados', details: updateDbError });
     }
 
-    console.log(`Status do usuário ${userId} atualizado no banco de dados para ${newStatus}`);
-
-    // Certificar-se de que os metadados incluem o status
-    // Criamos um novo objeto com todos os metadados existentes + o novo status
-    const currentMetadata = userData.user.user_metadata || {};
-    const updatedMetadata = { ...currentMetadata, status: newStatus };
-    console.log(`Novos metadados para o usuário ${userId}:`, updatedMetadata);
-
-    // Utilizar a API direta do Supabase para atualização completa dos metadados
-    const { data: updateMetaData, error: updateMetaError } = await supabaseAdmin.auth.admin.updateUserById(
+    // Atualizar os metadados
+    const { error: updateMetaError } = await supabaseAdmin.auth.admin.updateUserById(
       userId,
-      { user_metadata: updatedMetadata }
+      { user_metadata: { ...userData.user.user_metadata, status: newStatus } }
     );
     
     if (updateMetaError) {
@@ -1323,75 +1270,6 @@ app.post('/api/users/update-status', authenticateUser, async (req, res) => {
         details: updateMetaError,
         note: 'O status foi atualizado no banco de dados, mas não nos metadados'
       });
-    }
-
-    console.log(`Metadados do usuário ${userId} atualizados com sucesso:`, updateMetaData);
-
-    // Verificar se o metadados foi realmente atualizado
-    const { data: verifyData, error: verifyError } = await supabaseAdmin.auth.admin.getUserById(userId);
-    
-    if (verifyError) {
-      console.error(`Erro ao verificar metadados do usuário ${userId} após atualização:`, verifyError);
-    } else {
-      console.log(`Metadados verificados do usuário ${userId} após atualização:`, verifyData.user.user_metadata);
-      
-      // Verificar se o status foi realmente atualizado
-      const updatedStatus = verifyData.user.user_metadata?.status;
-      if (updatedStatus !== newStatus) {
-        console.error(`ATENÇÃO: Status do usuário ${userId} nos metadados não foi atualizado corretamente. Esperado: ${newStatus}, Atual: ${updatedStatus}`);
-        
-        // Tentar abordagem alternativa: atualizar apenas o campo status diretamente
-        try {
-          console.log(`Tentando atualização direta do status nos metadados do usuário ${userId}`);
-          
-          // Abordagem direta para atualizar apenas o campo status usando rawUpdate
-          const updateResponse = await supabaseAdmin.auth.admin.updateUserById(
-            userId,
-            { 
-              user_metadata: { status: newStatus } 
-            },
-            { rawUpdate: true }
-          );
-          
-          if (updateResponse.error) {
-            console.error(`Segunda tentativa de atualizar status nos metadados falhou:`, updateResponse.error);
-          } else {
-            console.log(`Segunda tentativa de atualização de status nos metadados concluída`);
-            
-            // Verificar novamente
-            const { data: verifyRetryData, error: verifyRetryError } = await supabaseAdmin.auth.admin.getUserById(userId);
-            if (verifyRetryError) {
-              console.error(`Erro ao verificar após segunda tentativa:`, verifyRetryError);
-            } else if (verifyRetryData.user.user_metadata?.status !== newStatus) {
-              console.error(`ATENÇÃO CRÍTICA: Mesmo após segunda tentativa, o status nos metadados continua incorreto. Atual: ${verifyRetryData.user.user_metadata?.status}`);
-            } else {
-              console.log(`Status nos metadados atualizado com sucesso na segunda tentativa para: ${verifyRetryData.user.user_metadata?.status}`);
-            }
-          }
-        } catch (retryError) {
-          console.error(`Erro na tentativa alternativa de atualizar metadados:`, retryError);
-        }
-      } else {
-        console.log(`Status nos metadados atualizado com sucesso para: ${updatedStatus}`);
-      }
-    }
-
-    // Tentar forçar invalidação de sessões (para garantir que o novo status seja aplicado)
-    try {
-      if (newStatus === 'INATIVO') {
-        // Para status INATIVO, forçamos o logout
-        const { error: signOutError } = await supabaseAdmin.auth.admin.signOut(userId);
-        if (signOutError) {
-          console.error(`Erro ao invalidar sessões do usuário ${userId}:`, signOutError);
-        } else {
-          console.log(`Sessões do usuário ${userId} invalidadas com sucesso`);
-        }
-      } else {
-        // Para outros status, o usuário precisará fazer logout e login novamente
-        console.log(`O usuário ${userId} precisará fazer logout e login novamente para que o novo status (${newStatus}) seja aplicado completamente.`);
-      }
-    } catch (error) {
-      console.error(`Erro ao processar sessões do usuário ${userId}:`, error);
     }
 
     // Adicionar à fila de sincronização para garantir
@@ -1420,10 +1298,7 @@ app.post('/api/users/update-status', authenticateUser, async (req, res) => {
     res.status(200).json({ 
       message: 'Status do usuário atualizado com sucesso',
       userId,
-      newStatus,
-      oldStatus: currentStatus,
-      oldMetadata: userData.user.user_metadata,
-      newMetadata: updatedMetadata
+      newStatus
     });
   } catch (error) {
     console.error('Erro ao atualizar status do usuário:', error);
@@ -1509,30 +1384,54 @@ app.post('/api/users/fix-new-users', authenticateUser, async (req, res) => {
     // Para cada usuário, verificar e corrigir o status
     for (const user of usersList) {
       try {
-        // Obter os metadados do usuário
-        const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(user.id);
+        // Verificar se o usuário foi criado nos últimos 7 dias
+        const createdAt = new Date(user.created_at);
+        const now = new Date();
+        const diffTime = Math.abs(now.getTime() - createdAt.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         
-        if (userError) {
-          console.error(`Erro ao obter metadados do usuário ${user.id}:`, userError);
-          errors.push({
-            id: user.id,
-            email: user.email,
-            error: 'Erro ao obter metadados',
-            details: userError
-          });
-          continue;
-        }
-        
-        // Verificar se o status nos metadados é diferente do banco
-        const metadataStatus = userData?.user?.user_metadata?.status;
-        
-        if (metadataStatus !== user.status) {
-          console.log(`Corrigindo metadados do usuário ${user.id} (${user.email}) de ${metadataStatus} para ${user.status}`);
+        // Se o usuário foi criado nos últimos 7 dias e não está com status TRIAL, corrigir
+        if (diffDays <= 7 && user.status !== 'TRIAL') {
+          console.log(`Corrigindo status do usuário ${user.id} (${user.email}) de ${user.status} para TRIAL`);
+          
+          // Atualizar na tabela users
+          const { error: updateDbError } = await supabaseAdmin
+            .from('users')
+            .update({
+              status: 'TRIAL',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', user.id);
+            
+          if (updateDbError) {
+            console.error(`Erro ao atualizar status do usuário ${user.id} no banco:`, updateDbError);
+            errors.push({
+              id: user.id,
+              email: user.email,
+              error: 'Erro ao atualizar no banco de dados',
+              details: updateDbError
+            });
+            continue;
+          }
+          
+          // Obter os metadados do usuário
+          const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(user.id);
+          
+          if (userError) {
+            console.error(`Erro ao obter metadados do usuário ${user.id}:`, userError);
+            errors.push({
+              id: user.id,
+              email: user.email,
+              error: 'Erro ao obter metadados',
+              details: userError
+            });
+            continue;
+          }
           
           // Atualizar os metadados
           const { error: updateMetaError } = await supabaseAdmin.auth.admin.updateUserById(
             user.id,
-            { user_metadata: { ...userData.user.user_metadata, status: user.status } }
+            { user_metadata: { ...userData.user.user_metadata, status: 'TRIAL' } }
           );
           
           if (updateMetaError) {
@@ -1549,8 +1448,8 @@ app.post('/api/users/fix-new-users', authenticateUser, async (req, res) => {
           updates.push({
             id: user.id,
             email: user.email,
-            oldStatus: metadataStatus,
-            newStatus: user.status
+            oldStatus: user.status,
+            newStatus: 'TRIAL'
           });
         }
       } catch (error) {
@@ -1738,37 +1637,44 @@ app.post('/api/users/sync-new-users', authenticateUser, async (req, res) => {
       return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
     }
 
-    console.log('Iniciando sincronização de metadados de usuários');
+    console.log('Iniciando sincronização de novos usuários para TRIAL');
 
-    // Buscar todos os usuários
-    const { data: allUsers, error: fetchError } = await supabaseAdmin
+    // Calcular a data de 7 dias atrás
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const sevenDaysAgoIso = sevenDaysAgo.toISOString();
+
+    // Buscar usuários criados nos últimos 7 dias com status INATIVO
+    const { data: usersToUpdate, error: fetchError } = await supabaseAdmin
       .from('users')
-      .select('id, email, status, created_at');
+      .select('id, email, status, created_at')
+      .gte('created_at', sevenDaysAgoIso)
+      .eq('status', 'INATIVO');
 
     if (fetchError) {
-      console.error('Erro ao buscar usuários:', fetchError);
-      return res.status(500).json({ error: 'Erro ao buscar usuários', details: fetchError });
+      console.error('Erro ao buscar usuários novos:', fetchError);
+      return res.status(500).json({ error: 'Erro ao buscar usuários novos', details: fetchError });
     }
 
-    if (!allUsers || allUsers.length === 0) {
-      console.log('Nenhum usuário encontrado');
+    if (!usersToUpdate || usersToUpdate.length === 0) {
+      console.log('Nenhum usuário novo encontrado com status INATIVO');
       return res.status(200).json({ 
-        message: 'Nenhum usuário encontrado',
+        message: 'Nenhum usuário novo encontrado com status INATIVO',
         updated: 0
       });
     }
 
-    console.log(`Encontrados ${allUsers.length} usuários para verificar metadados`);
+    console.log(`Encontrados ${usersToUpdate.length} usuários novos para atualizar para TRIAL`);
 
     const results = {
       success: [],
       errors: []
     };
 
-    // Verificar cada usuário
-    for (const user of allUsers) {
+    // Atualizar cada usuário
+    for (const user of usersToUpdate) {
       try {
-        console.log(`Verificando metadados do usuário ${user.id}`);
+        console.log(`Atualizando usuário ${user.id} para TRIAL`);
 
         // Obter os metadados do usuário
         const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(user.id);
@@ -1792,52 +1698,62 @@ app.post('/api/users/sync-new-users', authenticateUser, async (req, res) => {
           continue;
         }
 
-        // Verificar se o status nos metadados é diferente do banco
-        const metadataStatus = userData.user.user_metadata?.status;
-        
-        if (metadataStatus !== user.status) {
-          console.log(`Atualizando metadados do usuário ${user.id} de ${metadataStatus || 'indefinido'} para ${user.status}`);
+        // Atualizar na tabela users
+        const { error: updateDbError } = await supabaseAdmin
+          .from('users')
+          .update({
+            status: 'TRIAL',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', user.id);
           
-          // Atualizar os metadados
-          const { error: updateMetaError } = await supabaseAdmin.auth.admin.updateUserById(
-            user.id,
-            { user_metadata: { ...userData.user.user_metadata, status: user.status } }
-          );
-          
-          if (updateMetaError) {
-            console.error(`Erro ao atualizar metadados do usuário ${user.id}:`, updateMetaError);
-            results.errors.push({
-              user_id: user.id,
-              error: 'Erro ao atualizar metadados do usuário',
-              details: updateMetaError
-            });
-            continue;
-          }
-
-          // Adicionar à fila de sincronização para garantir
-          const { error: queueError } = await supabaseAdmin
-            .from('auth_sync_queue')
-            .insert({
-              user_id: user.id,
-              status: user.status,
-              processed: false,
-              created_at: new Date().toISOString()
-            })
-            .select();
-            
-          if (queueError) {
-            console.error(`Erro ao adicionar usuário ${user.id} à fila de sincronização:`, queueError);
-            // Não interrompe o processo, pois as atualizações principais já foram feitas
-          }
-
-          console.log(`Usuário ${user.id} atualizado com sucesso para ${user.status}`);
-          results.success.push({
+        if (updateDbError) {
+          console.error(`Erro ao atualizar status do usuário ${user.id} no banco:`, updateDbError);
+          results.errors.push({
             user_id: user.id,
-            email: user.email,
-            oldStatus: metadataStatus,
-            newStatus: user.status
+            error: 'Erro ao atualizar status no banco de dados',
+            details: updateDbError
           });
+          continue;
         }
+
+        // Atualizar os metadados
+        const { error: updateMetaError } = await supabaseAdmin.auth.admin.updateUserById(
+          user.id,
+          { user_metadata: { ...userData.user.user_metadata, status: 'TRIAL' } }
+        );
+        
+        if (updateMetaError) {
+          console.error(`Erro ao atualizar metadados do usuário ${user.id}:`, updateMetaError);
+          results.errors.push({
+            user_id: user.id,
+            error: 'Erro ao atualizar metadados do usuário',
+            details: updateMetaError
+          });
+          continue;
+        }
+
+        // Adicionar à fila de sincronização para garantir
+        const { error: queueError } = await supabaseAdmin
+          .from('auth_sync_queue')
+          .insert({
+            user_id: user.id,
+            status: 'TRIAL',
+            processed: false,
+            created_at: new Date().toISOString()
+          })
+          .select();
+          
+        if (queueError) {
+          console.error(`Erro ao adicionar usuário ${user.id} à fila de sincronização:`, queueError);
+          // Não interrompe o processo, pois as atualizações principais já foram feitas
+        }
+
+        console.log(`Usuário ${user.id} atualizado com sucesso para TRIAL`);
+        results.success.push({
+          user_id: user.id,
+          email: user.email
+        });
       } catch (error) {
         console.error(`Erro ao processar usuário ${user.id}:`, error);
         results.errors.push({
@@ -1851,70 +1767,13 @@ app.post('/api/users/sync-new-users', authenticateUser, async (req, res) => {
     console.log(`Sincronização concluída: ${results.success.length} sucessos, ${results.errors.length} erros`);
 
     res.status(200).json({ 
-      message: 'Sincronização de metadados de usuários concluída',
+      message: 'Sincronização de novos usuários concluída',
       updated: results.success.length,
       errors: results.errors.length,
       results
     });
   } catch (error) {
-    console.error('Erro ao sincronizar metadados de usuários:', error);
-    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
-  }
-});
-
-// Rota para remover um usuário
-app.post('/api/users/remove', authenticateUser, async (req, res) => {
-  try {
-    // Verificar se o usuário é administrador
-    if (req.user.user_metadata?.status !== 'ADMIN') {
-      console.log('Tentativa não autorizada de remover usuário:', req.user.id);
-      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
-    }
-
-    const { userId } = req.body;
-
-    if (!userId) {
-      return res.status(400).json({ error: 'ID do usuário é obrigatório' });
-    }
-
-    // Verificar se o usuário está tentando remover a si mesmo
-    if (userId === req.user.id) {
-      return res.status(400).json({ error: 'Você não pode remover seu próprio usuário' });
-    }
-
-    console.log(`Removendo usuário ${userId}`);
-
-    // Remover da tabela users
-    const { error: deleteDbError } = await supabaseAdmin
-      .from('users')
-      .delete()
-      .eq('id', userId);
-      
-    if (deleteDbError) {
-      console.error(`Erro ao remover usuário ${userId} do banco:`, deleteDbError);
-      return res.status(500).json({ error: 'Erro ao remover usuário do banco de dados', details: deleteDbError });
-    }
-
-    // Remover o usuário do Auth
-    const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(userId);
-    
-    if (deleteAuthError) {
-      console.error(`Erro ao remover usuário ${userId} do Auth:`, deleteAuthError);
-      return res.status(500).json({ 
-        error: 'Erro ao remover usuário do Auth', 
-        details: deleteAuthError,
-        note: 'O usuário foi removido do banco de dados, mas não do Auth'
-      });
-    }
-
-    console.log(`Usuário ${userId} removido com sucesso`);
-
-    res.status(200).json({ 
-      message: 'Usuário removido com sucesso',
-      userId
-    });
-  } catch (error) {
-    console.error('Erro ao remover usuário:', error);
+    console.error('Erro ao sincronizar novos usuários:', error);
     res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
   }
 });
