@@ -3,7 +3,8 @@ import { supabase } from './supabase-client';
 export const UserStatus = {
   ATIVO: 'ATIVO',
   INATIVO: 'INATIVO',
-  ADMIN: 'ADMIN'
+  ADMIN: 'ADMIN',
+  TRIAL: 'TRIAL'
 } as const;
 
 export type UserStatusType = typeof UserStatus[keyof typeof UserStatus];

@@ -23,8 +23,17 @@ const supabase = createClient(
 );
 
 const migrations = [
+  '20250214000070_create_update_user_status_function.sql',
   '20250214000071_update_user_status_policy.sql',
-  '20250214000072_create_update_user_status_transaction.sql'
+  '20250214000073_update_user_status_function.sql',
+  '20250214000074_update_user_status_policy.sql',
+  '20250214000075_update_user_status_enum.sql',
+  '20250214000076_add_trial_to_user_status.sql',
+  '20250214000077_update_user_status_with_trigger.sql',
+  '20250214000080_fix_user_insert_trigger.sql',
+  '20250214000082_update_check_constraint.sql',
+  '20250214000083_update_users_status_check.sql',
+  '20250214000081_update_new_users_to_trial.sql'
 ];
 
 async function applyMigrations() {
