@@ -287,157 +287,138 @@ export default function UserList() {
       minute: '2-digit'
     });
   };
-
   if (loading) {
     return <Loading size="large" message="Carregando usuários..." />;
   }
-
   return (
-    <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">Gerenciar Usuários</h1>
-      
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">Gerenciamento de Usuários</h2>
-        <div className="flex items-center space-x-4">
-          <label className="text-sm font-medium text-gray-700">Filtrar por status:</label>
-          <select
-            value={statusFilter} 
-            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setStatusFilter(e.target.value as UserStatusType | 'ALL')}
-            className="mt-1 block w-40 py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-          >
-            <option value="ALL">Todos</option>
-            <option value="ATIVO">Ativos</option>
-            <option value="INATIVO">Inativos</option>
-            <option value="ADMIN">Admins</option>
-            <option value="TRIAL">Trial</option>
-          </select>
+    <div className="space-y-4">
+      {error && <ErrorAlert message={error} />}
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex items-center gap-2">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as UserStatusType | 'ALL')}
+              className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 px-3 py-2"
+            >
+              <option value="ALL">Todos</option>
+              <option value="ADMIN">Admin</option>
+              <option value="ATIVO">Ativo</option>
+              <option value="INATIVO">Inativo</option>
+              <option value="TRIAL">Trial</option>
+            </select>
+            <button
+              onClick={handleRefresh}
+              className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              disabled={refreshing}
+            >
+              <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
-        
-        <div className="flex space-x-2">
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="flex items-center bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded disabled:bg-blue-300"
-          >
-            {refreshing ? (
-              <>
-                <RefreshCw className="animate-spin mr-2" />
-                Atualizando...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="mr-2" />
-                Atualizar Lista
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <ErrorAlert message={error} onClose={() => setError('')} />
-      )}
-
-      <div className="overflow-x-auto">
-        <table className="min-w-full bg-white rounded-lg shadow">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Usuário
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Status
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Data de Criação
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Última Atualização
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Ações
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {filteredUsers.map((user) => (
-              <tr key={user.id} className="hover:bg-gray-50">
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center">
-                    <UserAvatar
-                      email={user.email || ''}
-                      photoURL={user.photoURL}
-                      size="sm"
-                      className="mr-3"
-                    />
-                    <div className="text-sm text-gray-900">{user.email}</div>
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                    ${user.status === USER_STATUS.ATIVO ? 'bg-green-100 text-green-800' : 
-                      user.status === USER_STATUS.ADMIN ? 'bg-purple-100 text-purple-800' : 
-                      user.status === USER_STATUS.TRIAL ? 'bg-blue-100 text-blue-800' :
-                      'bg-red-100 text-red-800'}`}>
-                    {user.status}
-                  </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm text-gray-900">
-                    {formatDate(user.created_at)}
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm text-gray-900">
-                    {formatDate(user.updated_at)}
-                  </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={user.status}
-                      onChange={(e) => handleStatusChange(user.id, e.target.value as UserStatusType)}
-                      disabled={updatingUserId === user.id} // Disable while updating
-                      className={`block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm 
-                        focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm
-                        ${updatingUserId === user.id ? 'opacity-50' : ''}`}
-                    >
-                      <option value={USER_STATUS.INATIVO}>Inativo</option>
-                      <option value={USER_STATUS.ATIVO}>Ativo</option>
-                      <option value={USER_STATUS.ADMIN}>Admin</option>
-                      <option value={USER_STATUS.TRIAL}>Trial</option>
-                    </select>
-                    
-                    {user.status === USER_STATUS.TRIAL && (
-                      <button
-                        onClick={() => handleSimulateTrialEnd(user.id)}
-                        disabled={updatingUserId === user.id}
-                        className="p-2 text-orange-600 hover:text-orange-800 hover:bg-orange-50 rounded-md"
-                        title="Simular fim do período de teste"
-                      >
-                        <Clock className="w-5 h-5" />
-                      </button>
-                    )}
-                    
-                    {user.id !== currentUser?.id && (
-                      <button
-                        onClick={() => handleRemoveUser(user.id)}
-                        className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md"
-                        title="Remover usuário"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    )}
-                  </div>
-                </td>
+        {error && (
+          <ErrorAlert message={error} onClose={() => setError('')} />
+        )}
+        <div className="overflow-x-auto">
+          <table className="min-w-full bg-white rounded-lg shadow">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Usuário
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Data de Criação
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Última Atualização
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Ações
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      
-      <div className="mt-4 text-sm text-gray-600">
-        Total de usuários: {filteredUsers.length}
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {filteredUsers.map((user) => (
+                <tr key={user.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <UserAvatar
+                        email={user.email || ''}
+                        photoURL={user.photoURL}
+                        size="sm"
+                        className="mr-3"
+                      />
+                      <div className="text-sm text-gray-900">{user.email}</div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                      ${user.status === USER_STATUS.ATIVO ? 'bg-green-100 text-green-800' : 
+                        user.status === USER_STATUS.ADMIN ? 'bg-purple-100 text-purple-800' : 
+                        user.status === USER_STATUS.TRIAL ? 'bg-blue-100 text-blue-800' :
+                        'bg-red-100 text-red-800'}`}>
+                      {user.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">
+                      {formatDate(user.created_at)}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">
+                      {formatDate(user.updated_at)}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={user.status}
+                        onChange={(e) => handleStatusChange(user.id, e.target.value as UserStatusType)}
+                        disabled={updatingUserId === user.id}
+                        className={`block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm 
+                          focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm
+                          ${updatingUserId === user.id ? 'opacity-50' : ''}`}
+                      >
+                        <option value={USER_STATUS.INATIVO}>Inativo</option>
+                        <option value={USER_STATUS.ATIVO}>Ativo</option>
+                        <option value={USER_STATUS.ADMIN}>Admin</option>
+                        <option value={USER_STATUS.TRIAL}>Trial</option>
+                      </select>
+                      
+                      {user.status === USER_STATUS.TRIAL && (
+                        <button
+                          onClick={() => handleSimulateTrialEnd(user.id)}
+                          disabled={updatingUserId === user.id}
+                          className="p-2 text-orange-600 hover:text-orange-800 hover:bg-orange-50 rounded-md"
+                          title="Simular fim do período de teste"
+                        >
+                          <Clock className="w-5 h-5" />
+                        </button>
+                      )}
+                      
+                      {user.id !== currentUser?.id && (
+                        <button
+                          onClick={() => handleRemoveUser(user.id)}
+                          className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-md"
+                          title="Remover usuário"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-4 text-sm text-gray-600">
+          Total de usuários: {filteredUsers.length}
+        </div>
       </div>
     </div>
   );
