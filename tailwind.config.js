@@ -27,9 +27,9 @@ export default {
           300: '#a4bafd',
           400: '#8098fb',
           500: '#6374f7',
-          600: '#1e4db7', // Cor do gradiente to
-          700: '#1e3f9f', // Cor do gradiente via
-          800: '#1e3a8a', // Cor do gradiente from
+          600: '#1e4db7',
+          700: '#1e3f9f',
+          800: '#1e3a8a',
           900: '#172554',
         },
       },

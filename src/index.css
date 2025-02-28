@@ -19,23 +19,21 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #e5e7eb;
-    background-color: #1a1f2e;
-  }
+.dark {
+  color: #e5e7eb;
+  background-color: #1a1f2e;
+}
 
-  body {
-    background-color: #1a1f2e;
-  }
+.dark body {
+  background-color: #1a1f2e;
+}
 
-  a:hover {
-    color: #60a5fa;
-  }
+.dark a:hover {
+  color: #60a5fa;
+}
 
-  input::placeholder {
-    color: #6b7280;
-  }
+.dark input::placeholder {
+  color: #6b7280;
 }
 
 body {
@@ -63,63 +61,10 @@ body {
   background: #94a3b8;
 }
 
-@media (prefers-color-scheme: dark) {
-  ::-webkit-scrollbar-thumb {
-    background: #374151;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: #4b5563;
-  }
+.dark ::-webkit-scrollbar-thumb {
+  background: #374151;
 }
 
-/* Dark mode overrides for specific components */
-@media (prefers-color-scheme: dark) {
-  .bg-white {
-    background-color: #1f2937 !important;
-  }
-
-  .dark\:bg-gray-800 {
-    background-color: #1f2937 !important;
-  }
-
-  .dark\:bg-gray-700 {
-    background-color: #111827 !important;
-  }
-
-  .dark\:border-gray-700 {
-    border-color: #374151 !important;
-  }
-
-  .dark\:text-gray-200 {
-    color: #e5e7eb !important;
-  }
-
-  .dark\:text-gray-400 {
-    color: #9ca3af !important;
-  }
-
-  /* Form elements */
-  input,
-  select,
-  textarea {
-    background-color: #111827 !important;
-    border-color: #374151 !important;
-    color: #e5e7eb !important;
-  }
-
-  input[type="date"],
-  input[type="time"] {
-    color-scheme: dark;
-  }
-
-  /* Buttons */
-  button.bg-gray-100 {
-    background-color: #111827 !important;
-    color: #e5e7eb !important;
-  }
-
-  button.hover\:bg-gray-200:hover {
-    background-color: #1f2937 !important;
-  }
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #4b5563;
 }
