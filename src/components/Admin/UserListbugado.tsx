@@ -44,7 +44,8 @@ export default function UserList() {
   const [isProcessingQueue, setIsProcessingQueue] = useState(false);
   const [queueProcessResult, setQueueProcessResult] = useState<any>(null);
   const [isSyncingNewUsers, setSyncingNewUsers] = useState(false);
-  const { getAllUsers, updateUserStatus, removeUser, currentUser, userStatus } = useAuth();
+const { updateUserStatus, removeUser, currentUser, userStatus } = useAuth();
+
 
   useEffect(() => {
     loadUsers();
@@ -86,7 +87,8 @@ export default function UserList() {
       console.log('Usuários carregados:', usersData);
       
       // Verificar usuários criados nos últimos 7 dias com status INATIVO
-      const usersToUpdate = [];
+const usersToUpdate: { id: string; oldStatus: UserStatusType; newStatus: UserStatusType }[] = [];
+
       
       for (const user of usersData) {
         // Verificar se o usuário foi criado nos últimos 7 dias
@@ -95,16 +97,11 @@ export default function UserList() {
         const diffTime = Math.abs(now.getTime() - createdAt.getTime());
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         
-        // Se o usuário foi criado nos últimos 7 dias e está INATIVO, deve ser TRIAL
+        // Se o usuário foi criado nos últimos 7 dias e está INATIVO, não deve ser alterado para TRIAL
         if (diffDays <= 7 && user.status === 'INATIVO') {
-          usersToUpdate.push({
-            id: user.id,
-            oldStatus: user.status,
-            newStatus: 'TRIAL'
-          });
-          
-          // Atualizar o status localmente
-          user.status = 'TRIAL';
+          // Não fazer nada, manter o status como INATIVO
+          continue;
+
         }
       }
       

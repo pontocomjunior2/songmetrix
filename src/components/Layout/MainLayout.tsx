@@ -14,7 +14,7 @@ interface LayoutProps {
 
 const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
   const { theme, toggleTheme } = useTheme();
-  const { currentUser, signOut } = useAuth();
+  const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
   const [isMobile, setIsMobile] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -33,7 +33,7 @@ const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
 
   const handleLogout = async () => {
     try {
-      await signOut();
+      await logout();
       navigate('/login');
     } catch (error) {
       console.error('Erro ao fazer logout:', error);

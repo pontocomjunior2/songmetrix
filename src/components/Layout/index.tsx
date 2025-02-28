@@ -24,7 +24,8 @@ export default function Layout({ currentView, onNavigate }: LayoutProps) {
   const handleLogout = async () => {
     try {
       await signOut();
-      navigate('/login');
+      // Removida a navegação manual para '/login'
+      // O AuthContext já gerencia a navegação após o logout
     } catch (error) {
       console.error('Erro ao fazer logout:', error);
     }

@@ -11,8 +11,7 @@ if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-s
   document.documentElement.classList.remove('dark');
 }
 
+// Remover o StrictMode para evitar renderizações duplas que podem afetar a autenticação
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
+  <App />
 );
