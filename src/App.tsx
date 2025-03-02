@@ -14,6 +14,7 @@ import RealTime from './components/RealTime';
 import Radios from './components/Radios';
 import UserList from './components/Admin/UserList';
 import RadioAbbreviations from './components/Admin/RadioAbbreviations';
+import StreamsManager from './components/Admin/StreamsManager';
 import PaymentSuccess from './components/Payment/PaymentSuccess';
 import PaymentCanceled from './components/Payment/PaymentCanceled';
 import Relatorios from './components/Relatorios';
@@ -57,6 +58,11 @@ function App() {
             <Route path="admin/abbreviations" element={
               <AdminRoute>
                 <RadioAbbreviations />
+              </AdminRoute>
+            } />
+            <Route path="admin/streams" element={
+              <AdminRoute>
+                <StreamsManager />
               </AdminRoute>
             } />
           </Route>

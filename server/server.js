@@ -48,6 +48,8 @@ import { authenticateBasicUser, authenticateUser } from './auth-middleware.js';
 import { createClient } from '@supabase/supabase-js';
 import { createCheckoutSession, handleWebhook } from './stripe.js';
 import { reportQuery } from './report-query.js';
+// Importar o registrador de rotas
+import registerRoutes from './index.js';
 
 const app = express();
 
@@ -75,12 +77,14 @@ app.use((req, res, next) => {
   next();
 });
 
+// Registrar as rotas
+registerRoutes(app);
+
 // Tratamento de erros global
 app.use((err, req, res, next) => {
   console.error('Erro não tratado:', err);
   res.status(500).json({ error: 'Erro interno do servidor', details: err.message });
 });
-
 
 const { Pool } = pg;
 

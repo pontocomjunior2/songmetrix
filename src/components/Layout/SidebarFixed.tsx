@@ -1,7 +1,8 @@
 import React from 'react';
-import { LayoutDashboard, Radio, BarChart3, Clock, Users, FileText, Type, X, LogOut } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { UserStatus } from '../../types/auth';
+import { UserStatus } from '../../lib/auth';
+import { Home, BarChart3, FileText, Users, Type, Radio, LogOut, Clock, X } from 'lucide-react';
+import clsx from 'clsx';
 
 interface SidebarProps {
   currentView: string;
@@ -11,12 +12,12 @@ interface SidebarProps {
 }
 
 export default function SidebarFixed({ currentView, onNavigate, onClose, isMobile }: SidebarProps) {
-  const { userStatus, currentUser, signOut } = useAuth();
+  const { userStatus, currentUser, logout } = useAuth();
 
   const baseMenuItems = [
     {
       name: 'Painel',
-      icon: LayoutDashboard,
+      icon: Home,
       view: 'dashboard'
     },
     {
@@ -51,6 +52,11 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
       name: 'Abreviações',
       icon: Type,
       view: 'admin/abbreviations'
+    },
+    {
+      name: 'Gerenciar Streams',
+      icon: Radio,
+      view: 'admin/streams'
     }
   ];
 
@@ -117,7 +123,7 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
           <button
             onClick={async () => {
               try {
-                await signOut();
+                await logout();
               } catch (error) {
                 console.error('Erro ao fazer logout:', error);
               }

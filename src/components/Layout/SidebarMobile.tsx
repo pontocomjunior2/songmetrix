@@ -12,7 +12,7 @@ interface SidebarProps {
 }
 
 export default function SidebarMobile({ currentView, onNavigate, onClose }: SidebarProps) {
-  const { userStatus, currentUser, signOut } = useAuth();
+  const { userStatus, currentUser, logout } = useAuth();
   const isAdmin = userStatus === UserStatus.ADMIN;
 
   const commonMenuItems = [
@@ -53,6 +53,11 @@ export default function SidebarMobile({ currentView, onNavigate, onClose }: Side
       name: 'Abreviações',
       icon: Type,
       view: 'admin/abbreviations'
+    },
+    {
+      name: 'Gerenciar Streams',
+      icon: Radio,
+      view: 'admin/streams'
     }
   ];
 
@@ -60,7 +65,7 @@ export default function SidebarMobile({ currentView, onNavigate, onClose }: Side
 
   const handleLogout = async () => {
     try {
-      await signOut();
+      await logout();
       window.location.href = '/login';
     } catch (error) {
       console.error('Erro ao fazer logout:', error);

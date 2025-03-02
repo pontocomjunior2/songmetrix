@@ -6,6 +6,7 @@ import { Loader2, FileDown, Calendar, MapPin, Radio, ChevronRight } from 'lucide
 import moment from 'moment';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import apiServices, { getAuthHeaders } from '../services/api';
 
 import './Ranking/styles/Ranking.css';
 
@@ -81,35 +82,9 @@ const RelatoriosWizard: React.FC = () => {
     }
   };
 
-  const getAuthHeaders = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) {
-        throw new Error('No authentication token available');
-      }
-      return {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      };
-    } catch (error: any) {
-      console.error('Error getting auth headers:', error);
-      alert('Erro de autenticação. Por favor, tente novamente.');
-      throw error;
-    }
-  };
-
   const validateLocation = async (city: string, state: string) => {
     try {
-      const headers = await getAuthHeaders();
-      const params = new URLSearchParams({ city, state });
-      const response = await fetch(`http://localhost:3001/api/validate-location?${params.toString()}`, { 
-        headers,
-        credentials: 'include'
-      });
-      if (!response.ok) throw new Error('Failed to validate location');
-      const data = await response.json();
-      return data.isValid;
+      return await apiServices.reports.validateLocation(city, state);
     } catch (error: any) {
       console.error('Error validating location:', error);
       if (error?.code === 'auth/requires-recent-login') {
@@ -121,16 +96,7 @@ const RelatoriosWizard: React.FC = () => {
 
   const fetchRadiosByLocation = async (city?: string, state?: string) => {
     try {
-      const headers = await getAuthHeaders();
-      const params = new URLSearchParams();
-      if (city) params.append('city', city);
-      if (state) params.append('state', state);
-      const response = await fetch(`http://localhost:3001/api/radios/by-location?${params.toString()}`, { 
-        headers,
-        credentials: 'include'
-      });
-      if (!response.ok) throw new Error('Failed to fetch radios by location');
-      const data = await response.json();
+      const data = await apiServices.reports.getRadiosByLocation(city, state);
       return data.map((radio: string) => ({ value: radio, label: radio }));
     } catch (error: any) {
       console.error('Error fetching radios by location:', error);
@@ -207,7 +173,6 @@ const RelatoriosWizard: React.FC = () => {
     }
     setLoading(true);
     try {
-      const headers = await getAuthHeaders();
       let radiosToUse = selectedRadios;
       if (hasLocationFilter) {
         const locationRadios = await fetchRadiosByLocation(
@@ -232,26 +197,26 @@ const RelatoriosWizard: React.FC = () => {
           return;
         }
       }
-      const params = new URLSearchParams({
+      
+      const params: any = {
         startDate,
         endDate,
         limit: chartSize.value
-      });
+      };
+      
       if (radiosToUse.length > 0) {
-        params.append('radios', radiosToUse.map(r => r.value).join('||'));
+        params.radios = radiosToUse.map(r => r.value).join('||');
       }
+      
       if (selectedCity) {
-        params.append('city', selectedCity.value);
+        params.city = selectedCity.value;
       }
+      
       if (selectedState) {
-        params.append('state', selectedState.value);
+        params.state = selectedState.value;
       }
-      const response = await fetch(`http://localhost:3001/api/report?${params.toString()}`, { 
-        headers,
-        credentials: 'include'
-      });
-      if (!response.ok) throw new Error('Failed to fetch report data');
-      const data = await response.json();
+      
+      const data = await apiServices.reports.generateReport(params);
       setReportData(data);
       setReportGenerated(true);
     } catch (error: any) {
@@ -281,27 +246,15 @@ const RelatoriosWizard: React.FC = () => {
         return;
       }
       try {
-        const headers = await getAuthHeaders();
-        const radiosResponse = await fetch('http://localhost:3001/api/radios/status', { 
-          headers,
-          credentials: 'include',
-          mode: 'cors'
-        });
-        if (!radiosResponse.ok) throw new Error('Failed to fetch radios');
-        const radiosData = await radiosResponse.json();
+        const radiosData = await apiServices.reports.getRadios();
         const options = radiosData.map((radio: { name: string }) => ({
           value: radio.name,
           label: radio.name,
         }));
         setRadiosOptions(options);
         
-        const abbreviationsResponse = await fetch('http://localhost:3001/api/radio-abbreviations', { 
-          headers,
-          credentials: 'include'
-        });
-        if (!abbreviationsResponse.ok) throw new Error('Failed to fetch abbreviations');
-        const abbreviationsData: RadioAbbreviation[] = await abbreviationsResponse.json();
-        const abbrevMap = abbreviationsData.reduce((acc, { radio_name, abbreviation }) => {
+        const abbreviationsData = await apiServices.reports.getRadioAbbreviations();
+        const abbrevMap = abbreviationsData.reduce((acc: { [key: string]: string }, { radio_name, abbreviation }: RadioAbbreviation) => {
           acc[radio_name] = abbreviation;
           return acc;
         }, {} as { [key: string]: string });
@@ -318,25 +271,14 @@ const RelatoriosWizard: React.FC = () => {
 
     const fetchLocationData = async () => {
       try {
-        const headers = await getAuthHeaders();
-        const citiesResponse = await fetch('http://localhost:3001/api/cities', { 
-          headers,
-          credentials: 'include'
-        });
-        if (!citiesResponse.ok) throw new Error('Failed to fetch cities');
-        const citiesData = await citiesResponse.json();
+        const citiesData = await apiServices.reports.getCities();
         const cityOptions = citiesData.map((city: string) => ({
           value: city,
           label: city,
         }));
         setCitiesOptions(cityOptions);
         
-        const statesResponse = await fetch('http://localhost:3001/api/states', { 
-          headers,
-          credentials: 'include'
-        });
-        if (!statesResponse.ok) throw new Error('Failed to fetch states');
-        const statesData = await statesResponse.json();
+        const statesData = await apiServices.reports.getStates();
         const stateOptions = statesData.map((state: string) => ({
           value: state,
           label: state,

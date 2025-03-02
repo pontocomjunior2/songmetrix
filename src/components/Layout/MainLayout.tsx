@@ -48,10 +48,16 @@ const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
     }
   };
 
-  const getDisplayTitle = () => {
+  const getPageTitle = () => {
+    if (currentView === 'dashboard') return 'Painel';
+    if (currentView === 'ranking') return 'Ranking';
+    if (currentView === 'realtime') return 'Tempo Real';
+    if (currentView === 'radios') return 'Rádios';
+    if (currentView === 'relatorios') return 'Relatórios';
     if (currentView === 'admin/users') return 'Gerenciar Usuários';
     if (currentView === 'admin/abbreviations') return 'Abreviações';
-    return currentView.charAt(0).toUpperCase() + currentView.slice(1);
+    if (currentView === 'admin/streams') return 'Gerenciar Streams';
+    return '';
   };
 
   const handleCloseMobileMenu = () => {
@@ -102,7 +108,7 @@ const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
                 </button>
               )}
               <h2 className="text-lg md:text-xl font-bold text-gray-900 dark:text-white truncate">
-                {getDisplayTitle()}
+                {getPageTitle()}
               </h2>
             </div>
 
