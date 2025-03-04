@@ -7,7 +7,24 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-dotenv.config({ path: path.join(dirname(__dirname), '.env') });
+// Try to load environment variables from multiple locations
+const envPaths = [
+  path.join(dirname(__dirname), '.env.production'),
+  path.join(dirname(__dirname), '.env'),
+  path.join(__dirname, '.env')
+];
+
+for (const envPath of envPaths) {
+  const result = dotenv.config({ path: envPath });
+  if (result.error === undefined) {
+    console.log('Loaded environment variables from:', envPath);
+    break;
+  }
+}
+
+if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+  throw new Error('Required environment variables are missing: VITE_SUPABASE_URL or SUPABASE_SERVICE_KEY');
+}
 
 // Create Supabase admin client
 const supabaseAdmin = createClient(
