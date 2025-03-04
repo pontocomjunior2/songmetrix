@@ -95,6 +95,26 @@
   @apply border-b border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200;
 }
 
+/* Radio column should not wrap */
+.realtime-table td:nth-child(2) {
+  white-space: nowrap;
+  min-width: 200px;
+}
+
+/* Song title column can wrap */
+.realtime-table td:nth-child(4) {
+  white-space: normal;
+  word-wrap: break-word;
+  min-width: 250px;
+}
+
+/* Ensure Date/Time column has appropriate width and doesn't wrap */
+.realtime-table th:first-child,
+.realtime-table td:first-child {
+  min-width: 180px;
+  white-space: nowrap;
+}
+
 .realtime-table th {
   font-weight: 500;
   @apply bg-gray-50 dark:bg-gray-700;
