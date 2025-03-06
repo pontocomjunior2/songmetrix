@@ -1923,6 +1923,134 @@ app.post('/api/users/remove', authenticateUser, async (req, res) => {
   }
 });
 
+// Rota para forçar a atualização de status para TRIAL para usuários novos
+app.post('/api/users/force-trial-status', authenticateUser, async (req, res) => {
+  try {
+    // Verificar se é administrador
+    if (req.user?.status !== 'ADMIN') {
+      return res.status(403).json({ error: 'Apenas administradores podem realizar esta operação' });
+    }
+
+    // Buscar usuários criados nos últimos 7 dias
+    const { data: newUsers, error: userError } = await supabaseAdmin
+      .from('users')
+      .select('id, email, status, created_at')
+      .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+      .order('created_at', { ascending: false });
+
+    if (userError) {
+      console.error('Erro ao buscar usuários novos:', userError);
+      return res.status(500).json({ error: 'Erro ao buscar usuários novos', details: userError });
+    }
+
+    const results = {
+      success: [],
+      unchanged: [],
+      errors: []
+    };
+
+    // Atualizar cada usuário para TRIAL
+    for (const user of newUsers) {
+      // Pular usuários que já estão com status TRIAL
+      if (user.status === 'TRIAL') {
+        results.unchanged.push({
+          user_id: user.id,
+          email: user.email,
+          status: user.status
+        });
+        continue;
+      }
+
+      // Atualizar no banco de dados
+      const { error: updateDbError } = await supabaseAdmin
+        .from('users')
+        .update({
+          status: 'TRIAL',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
+
+      if (updateDbError) {
+        console.error(`Erro ao atualizar status do usuário ${user.id} no banco:`, updateDbError);
+        results.errors.push({
+          user_id: user.id,
+          email: user.email,
+          error: 'Erro ao atualizar status no banco de dados'
+        });
+        continue;
+      }
+
+      // Obter dados do usuário na auth
+      const { data: userData, error: userDataError } = await supabaseAdmin.auth.admin.getUserById(user.id);
+
+      if (userDataError) {
+        console.error(`Erro ao buscar dados do usuário ${user.id}:`, userDataError);
+        results.errors.push({
+          user_id: user.id,
+          email: user.email,
+          error: 'Erro ao buscar dados do usuário na autenticação'
+        });
+        continue;
+      }
+
+      // Atualizar os metadados
+      const updatedMetadata = { ...userData.user.user_metadata, status: 'TRIAL' };
+      const { error: updateMetaError } = await supabaseAdmin.auth.admin.updateUserById(
+        user.id,
+        { user_metadata: updatedMetadata }
+      );
+
+      if (updateMetaError) {
+        console.error(`Erro ao atualizar metadados do usuário ${user.id}:`, updateMetaError);
+        results.errors.push({
+          user_id: user.id,
+          email: user.email,
+          error: 'Erro ao atualizar metadados do usuário'
+        });
+        continue;
+      }
+
+      // Adicionar à fila de sincronização
+      const { error: queueError } = await supabaseAdmin
+        .from('auth_sync_queue')
+        .insert({
+          user_id: user.id,
+          status: 'TRIAL',
+          processed: false,
+          created_at: new Date().toISOString()
+        })
+        .select();
+
+      if (queueError) {
+        console.error(`Erro ao adicionar usuário ${user.id} à fila de sincronização:`, queueError);
+        // Não interrompe o processo, pois as atualizações principais já foram feitas
+      }
+
+      console.log(`Status do usuário ${user.id} atualizado com sucesso de ${user.status} para TRIAL`);
+      results.success.push({
+        user_id: user.id,
+        email: user.email,
+        old_status: user.status,
+        new_status: 'TRIAL'
+      });
+    }
+
+    return res.status(200).json({
+      message: 'Processo de atualização de status concluído',
+      summary: {
+        total_users: newUsers.length,
+        updated: results.success.length,
+        unchanged: results.unchanged.length,
+        errors: results.errors.length
+      },
+      results
+    });
+  } catch (error) {
+    console.error('Erro durante a atualização de status:', error);
+    return res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);

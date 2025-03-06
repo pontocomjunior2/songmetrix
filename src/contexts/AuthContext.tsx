@@ -36,6 +36,13 @@ export interface AuthContextType {
   logout: () => Promise<void>;
   updateUserStatus: (userId: string, newStatus: UserStatusType) => Promise<void>;
   refreshUserStatus: () => Promise<boolean>;
+  signUp: (email: string, password: string) => Promise<{ 
+    error: any, 
+    confirmation_sent?: boolean,
+    should_redirect?: boolean,
+    message?: string
+  }>;
+  updateFavoriteRadios: (radios: string[]) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -194,6 +201,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
         isRefreshing.current = false;
         return true;
+      } else if (dbUser.status === 'INATIVO') {
+        // Usuário inativo - não fazer logout, apenas redirecionar
+        navigate('/pending-approval', {
+          state: {
+            message: 'Sua conta está aguardando aprovação. Por favor, aguarde o contato do nosso atendimento.'
+          },
+          replace: true
+        });
+        isRefreshing.current = false;
+        return false;
       } else {
         // Status não permitido
         await supabase.auth.signOut();
@@ -351,6 +368,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     
     // Configurar listener para mudanças de autenticação
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // Logar todos os eventos para diagnóstico
+      console.log('Evento de autenticação:', event, session ? 'com sessão' : 'sem sessão');
+      
+      // Verificar especificamente eventos de confirmação de email
+      if (event === 'USER_UPDATED' && session?.user) {
+        console.log('Usuário atualizado:', {
+          id: session.user.id,
+          email: session.user.email,
+          email_confirmado: session.user.email_confirmed_at ? 'Sim' : 'Não',
+          created_at: session.user.created_at,
+          metadados: session.user.user_metadata
+        });
+      }
+      
       // Ignorar eventos específicos para evitar loops
       if (event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
         return;
@@ -412,7 +443,70 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         .eq('id', user.id)
         .single();
         
-      if (dbError) throw dbError;
+      if (dbError) {
+        console.error('Erro ao buscar usuário no banco:', dbError);
+        
+        // Se o usuário não existir no banco mas existir na auth, criar registro
+        if (dbError.code === 'PGRST116') { // No rows returned
+          console.log('Criando registro de usuário que não existe no banco:', user.id);
+          
+          // Determinar se é um usuário novo (< 7 dias)
+          const createdAt = new Date(user.created_at);
+          const now = new Date();
+          const diffTime = Math.abs(now.getTime() - createdAt.getTime());
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          const isNewUser = diffDays <= 7;
+          
+          // Inserir novo registro com status TRIAL para usuários novos
+          const { error: insertError } = await supabase
+            .from('users')
+            .insert({
+              id: user.id,
+              email: user.email,
+              status: isNewUser ? 'TRIAL' : 'INATIVO', // TRIAL para novos usuários
+              created_at: user.created_at || new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+            
+          if (insertError) {
+            console.error('Erro ao criar registro de usuário:', insertError);
+            throw insertError;
+          }
+          
+          // Buscar o registro recém-criado
+          const { data: newDbUser, error: newDbError } = await supabase
+            .from('users')
+            .select('status, created_at')
+            .eq('id', user.id)
+            .single();
+            
+          if (newDbError) {
+            console.error('Erro ao buscar usuário recém-criado:', newDbError);
+            throw newDbError;
+          }
+          
+          if (!newDbUser) {
+            throw new CustomAuthError('Erro ao criar registro de usuário');
+          }
+          
+          // Atualizar metadados para corresponder ao banco
+          await supabase.auth.updateUser({
+            data: { status: newDbUser.status }
+          });
+          
+          // Usar o registro recém-criado
+          if (isMounted.current) {
+            setCurrentUser(user);
+            setUserStatus(newDbUser.status as UserStatusType);
+            setLoading(false);
+          }
+          
+          navigate('/dashboard', { replace: true });
+          return { error: null };
+        } else {
+          throw dbError;
+        }
+      }
       
       if (!dbUser) {
         throw new CustomAuthError('Usuário não encontrado no banco de dados');
@@ -500,6 +594,110 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const signUp = async (email: string, password: string) => {
+    try {
+      // Verificar se o email já existe
+      const { data: existingUsers, error: checkError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', email);
+        
+      if (checkError) {
+        console.error('Erro ao verificar email existente:', checkError);
+      } else if (existingUsers && existingUsers.length > 0) {
+        return { error: new CustomAuthError('Este email já está registrado. Por favor, faça login ou use outro email.') };
+      }
+      
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/login`,
+          data: { status: 'TRIAL' }
+        }
+      });
+      
+      if (error) {
+        console.error('Erro no signUp do Supabase:', error);
+        throw error;
+      }
+      
+      // Garantir que o usuário foi criado e tem o status TRIAL
+      if (data?.user) {
+        console.log('Usuário criado com sucesso. ID:', data.user.id);
+        
+        // Criar ou atualizar o registro na tabela users
+        const { error: dbError } = await supabase
+          .from('users')
+          .upsert({
+            id: data.user.id,
+            email: data.user.email,
+            status: 'TRIAL',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+        
+        if (dbError) {
+          console.error('Erro ao criar registro do usuário no banco de dados:', dbError);
+        } else {
+          console.log('Registro do usuário criado/atualizado com sucesso na tabela users');
+        }
+        
+        // Retornar sucesso, mas sem fazer logout automaticamente
+        return { 
+          error: null,
+          confirmation_sent: true,
+          should_redirect: false,  // Indica que não deve ser redirecionado para login
+          message: 'Conta criada com sucesso! Verifique seu email para confirmar o cadastro.'
+        };
+      } else {
+        console.warn('Dados do usuário não disponíveis após signUp');
+      }
+      
+      return { error: null };
+    } catch (err) {
+      console.error('Erro durante o processo de cadastro:', err);
+      return { error: err };
+    }
+  };
+
+  // Função para atualizar rádios favoritas no metadata do usuário
+  const updateFavoriteRadios = async (radios: string[]) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
+      // Primeiro, atualizar os metadados do usuário na auth
+      const { error } = await supabase.auth.updateUser({
+        data: {
+          ...user.user_metadata,
+          favorite_radios: radios
+        }
+      });
+
+      if (error) throw error;
+      
+      // Também atualizar o campo favorite_radios na tabela users
+      const { error: dbError } = await supabase
+        .from('users')
+        .update({ 
+          favorite_radios: radios,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
+        
+      if (dbError) {
+        console.error('Erro ao atualizar rádios favoritas no banco de dados:', dbError);
+        // Não lançar erro aqui para não impedir a navegação, pois os metadados já foram atualizados
+      }
+      
+      console.log('Rádios favoritas atualizadas com sucesso:', radios);
+    } catch (error) {
+      console.error('Erro ao atualizar rádios favoritas:', error);
+      throw error;
+    }
+  };
+
   const value = {
     currentUser,
     userStatus,
@@ -509,7 +707,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     login,
     logout: signOut,
     updateUserStatus,
-    refreshUserStatus
+    refreshUserStatus,
+    signUp,
+    updateFavoriteRadios
   };
 
   return (

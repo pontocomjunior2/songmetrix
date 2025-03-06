@@ -8,7 +8,9 @@
     "build": "vite build --mode production",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "fix-trial-status": "node scripts/apply_fix_trial_status.mjs",
+    "migration-web": "node scripts/apply-migration-web.mjs"
   },
   "dependencies": {
     "@chakra-ui/react": "^3.8.1",
@@ -21,6 +23,7 @@
     "axios": "^1.6.2",
     "chart.js": "^4.4.0",
     "date-fns": "^3.6.0",
+    "express": "^4.21.2",
     "framer-motion": "^12.4.7",
     "jspdf": "^3.0.0",
     "jspdf-autotable": "^5.0.2",
