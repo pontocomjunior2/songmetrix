@@ -2,16 +2,26 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { PrimaryButton } from '../Common/Button';
-import { Clock, CreditCard } from 'lucide-react';
+import { Clock, CreditCard, AlertTriangle } from 'lucide-react';
 
 export default function MyPlan() {
   const navigate = useNavigate();
   const location = useLocation();
   const message = location.state?.message || '';
-  const { userStatus, trialDaysRemaining } = useAuth();
+  const { userStatus, trialDaysRemaining, subscriptionDaysRemaining } = useAuth();
 
   const handleSubscribe = () => {
     navigate('/plans');
+  };
+
+  // Formatar a data de renovação (30 dias após o último pagamento)
+  const formatRenewalDate = () => {
+    if (subscriptionDaysRemaining === null) return '';
+    
+    const today = new Date();
+    const renewalDate = new Date(today);
+    renewalDate.setDate(today.getDate() + subscriptionDaysRemaining);
+    return renewalDate.toLocaleDateString('pt-BR');
   };
 
   return (
@@ -50,11 +60,13 @@ export default function MyPlan() {
                     Período de Avaliação
                   </h3>
                   <p className="mt-1 text-gray-500 dark:text-gray-400">
-                    {trialDaysRemaining > 1
-                      ? `Você tem ${trialDaysRemaining} dias restantes no seu período de avaliação.`
-                      : trialDaysRemaining === 1
-                      ? 'Você tem 1 dia restante no seu período de avaliação.'
-                      : 'Seu período de avaliação termina hoje.'}
+                    {trialDaysRemaining === null ? 'Carregando informações...' : 
+                      trialDaysRemaining > 1
+                        ? `Você tem ${trialDaysRemaining} dias restantes no seu período de avaliação.`
+                        : trialDaysRemaining === 1
+                        ? 'Você tem 1 dia restante no seu período de avaliação.'
+                        : 'Seu período de avaliação termina hoje.'
+                    }
                   </p>
                 </div>
               </div>
@@ -93,9 +105,38 @@ export default function MyPlan() {
                   </p>
                 </div>
               </div>
+              
+              {/* Aviso de vencimento próximo */}
+              {subscriptionDaysRemaining !== null && subscriptionDaysRemaining <= 5 && (
+                <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/30 border-l-4 border-yellow-400 rounded-md">
+                  <div className="flex">
+                    <div className="flex-shrink-0">
+                      <AlertTriangle className="h-5 w-5 text-yellow-400" />
+                    </div>
+                    <div className="ml-3">
+                      <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                        Sua assinatura está próxima do vencimento
+                      </p>
+                      <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                        {subscriptionDaysRemaining > 1
+                          ? `Restam apenas ${subscriptionDaysRemaining} dias para o vencimento da sua assinatura.`
+                          : subscriptionDaysRemaining === 1
+                          ? 'Sua assinatura vence amanhã.'
+                          : 'Sua assinatura vence hoje.'}
+                      </p>
+                      <div className="mt-3">
+                        <PrimaryButton onClick={handleSubscribe} className="text-sm py-1 px-3">
+                          Renovar Agora
+                        </PrimaryButton>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
               <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Sua assinatura será renovada automaticamente em {new Date().toLocaleDateString('pt-BR')}.
+                  Sua assinatura será renovada automaticamente em {formatRenewalDate()}.
                 </p>
               </div>
             </div>

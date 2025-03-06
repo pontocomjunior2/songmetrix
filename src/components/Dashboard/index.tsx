@@ -1,7 +1,7 @@
 import React, { useState, useEffect, Suspense, memo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase-client';
-import { Radio as RadioIcon, Music, Info, Clock, RefreshCw } from 'lucide-react';
+import { Radio as RadioIcon, Music, Info, Clock, RefreshCw, AlertTriangle } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 
@@ -71,7 +71,7 @@ const Dashboard = () => {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const { currentUser, userStatus, trialDaysRemaining } = useAuth();
+  const { currentUser, userStatus, trialDaysRemaining, subscriptionDaysRemaining } = useAuth();
   const navigate = useNavigate();
   
   // Cache TTL em milissegundos (5 minutos)
@@ -386,6 +386,32 @@ const Dashboard = () => {
               <p className="text-sm text-blue-500 dark:text-blue-300 mt-1">
                 Após o término do período de avaliação, você precisará assinar um plano para continuar usando o sistema.
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {userStatus === 'ATIVO' && subscriptionDaysRemaining !== null && subscriptionDaysRemaining <= 2 && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/30 border-l-4 border-yellow-400 p-4 mb-4 rounded-md">
+          <div className="flex items-center">
+            <AlertTriangle className="h-6 w-6 text-yellow-500 dark:text-yellow-400 mr-2" />
+            <div>
+              <p className="font-medium text-yellow-700 dark:text-yellow-300">Assinatura próxima do vencimento</p>
+              <p className="text-yellow-600 dark:text-yellow-200">
+                {subscriptionDaysRemaining === 2 
+                  ? 'Sua assinatura expira em 2 dias.' 
+                  : subscriptionDaysRemaining === 1 
+                    ? 'Sua assinatura expira amanhã.' 
+                    : 'Sua assinatura expira hoje.'}
+              </p>
+              <div className="mt-2">
+                <button 
+                  onClick={() => navigate('/plans')}
+                  className="inline-flex items-center px-3 py-1 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
+                >
+                  Renovar agora mesmo
+                </button>
+              </div>
             </div>
           </div>
         </div>

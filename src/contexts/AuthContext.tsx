@@ -21,6 +21,7 @@ interface DbUser {
   created_at: string;
   updated_at: string;
   favorite_radios?: string[];
+  last_payment_date?: string;
 }
 
 // Definir os tipos para o contexto
@@ -32,6 +33,7 @@ export interface AuthContextType {
   loading: boolean;
   error: string | null;
   trialDaysRemaining: number | null;
+  subscriptionDaysRemaining: number | null;
   login: (email: string, password: string) => Promise<{ error: CustomAuthError | null }>;
   logout: () => Promise<void>;
   updateUserStatus: (userId: string, newStatus: UserStatusType) => Promise<void>;
@@ -53,6 +55,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [trialDaysRemaining, setTrialDaysRemaining] = useState<number | null>(null);
+  const [subscriptionDaysRemaining, setSubscriptionDaysRemaining] = useState<number | null>(null);
   const isRefreshing = useRef(false);
   const isInitialized = useRef(false);
   const isMounted = useRef(true);
@@ -125,42 +128,79 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Função para atualizar explicitamente o status do usuário
   const refreshUserStatus = async (): Promise<boolean> => {
     if (isRefreshing.current) return false;
-    
     isRefreshing.current = true;
     
     try {
-      // Verificar se há uma sessão ativa
-      const isSessionActive = await checkSessionActive();
-      if (!isSessionActive) {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        console.error('Erro ao obter usuário:', userError);
+        if (isMounted.current) {
+          setCurrentUser(null);
+          setUserStatus(null);
+          setLoading(false);
+        }
         isRefreshing.current = false;
         return false;
       }
-      
-      // Obter usuário da sessão ativa
-      const { data: { user }, error } = await supabase.auth.getUser();
-      
-      if (error || !user) {
-        isRefreshing.current = false;
-        return false;
-      }
-      
-      // Obter status do banco
+
+      // Buscar dados do usuário no banco
       const { data: dbUser, error: dbError } = await supabase
         .from('users')
-        .select('status, created_at')
+        .select('*')
         .eq('id', user.id)
         .single();
-        
+
       if (dbError || !dbUser) {
+        console.error('Erro ao buscar dados do usuário:', dbError);
+        if (isMounted.current) {
+          setCurrentUser(null);
+          setUserStatus(null);
+          setLoading(false);
+        }
         isRefreshing.current = false;
         return false;
       }
-      
+
+      // Registrar dados somente em caso de mudanças no status
+      const statusChanged = userStatus !== dbUser.status;
+      if (statusChanged) {
+        console.log('Dados do usuário encontrados no banco:', {
+          id: dbUser.id,
+          status: dbUser.status,
+          lastPaymentDate: dbUser.last_payment_date
+        });
+      }
+
+      // Verificar se os metadados estão desatualizados
+      const currentMetadataStatus = user.user_metadata?.status;
+      if (currentMetadataStatus !== dbUser.status) {
+        console.log('Status nos metadados está desatualizado:', {
+          metadataStatus: currentMetadataStatus,
+          dbStatus: dbUser.status
+        });
+        
+        // Atualizar metadados para sincronizar com o banco
+        try {
+          await supabase.auth.updateUser({
+            data: { 
+              ...user.user_metadata,
+              status: dbUser.status 
+            }
+          });
+          console.log('Metadados atualizados com sucesso para:', dbUser.status);
+        } catch (updateError) {
+          console.error('Erro ao atualizar metadados:', updateError);
+        }
+      }
+
       // Verificar status permitidos
       if (dbUser.status === 'ADMIN' || dbUser.status === 'ATIVO' || dbUser.status === 'TRIAL') {
         if (isMounted.current) {
           setCurrentUser(user);
-          setUserStatus(dbUser.status as UserStatusType);
+          if (userStatus !== dbUser.status) {
+            setUserStatus(dbUser.status as UserStatusType);
+            console.log('Status do usuário atualizado no contexto:', dbUser.status);
+          }
         }
         
         // Calcular dias restantes se for TRIAL
@@ -172,14 +212,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           const daysRemaining = Math.max(0, 7 - diffDays);
           
           if (isMounted.current) {
-            setTrialDaysRemaining(daysRemaining);
+            if (trialDaysRemaining !== daysRemaining) {
+              setTrialDaysRemaining(daysRemaining);
+              console.log('Dias restantes de trial:', daysRemaining);
+            } else {
+              setTrialDaysRemaining(daysRemaining);
+            }
+            setSubscriptionDaysRemaining(null);
           }
           
           if (daysRemaining <= 0) {
+            console.log('Período de trial expirado, atualizando para INATIVO');
             // Atualizar status no banco
             await supabase
               .from('users')
-              .update({ status: 'INATIVO' })
+              .update({ 
+                status: 'INATIVO',
+                updated_at: new Date().toISOString()
+              })
               .eq('id', user.id);
               
             navigate('/plans', { 
@@ -192,8 +242,61 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             isRefreshing.current = false;
             return false;
           }
+        } else if (dbUser.status === 'ATIVO' && dbUser.last_payment_date) {
+          // Calcular dias restantes da assinatura para usuários ATIVOS
+          const lastPaymentDate = new Date(dbUser.last_payment_date);
+          const now = new Date();
+          const diffTime = Math.abs(now.getTime() - lastPaymentDate.getTime());
+          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+          const daysRemaining = Math.max(0, 30 - diffDays);
+          
+          if (isMounted.current) {
+            if (subscriptionDaysRemaining !== daysRemaining) {
+              setSubscriptionDaysRemaining(daysRemaining);
+              console.log('Dias restantes de assinatura:', daysRemaining);
+            } else {
+              setSubscriptionDaysRemaining(daysRemaining);
+            }
+            setTrialDaysRemaining(null);
+          }
+          
+          // Se a assinatura expirou, alterar status para INATIVO
+          if (daysRemaining <= 0) {
+            console.log('Assinatura expirada, atualizando para INATIVO');
+            // Atualizar status no banco
+            await supabase
+              .from('users')
+              .update({ 
+                status: 'INATIVO',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', user.id);
+              
+            // Atualizar metadados do usuário
+            await supabase.auth.updateUser({
+              data: { 
+                ...user.user_metadata,
+                status: 'INATIVO' 
+              }
+            });
+            
+            if (isMounted.current) {
+              setUserStatus('INATIVO');
+            }
+            
+            navigate('/plans', { 
+              state: { 
+                subscriptionExpired: true,
+                message: 'Sua assinatura expirou. Renove agora para continuar utilizando o sistema.'
+              },
+              replace: true
+            });
+            isRefreshing.current = false;
+            return false;
+          }
         } else if (isMounted.current) {
           setTrialDaysRemaining(null);
+          setSubscriptionDaysRemaining(null);
         }
         
         if (isMounted.current) {
@@ -201,29 +304,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
         isRefreshing.current = false;
         return true;
-      } else if (dbUser.status === 'INATIVO') {
-        // Usuário inativo - não fazer logout, apenas redirecionar
-        navigate('/pending-approval', {
-          state: {
-            message: 'Sua conta está aguardando aprovação. Por favor, aguarde o contato do nosso atendimento.'
-          },
-          replace: true
-        });
-        isRefreshing.current = false;
-        return false;
-      } else {
-        // Status não permitido
-        await supabase.auth.signOut();
-        navigate('/login', {
-          state: {
-            error: 'Usuário inativo. Entre em contato com o administrador.'
-          },
-          replace: true
-        });
-        isRefreshing.current = false;
-        return false;
       }
+      
+      // Se chegou aqui, o status não é um dos permitidos
+      console.log('Status não permitido:', dbUser.status);
+      if (isMounted.current) {
+        setCurrentUser(null);
+        setUserStatus(null);
+        setLoading(false);
+      }
+      isRefreshing.current = false;
+      return false;
     } catch (error) {
+      console.error('Erro em refreshUserStatus:', error);
+      if (isMounted.current) {
+        setCurrentUser(null);
+        setUserStatus(null);
+        setLoading(false);
+      }
       isRefreshing.current = false;
       return false;
     }
@@ -236,15 +334,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     isInitialized.current = true;
     
     const initializeAuth = async () => {
-      if (!isMounted.current) return;
-      
       try {
-        // Verificar se há uma sessão rápida no storage
-        const storageKey = `sb-${import.meta.env.VITE_SUPABASE_URL.split('//')[1].split('.')[0]}-auth-token`;
-        const hasStoredSession = !!sessionStorage.getItem(storageKey);
+        // Verificar se há uma sessão ativa
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
-        if (!hasStoredSession) {
-          // Não há sessão armazenada, finalizar carga rapidamente
+        if (sessionError || !session) {
           if (isMounted.current) {
             setCurrentUser(null);
             setUserStatus(null);
@@ -253,38 +347,53 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           return;
         }
         
-        // Verificar sessão no Supabase
-        const { data: { session } } = await supabase.auth.getSession();
+        const user = session.user;
         
-        if (!session) {
-          if (isMounted.current) {
-            setCurrentUser(null);
-            setUserStatus(null);
-            setLoading(false);
-          }
-          return;
-        }
-        
-        // Obter dados do usuário
-        const { data: { user } } = await supabase.auth.getUser();
-        
-        if (!user) {
-          if (isMounted.current) {
-            setCurrentUser(null);
-            setUserStatus(null);
-            setLoading(false);
-          }
-          return;
-        }
-        
-        // Obter status do usuário do banco de dados
+        // Buscar dados do usuário no banco
         const { data: dbUser, error: dbError } = await supabase
           .from('users')
-          .select('status, created_at')
+          .select('*')
           .eq('id', user.id)
           .single();
+        
+        if (dbError) {
+          console.error('Erro ao buscar dados do usuário:', dbError);
           
-        if (dbError || !dbUser) {
+          // Se o usuário não existir no banco, criar um novo registro
+          if (dbError.code === 'PGRST116') {
+            const { data: newDbUser, error: createError } = await supabase
+              .from('users')
+              .insert({
+                id: user.id,
+                email: user.email,
+                status: 'TRIAL',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              })
+              .select()
+              .single();
+            
+            if (createError) {
+              console.error('Erro ao criar usuário no banco:', createError);
+              if (isMounted.current) {
+                setCurrentUser(null);
+                setUserStatus(null);
+                setLoading(false);
+              }
+              return;
+            }
+            
+            // Usar o registro recém-criado
+            if (isMounted.current) {
+              setCurrentUser(user);
+              setUserStatus('TRIAL');
+              setTrialDaysRemaining(7);
+              setSubscriptionDaysRemaining(null);
+              setLoading(false);
+            }
+            return;
+          }
+          
           if (isMounted.current) {
             setCurrentUser(null);
             setUserStatus(null);
@@ -307,7 +416,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
               const daysRemaining = Math.max(0, 7 - diffDays);
               
-              if (isMounted.current) setTrialDaysRemaining(daysRemaining);
+              if (isMounted.current) {
+                setTrialDaysRemaining(daysRemaining);
+                setSubscriptionDaysRemaining(null);
+              }
               
               if (daysRemaining <= 0) {
                 // Atualizar status no banco
@@ -331,8 +443,53 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 });
                 return;
               }
+            } else if (dbUser.status === 'ATIVO' && dbUser.last_payment_date) {
+              // Calcular dias restantes da assinatura para usuários ATIVOS
+              const lastPaymentDate = new Date(dbUser.last_payment_date);
+              const now = new Date();
+              const diffTime = Math.abs(now.getTime() - lastPaymentDate.getTime());
+              const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+              const daysRemaining = Math.max(0, 30 - diffDays);
+              
+              if (isMounted.current) {
+                setSubscriptionDaysRemaining(daysRemaining);
+                setTrialDaysRemaining(null);
+              }
+              
+              // Se a assinatura expirou, alterar status para INATIVO
+              if (daysRemaining <= 0) {
+                // Atualizar status no banco
+                await supabase
+                  .from('users')
+                  .update({ 
+                    status: 'INATIVO',
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('id', user.id);
+                  
+                // Atualizar metadados do usuário
+                await supabase.auth.updateUser({
+                  data: { status: 'INATIVO' }
+                });
+                
+                if (isMounted.current) {
+                  setUserStatus('INATIVO');
+                }
+                
+                navigate('/plans', { 
+                  state: { 
+                    subscriptionExpired: true,
+                    message: 'Sua assinatura expirou. Renove agora para continuar utilizando o sistema.'
+                  },
+                  replace: true
+                });
+                return;
+              }
             } else {
-              if (isMounted.current) setTrialDaysRemaining(null);
+              if (isMounted.current) {
+                setTrialDaysRemaining(null);
+                setSubscriptionDaysRemaining(null);
+              }
             }
             
             setLoading(false);
@@ -704,6 +861,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     loading,
     error,
     trialDaysRemaining,
+    subscriptionDaysRemaining,
     login,
     logout: signOut,
     updateUserStatus,

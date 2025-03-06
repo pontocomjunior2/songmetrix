@@ -146,7 +146,7 @@ export default function Login() {
 
           <div className="text-center">
             <Link
-              to="/signup"
+              to="/register"
               className="text-sm text-indigo-600 hover:text-indigo-500"
             >
               Não tem uma conta? Cadastre-se
