@@ -1,9 +1,10 @@
-import React, { useState, useEffect, Suspense, memo } from 'react';
+import React, { useState, useEffect, Suspense, memo, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase-client';
 import { Radio as RadioIcon, Music, Info, Clock, RefreshCw, AlertTriangle } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useNavigate } from 'react-router-dom';
+import { apiClient } from '../../lib/api-client';
 
 interface TopSong {
   song_title: string;
@@ -32,6 +33,16 @@ type DashboardTab = "favoritas" | "todas";
 interface Radio {
   name: string;
   isOnline: boolean;
+}
+
+// Adicionar uma interface para a resposta da API do dashboard
+interface DashboardApiResponse {
+  topSongs?: TopSong[];
+  artistData?: ArtistData[];
+  genreData?: GenreDistribution[];
+  totalSongs?: number;
+  songsPlayedToday?: number;
+  [key: string]: any; // Para outras propriedades que possam existir
 }
 
 const TooltipHeader: React.FC<{ title: string }> = ({ title }) => {
@@ -76,6 +87,11 @@ const Dashboard = () => {
   
   // Cache TTL em milissegundos (5 minutos)
   const CACHE_TTL = 5 * 60 * 1000;
+  const isFetching = useRef(false);
+  const lastRefreshTime = useRef<number>(0);
+  const dataFetchedRef = useRef<boolean>(false);
+  const requestAttempts = useRef<number>(0); // Contador de tentativas de requisição
+  const MAX_ATTEMPTS = 3; // Máximo de tentativas antes de desistir
 
   // Buscar rádios favoritas do usuário
   useEffect(() => {
@@ -87,89 +103,145 @@ const Dashboard = () => {
 
   // Buscar dados do dashboard
   useEffect(() => {
-    const fetchDashboardData = async (forceRefresh = false) => {
-      if (!currentUser || !favoriteRadios.length) {
-        setLoading(false);
-        return;
-      }
+    // Limpar estado ao desmontar
+    return () => {
+      dataFetchedRef.current = false;
+      requestAttempts.current = 0;
+    };
+  }, []);
 
-      try {
-        // Verificar se temos dados em cache e se ainda são válidos
-        const cacheKey = `dashboard_data_${currentUser.id}_${favoriteRadios.join('_')}`;
-        const cachedData = localStorage.getItem(cacheKey);
-        const now = new Date();
-        
-        if (!forceRefresh && cachedData) {
+  // Efeito separado para buscar dados quando as rádios favoritas mudam
+  useEffect(() => {
+    // Só executar se tiver rádios favoritas e não tiver buscado dados ainda
+    if (favoriteRadios.length > 0 && !dataFetchedRef.current) {
+      fetchDashboardData();
+    }
+  }, [favoriteRadios]);
+
+  const fetchDashboardData = async (forceRefresh = false) => {
+    // Evitar múltiplas requisições simultâneas
+    if (isFetching.current && !forceRefresh) return;
+    
+    // Verificar se passou tempo suficiente desde o último refresh
+    const currentTimeMs = Date.now();
+    if (!forceRefresh && currentTimeMs - lastRefreshTime.current < 5000) return;
+    
+    // Verificar se já tentou muitas vezes
+    if (requestAttempts.current >= MAX_ATTEMPTS && !forceRefresh) {
+      console.warn('Número máximo de tentativas atingido. Parando as requisições automáticas.');
+      return;
+    }
+    
+    isFetching.current = true;
+    lastRefreshTime.current = currentTimeMs;
+    requestAttempts.current += 1;
+
+    if (!currentUser || !favoriteRadios.length) {
+      setLoading(false);
+      isFetching.current = false;
+      return;
+    }
+
+    try {
+      console.log('Buscando dados do dashboard para rádios:', favoriteRadios);
+      
+      // Verificar cache antes de fazer requisição
+      const cacheKey = `dashboard_data_${currentUser.id}_${favoriteRadios.join('_')}`;
+      const cachedData = localStorage.getItem(cacheKey);
+      const currentDate = new Date();
+      
+      if (!forceRefresh && cachedData) {
+        try {
           const { data, timestamp } = JSON.parse(cachedData);
-          const cacheAge = now.getTime() - new Date(timestamp).getTime();
+          const cacheAge = currentDate.getTime() - new Date(timestamp).getTime();
           
           // Se o cache ainda for válido, use-o
           if (cacheAge < CACHE_TTL) {
-            setActiveRadios(data.activeRadios);
-            setTopSongs(data.topSongs);
-            setArtistData(data.artistData);
-            setGenreDistribution(data.genreDistribution);
-            setTotalSongs(data.totalSongs);
-            setSongsPlayedToday(data.songsPlayedToday);
+            setActiveRadios(data.activeRadios || []);
+            setTopSongs(data.topSongs || []);
+            setArtistData(data.artistData || []);
+            setGenreDistribution(data.genreDistribution || []);
+            setTotalSongs(data.totalSongs || 0);
+            setSongsPlayedToday(data.songsPlayedToday || 0);
             setLastUpdated(new Date(timestamp));
             setLoading(false);
+            isFetching.current = false;
+            dataFetchedRef.current = true; // Marcar que os dados foram obtidos
             return;
           }
+        } catch (error) {
+          console.warn('Erro ao processar dados em cache:', error);
+          // Continua para buscar novos dados
+        }
+      }
+      
+      // Fazer as chamadas de API com tratamento de erros robusto
+      try {
+        setError(null); // Limpar erros anteriores
+        
+        // 1. Buscar dados do dashboard
+        const apiResponse = await apiClient.getDashboardData(
+          favoriteRadios,
+          { songs: 5, artists: 5, genres: 5 },
+          forceRefresh
+        );
+        
+        // Se a chamada retornou null (throttling ou erro), exibir um erro amigável
+        if (apiResponse === null) {
+          setError('Não foi possível obter dados do dashboard neste momento. Tente novamente mais tarde.');
+          isFetching.current = false;
+          setLoading(false);
+          setIsRefreshing(false);
+          return;
+        }
+        
+        // Converter para o tipo definido para facilitar o acesso
+        const dashboardData = apiResponse as DashboardApiResponse;
+        
+        // 2. Buscar status atual das rádios favoritas
+        const radiosStatus = await apiClient.getRadiosStatus(forceRefresh);
+        
+        // Se a chamada retornou null (throttling), exibir um erro amigável
+        if (radiosStatus === null) {
+          setError('Não foi possível obter o status das rádios neste momento. Tente novamente mais tarde.');
+          isFetching.current = false;
+          setLoading(false);
+          setIsRefreshing(false);
+          return;
         }
 
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        
-        // Preparar os parâmetros para a chamada da API
-        // Adicionar limites para reduzir a quantidade de dados
-        const radioParams = favoriteRadios.map(radio => `radio=${encodeURIComponent(radio)}`).join('&');
-        const limitParams = '&limit_songs=5&limit_artists=5&limit_genres=5';
-        
-        // Fazer as chamadas de API em paralelo usando Promise.all
-        const [dashboardData, radiosStatus] = await Promise.all([
-          // 1. Buscar dados do dashboard com limites
-          fetch(`/api/dashboard?${radioParams}${limitParams}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          }).then(response => {
-            if (!response.ok) throw new Error('Falha ao carregar dados do dashboard');
-            return response.json();
-          }),
-          
-          // 2. Buscar status atual das rádios favoritas
-          fetch('/api/radios/status', {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          }).then(response => {
-            if (!response.ok) throw new Error('Falha ao carregar status das rádios');
-            return response.json();
-          })
-        ]);
-        
         // 3. Filtrar apenas as rádios favoritas e mapear para o formato esperado
-        const favoriteRadiosStatus = radiosStatus
-          .filter((radio: { name: string; status: string }) => favoriteRadios.includes(radio.name))
-          .map((radio: { name: string; status: string }) => ({
-            name: radio.name,
-            isOnline: radio.status === 'ONLINE'
-          }));
+        const favoriteRadiosStatus = Array.isArray(radiosStatus)
+          ? radiosStatus
+              .filter((radio: { name: string }) => favoriteRadios.includes(radio.name))
+              .map((radio: { name: string, status: string }) => ({
+                name: radio.name,
+                isOnline: radio.status === 'ONLINE'
+              }))
+          : [];
         
         // 4. Atualizar os estados com os dados obtidos
         setActiveRadios(favoriteRadiosStatus);
-        setTopSongs(dashboardData.topSongs || []);
-        setArtistData(dashboardData.artistData || []);
         
-        // Verificar se temos dados de gênero, caso contrário usar os valores da imagem de referência
+        // Verifica se temos dados de músicas e artistas antes de atualizar o estado
+        if (dashboardData && dashboardData.topSongs && Array.isArray(dashboardData.topSongs)) {
+          setTopSongs(dashboardData.topSongs);
+        }
+        
+        if (dashboardData && dashboardData.artistData && Array.isArray(dashboardData.artistData)) {
+          setArtistData(dashboardData.artistData);
+        }
+        
+        // Verificar se temos dados de gênero, caso contrário usar os valores padrão
         let genreData;
-        if (dashboardData.genreData && dashboardData.genreData.length > 0) {
-          genreData = dashboardData.genreData;
+        if (dashboardData && dashboardData.genreData && Array.isArray(dashboardData.genreData) && dashboardData.genreData.length > 0) {
+          genreData = dashboardData.genreData.map((genre: any, index: number) => ({
+            ...genre,
+            color: colors[index % colors.length]
+          }));
           setGenreDistribution(genreData);
         } else {
-          // Usar os valores exatos da imagem de referência
+          // Usar valores padrão
           genreData = [
             { name: 'Pop', value: 49, color: colors[0] },
             { name: 'Rock', value: 22, color: colors[1] },
@@ -180,12 +252,16 @@ const Dashboard = () => {
           setGenreDistribution(genreData);
         }
         
-        const totalSongsValue = dashboardData.totalSongs || 0;
-        const songsPlayedTodayValue = dashboardData.songsPlayedToday || 0;
+        const totalSongsValue = dashboardData && dashboardData.totalSongs ? dashboardData.totalSongs : 0;
+        const songsPlayedTodayValue = dashboardData && dashboardData.songsPlayedToday ? dashboardData.songsPlayedToday : 0;
         
         setTotalSongs(totalSongsValue);
         setSongsPlayedToday(songsPlayedTodayValue);
-        setLastUpdated(now);
+        setLastUpdated(currentDate);
+        dataFetchedRef.current = true; // Marcar que os dados foram obtidos com sucesso
+        
+        // Reset contador de tentativas já que obtivemos os dados com sucesso
+        requestAttempts.current = 0;
         
         // Salvar dados no cache
         const dataToCache = {
@@ -197,41 +273,39 @@ const Dashboard = () => {
             totalSongs: totalSongsValue,
             songsPlayedToday: songsPlayedTodayValue
           },
-          timestamp: now.toISOString()
+          timestamp: currentDate.toISOString()
         };
         
-        try {
-          localStorage.setItem(cacheKey, JSON.stringify(dataToCache));
-        } catch (e) {
-          console.warn('Não foi possível salvar dados no cache:', e);
-        }
-
-      } catch (error) {
-        console.error('Erro ao carregar dados:', error);
-        setError('Falha ao carregar dados do dashboard');
-      } finally {
-        setLoading(false);
-        setIsRefreshing(false);
+        localStorage.setItem(cacheKey, JSON.stringify(dataToCache));
+      } catch (apiError) {
+        console.error('Erro nas chamadas de API:', apiError);
+        setError('Falha na comunicação com o servidor. Por favor, tente novamente mais tarde.');
+        throw apiError;
       }
-    };
-
-    fetchDashboardData();
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
+      // Não sobrescrever o erro se já estiver definido
+      if (!error) {
+        setError('Falha ao carregar dados do dashboard. Por favor, tente novamente mais tarde.');
+      }
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+      // Permitir novas requisições após delay
+      setTimeout(() => {
+        isFetching.current = false;
+      }, 5000);
+    }
+  };
     
-    // Função para atualizar os dados manualmente
-    const handleRefresh = () => {
-      setIsRefreshing(true);
-      fetchDashboardData(true);
-    };
-    
-    // Expor a função de atualização para o componente
-    (window as any).refreshDashboard = handleRefresh;
-    
-  }, [currentUser, favoriteRadios]);
-
   // Função para atualizar os dados manualmente
   const handleRefresh = () => {
+    if (isFetching.current) return;
     setIsRefreshing(true);
-    (window as any).refreshDashboard?.();
+    
+    // Resetar contadores de tentativas
+    requestAttempts.current = 0;
+    fetchDashboardData(true);
   };
 
   if (loading) {
