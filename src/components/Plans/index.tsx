@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 import { PrimaryButton } from '../Common/Button';
 import { CheckCircle, Star, Award, Zap, Clock, Shield, BarChart2, Users } from 'lucide-react';
 
@@ -8,6 +9,7 @@ export default function Plans() {
   const location = useLocation();
   const message = location.state?.message || '';
   const isTrialExpired = location.state?.trialExpired || false;
+  const { currentUser } = useAuth();
 
   // Calcular o valor com desconto
   const originalPrice = 2499;
@@ -17,6 +19,38 @@ export default function Plans() {
   // Formatar os preços
   const formatPrice = (price) => {
     return price.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  const handleSubscribe = async () => {
+    if (!currentUser) {
+      // Se o usuário não estiver logado, redireciona para o login com informação de retorno
+      navigate('/login', { 
+        state: { 
+          returnTo: '/plans',
+          checkoutAfterLogin: true
+        }
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: currentUser.id,
+          priceId: 'price_1QzUlrEYOe4CRJcBzweyvbGn' // ID do preço Stripe do ambiente de teste
+        }),
+      });
+      
+      const { url } = await response.json();
+      window.location.href = url;
+    } catch (error) {
+      console.error('Erro ao criar sessão de checkout:', error);
+      alert('Ocorreu um erro ao processar seu pagamento. Por favor, tente novamente.');
+    }
   };
 
   const features = [
@@ -71,7 +105,7 @@ export default function Plans() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="bg-gradient-to-b from-gray-50 to-gray-100 py-8 px-4 sm:px-6 lg:px-8">
       {/* Header */}
       <div className="max-w-7xl mx-auto text-center">
         <div className="mb-16">
@@ -136,7 +170,7 @@ export default function Plans() {
                 <div className="mt-6">
                   <PrimaryButton 
                     fullWidth 
-                    onClick={() => navigate('/contact', { state: { plan: 'Premium' } })}
+                    onClick={handleSubscribe}
                     className="bg-white text-indigo-600 hover:bg-indigo-50"
                   >
                     Assinar Agora
@@ -214,7 +248,7 @@ export default function Plans() {
             <div className="mt-8">
               <PrimaryButton 
                 fullWidth 
-                onClick={() => navigate('/contact', { state: { plan: 'Premium' } })}
+                onClick={handleSubscribe}
               >
                 Assinar Premium
               </PrimaryButton>
@@ -341,7 +375,7 @@ export default function Plans() {
           Nossa equipe está pronta para ajudar você a escolher o melhor plano para sua rádio.
         </p>
         <PrimaryButton
-          onClick={() => navigate('/contact', { state: { plan: 'Premium' } })}
+          onClick={() => navigate('/my-plan', { state: { plan: 'Premium' } })}
           className="px-8 py-3 text-lg"
         >
           Fale com um Especialista

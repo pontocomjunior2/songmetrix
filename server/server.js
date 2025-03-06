@@ -53,27 +53,29 @@ import registerRoutes from './index.js';
 
 const app = express();
 
-// Middleware para o webhook do Stripe (deve vir antes de express.json)
-app.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);
-
-// Middlewares regulares
 // Configurar CORS antes de qualquer rota
 app.use(cors({
   origin: ['http://localhost:5173', 'http://localhost:3000', 'https://songmetrix.com.br'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'stripe-signature'],
   exposedHeaders: ['Content-Range', 'X-Content-Range']
 }));
 
-// Configurar body parser
+// Configurar rotas específicas antes do body parser
+// Middleware para o webhook do Stripe (deve vir antes de express.json)
+app.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);
+
+// Configurar body parser para as demais rotas
 app.use(express.json());
 
 // Log de todas as requisições
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
-  console.log('Headers:', req.headers);
-  console.log('Body:', req.body);
+  if (req.url !== '/webhook') {
+    console.log('Headers:', req.headers);
+    console.log('Body:', req.body);
+  }
   next();
 });
 

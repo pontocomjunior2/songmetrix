@@ -5,23 +5,29 @@ import Loading from '../Common/Loading';
 
 export default function PaymentSuccess() {
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
-
+  const { currentUser, refreshUserStatus } = useAuth();
   useEffect(() => {
     // Aguarda um momento para garantir que o webhook do Stripe tenha processado
-    const redirectTimer = setTimeout(() => {
+    const redirectTimer = setTimeout(async () => {
       if (currentUser) {
-        navigate('/');
+        // Atualiza o status do usuário para garantir que as informações estejam atualizadas
+        await refreshUserStatus();
+        // Redireciona para a página Meu Plano com mensagem de sucesso
+        navigate('/my-plan', { 
+          state: { 
+            message: 'Sua assinatura foi ativada com sucesso! Você tem acesso completo por 30 dias.'
+          }
+        });
       } else {
         navigate('/login');
       }
     }, 5000);
 
     return () => clearTimeout(redirectTimer);
-  }, [currentUser, navigate]);
+  }, [currentUser, navigate, refreshUserStatus]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="flex items-center justify-center bg-gray-50">
       <div className="max-w-md w-full p-8 bg-white rounded-lg shadow-lg text-center">
         <div className="mb-6">
           <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100">
@@ -44,7 +50,7 @@ export default function PaymentSuccess() {
           Pagamento Confirmado!
         </h2>
         <p className="text-gray-600 mb-8">
-          Seu pagamento foi processado com sucesso. Você será redirecionado para o dashboard em instantes...
+          Seu pagamento foi processado com sucesso. Você será redirecionado para sua página de plano em instantes...
         </p>
         <Loading size="small" />
       </div>

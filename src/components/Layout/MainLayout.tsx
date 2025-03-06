@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, Moon, Sun, Menu } from 'lucide-react';
+import { LogOut, Moon, Sun, Menu, CreditCard } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 import { useAuth } from '../../contexts/AuthContext';
 import { CustomUser } from '../../types/customUser';
@@ -147,6 +147,13 @@ const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
                             {currentUser.email}
                           </div>
                         )}
+                        <button 
+                          onClick={() => navigate('/my-plan')}
+                          className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
+                        >
+                          <CreditCard className="w-4 h-4" />
+                          Meu Plano
+                        </button>
                         <button 
                           onClick={handleLogout}
                           className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-red-600 dark:text-red-400"

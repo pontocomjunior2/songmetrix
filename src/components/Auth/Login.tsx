@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { EmailInput, PasswordInput } from '../Common/Input';
 import { PrimaryButton } from '../Common/Button';
 import { ErrorAlert } from '../Common/Alert';
@@ -13,6 +13,9 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnTo = location.state?.returnTo;
+  const checkoutAfterLogin = location.state?.checkoutAfterLogin;
 
   const { login } = useAuth();
 
@@ -38,8 +41,33 @@ export default function Login() {
         return;
       }
       
-      // Se chegou até aqui, o login foi bem-sucedido
-      // O redirecionamento será feito pela função login
+      // Se o login foi bem-sucedido e há um redirecionamento para checkout
+      if (checkoutAfterLogin) {
+        try {
+          const response = await fetch('/api/create-checkout-session', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              userId: (await supabase.auth.getUser()).data.user?.id,
+              priceId: 'price_1Q5Gv7EYOe4CRJcBtPQ7PqRY' // Real Stripe price ID
+            }),
+          });
+          
+          const { url } = await response.json();
+          window.location.href = url;
+          return;
+        } catch (error) {
+          console.error('Erro ao criar sessão de checkout:', error);
+          setError('Ocorreu um erro ao processar seu pagamento. Por favor, tente novamente.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Se não houver redirecionamento para checkout, redireciona para a página de retorno ou dashboard
+      navigate(returnTo || '/', { replace: true });
     } catch (err) {
       console.error('Erro ao fazer login:', err);
       setError('Ocorreu um erro durante o login. Tente novamente.');
@@ -98,6 +126,7 @@ export default function Login() {
                 required
               />
             </div>
+
             <div>
               <PasswordInput
                 id="password"
@@ -109,23 +138,18 @@ export default function Login() {
             </div>
 
             <div>
-              <PrimaryButton
-                type="submit"
-                fullWidth
-                isLoading={loading}
-              >
-                Continuar com Email
+              <PrimaryButton type="submit" fullWidth>
+                Entrar
               </PrimaryButton>
             </div>
           </form>
 
-          <div className="text-sm text-center">
-            <span className="text-gray-600">Não tem uma conta?</span>{' '}
+          <div className="text-center">
             <Link
-              to="/register"
-              className="font-medium text-[#1a3891] hover:text-[#162d7a]"
+              to="/signup"
+              className="text-sm text-indigo-600 hover:text-indigo-500"
             >
-              Registre-se
+              Não tem uma conta? Cadastre-se
             </Link>
           </div>
         </div>

@@ -19,6 +19,7 @@ import PaymentSuccess from './components/Payment/PaymentSuccess';
 import PaymentCanceled from './components/Payment/PaymentCanceled';
 import Relatorios from './components/Relatorios';
 import Plans from './components/Plans';
+import MyPlan from './components/Plans/MyPlan';
 
 function App() {
   const [currentView, setCurrentView] = useState('dashboard');
@@ -37,7 +38,9 @@ function App() {
           <Route path="/payment/success" element={<PaymentSuccess />} />
           <Route path="/payment/canceled" element={<PaymentCanceled />} />
           <Route path="/first-access" element={<FirstAccessRoute />} />
-          <Route path="/plans" element={<Plans />} />
+          <Route path="/payment/success" element={<PaymentSuccess />} />
+          <Route path="/payment/canceled" element={<PaymentCanceled />} />
+          <Route path="/first-access" element={<FirstAccessRoute />} />
           
           <Route path="/" element={
             <ProtectedRoute>
@@ -65,6 +68,8 @@ function App() {
                 <StreamsManager />
               </AdminRoute>
             } />
+            <Route path="plans" element={<Plans />} />
+            <Route path="my-plan" element={<MyPlan />} />
           </Route>
         </Routes>
       </AuthProvider>

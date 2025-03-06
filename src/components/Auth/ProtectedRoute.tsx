@@ -30,11 +30,11 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
       return false;
     }
   };
-
-  // Verificar autenticação apenas na montagem inicial do componente
   useEffect(() => {
     // Se a verificação inicial já foi concluída ou está sendo feita, não executar novamente
     if (initialCheckCompleted.current || isVerifyingSession.current) {
+      // Forçar atualização do status ao mudar de rota
+      refreshUserStatus();
       return;
     }
     

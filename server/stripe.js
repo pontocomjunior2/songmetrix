@@ -71,8 +71,8 @@ export const createCheckoutSession = async (req, res) => {
           quantity: 1,
         },
       ],
-      success_url: `${FRONTEND_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${FRONTEND_URL}/payment-canceled`,
+      success_url: `${FRONTEND_URL}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${FRONTEND_URL}/payment/canceled`,
       metadata: {
         supabaseUID: userId
       }
@@ -106,11 +106,13 @@ export const handleWebhook = async (req, res) => {
         const session = event.data.object;
         const userId = session.metadata.supabaseUID;
 
+        console.log('Processando checkout.session.completed para usuário:', userId);
+
         // Atualiza o status do usuário no Supabase
         const { error: updateError } = await supabaseAdmin
           .from('users')
           .update({
-            status: 'PAID',
+            status: 'ATIVO',
             stripe_customer_id: session.customer,
             subscription_id: session.subscription,
             updated_at: new Date().toISOString(),
@@ -120,9 +122,34 @@ export const handleWebhook = async (req, res) => {
           .eq('id', userId);
 
         if (updateError) {
+          console.error('Erro ao atualizar status do usuário:', updateError);
           throw updateError;
         }
 
+        // Força uma atualização do token de autenticação
+        const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId);
+        if (userError) {
+          console.error('Erro ao buscar dados do usuário:', userError);
+          throw userError;
+        }
+
+        // Atualiza os metadados do usuário para refletir o novo status
+        const { error: updateAuthError } = await supabaseAdmin.auth.admin.updateUserById(
+          userId,
+          {
+            user_metadata: {
+              ...userData.user.user_metadata,
+              status: 'ATIVO'
+            }
+          }
+        );
+
+        if (updateAuthError) {
+          console.error('Erro ao atualizar metadados do usuário:', updateAuthError);
+          throw updateAuthError;
+        }
+
+        console.log('Status do usuário atualizado com sucesso para ATIVO');
         break;
       }
 
@@ -142,7 +169,7 @@ export const handleWebhook = async (req, res) => {
 
         if (users && users.length > 0) {
           const user = users[0];
-          const status = subscription.status === 'active' ? 'PAID' : 'NOT_PAID';
+          const status = subscription.status === 'active' ? 'ATIVO' : 'INATIVO';
 
           const { error: updateError } = await supabaseAdmin
             .from('users')
@@ -156,6 +183,17 @@ export const handleWebhook = async (req, res) => {
           if (updateError) {
             throw updateError;
           }
+
+          // Atualiza os metadados do usuário
+          await supabaseAdmin.auth.admin.updateUserById(
+            user.id,
+            {
+              user_metadata: {
+                ...user.user_metadata,
+                status
+              }
+            }
+          );
         }
 
         break;
@@ -180,7 +218,7 @@ export const handleWebhook = async (req, res) => {
           const { error: updateError } = await supabaseAdmin
             .from('users')
             .update({
-              status: 'NOT_PAID',
+              status: 'INATIVO',
               payment_status: 'failed',
               updated_at: new Date().toISOString()
             })
@@ -189,6 +227,17 @@ export const handleWebhook = async (req, res) => {
           if (updateError) {
             throw updateError;
           }
+
+          // Atualiza os metadados do usuário
+          await supabaseAdmin.auth.admin.updateUserById(
+            user.id,
+            {
+              user_metadata: {
+                ...user.user_metadata,
+                status: 'INATIVO'
+              }
+            }
+          );
         }
 
         break;
