@@ -46,7 +46,7 @@ import pg from 'pg';
 import { format } from 'date-fns';
 import { authenticateBasicUser, authenticateUser } from './auth-middleware.js';
 import { createClient } from '@supabase/supabase-js';
-import { createCheckoutSession, handleWebhook } from './stripe.js';
+import { createCheckoutSession, handleWebhook, testWebhook, simulateCheckoutCompleted, convertUserToActive } from './stripe.js';
 import { reportQuery } from './report-query.js';
 // Importar o registrador de rotas
 import registerRoutes from './index.js';
@@ -58,7 +58,7 @@ app.use(cors({
   origin: ['http://localhost:5173', 'http://localhost:3000', 'https://songmetrix.com.br'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'stripe-signature'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'stripe-signature', 'X-Requested-With'],
   exposedHeaders: ['Content-Range', 'X-Content-Range']
 }));
 
@@ -68,6 +68,13 @@ app.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);
 
 // Configurar body parser para as demais rotas
 app.use(express.json());
+
+// Rotas para testes e diagnósticos (disponíveis apenas em desenvolvimento)
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/webhook-test', testWebhook);
+  app.post('/simulate-checkout', simulateCheckoutCompleted);
+  console.log('Rotas de teste do webhook habilitadas');
+}
 
 // Log de todas as requisições
 app.use((req, res, next) => {
@@ -2051,6 +2058,274 @@ app.post('/api/users/force-trial-status', authenticateUser, async (req, res) => 
     console.error('Erro durante a atualização de status:', error);
     return res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
   }
+});
+
+// Rota para conversão manual de usuário (com autenticação de admin)
+app.post('/api/convert-user-to-active', authenticateUser, async (req, res) => {
+  try {
+    // Verificar se o usuário que faz a requisição é um admin
+    if (!req.user || req.user.correctStatus !== 'ADMIN') {
+      return res.status(403).json({
+        status: 'error',
+        message: 'Acesso negado. Apenas administradores podem executar esta ação.'
+      });
+    }
+    
+    // Passar para o handler de conversão
+    await convertUserToActive(req, res);
+  } catch (error) {
+    console.error('Erro na conversão de usuário:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Erro interno durante a conversão',
+      error: error.message
+    });
+  }
+});
+
+// Rota alternativa para desenvolvimento que não requer autenticação
+// ATENÇÃO: Esta rota deve ser removida ou desativada em produção
+if (process.env.NODE_ENV !== 'production') {
+  app.post('/dev/convert-user-to-active', async (req, res) => {
+    try {
+      console.log('Usando rota de desenvolvimento sem autenticação para conversão de usuário');
+      
+      // Em desenvolvimento, permitimos a conversão sem autenticação para testes
+      await convertUserToActive(req, res);
+    } catch (error) {
+      console.error('Erro na conversão de usuário (dev mode):', error);
+      res.status(500).json({
+        status: 'error',
+        message: 'Erro interno durante a conversão',
+        error: error.message
+      });
+    }
+  });
+  
+  console.log('Rota de desenvolvimento habilitada: /dev/convert-user-to-active');
+}
+
+// Rota para verificar o status de um pagamento
+app.get('/check-payment-status/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    
+    if (!sessionId) {
+      return res.status(400).json({ error: 'ID da sessão não fornecido' });
+    }
+    
+    console.log('Verificando status da sessão:', sessionId);
+    
+    // Verificar se o Stripe está configurado
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return res.status(500).json({ error: 'Stripe não configurado no servidor' });
+    }
+    
+    const Stripe = (await import('stripe')).default;
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    
+    // Buscar os detalhes da sessão no Stripe
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    
+    if (!session) {
+      return res.status(404).json({ error: 'Sessão não encontrada' });
+    }
+    
+    console.log('Sessão do Stripe encontrada:', {
+      id: session.id,
+      status: session.status,
+      customerId: session.customer,
+      paymentStatus: session.payment_status,
+      subscription: session.subscription
+    });
+    
+    // Se a sessão tiver um userId nos metadados, verificar se o usuário foi atualizado
+    let userStatus = null;
+    
+    if (session.metadata && session.metadata.supabaseUID) {
+      const userId = session.metadata.supabaseUID;
+      
+      const supabaseAdmin = createClient(
+        process.env.VITE_SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_KEY,
+        {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false
+          }
+        }
+      );
+      
+      const { data: userData, error: userError } = await supabaseAdmin
+        .from('users')
+        .select('status, last_payment_date')
+        .eq('id', userId)
+        .single();
+      
+      if (!userError && userData) {
+        userStatus = {
+          id: userId,
+          status: userData.status,
+          lastPaymentDate: userData.last_payment_date
+        };
+        
+        console.log('Status do usuário encontrado:', userStatus);
+        
+        // Se o status for TRIAL, mas o pagamento foi completado, atualizar manualmente
+        if (userData.status === 'TRIAL' && session.payment_status === 'paid') {
+          console.log('Pagamento concluído, mas usuário ainda em TRIAL. Atualizando para ATIVO...');
+          
+          const { error: updateError } = await supabaseAdmin
+            .from('users')
+            .update({
+              status: 'ATIVO',
+              payment_status: 'active',
+              last_payment_date: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', userId);
+            
+          if (updateError) {
+            console.error('Erro ao atualizar status do usuário:', updateError);
+          } else {
+            console.log('Status do usuário atualizado para ATIVO');
+            userStatus.status = 'ATIVO';
+            
+            // Atualizar os metadados do usuário também
+            const { data: authData, error: authError } = await supabaseAdmin.auth.admin.getUserById(userId);
+            
+            if (!authError && authData) {
+              await supabaseAdmin.auth.admin.updateUserById(
+                userId,
+                {
+                  user_metadata: {
+                    ...authData.user.user_metadata,
+                    status: 'ATIVO'
+                  }
+                }
+              );
+              console.log('Metadados do usuário atualizados para ATIVO');
+            }
+          }
+        }
+      } else {
+        console.error('Erro ao buscar usuário:', userError);
+      }
+    }
+    
+    res.json({
+      session: {
+        id: session.id,
+        status: session.status,
+        payment_status: session.payment_status,
+        customer: session.customer,
+        subscription: session.subscription
+      },
+      user: userStatus
+    });
+  } catch (error) {
+    console.error('Erro ao verificar status do pagamento:', error);
+    res.status(500).json({ error: 'Erro ao verificar status do pagamento' });
+  }
+});
+
+// Rota de documentação sobre webhook para ambiente de desenvolvimento
+app.get('/webhook-docs', (req, res) => {
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  const webhookUrl = `${baseUrl}/webhook`;
+  
+  const ngrokInstructions = `
+    # 1. Instale o ngrok: https://ngrok.com/download
+    # 2. Execute o ngrok para expor seu servidor local
+    ngrok http 3001
+    
+    # 3. Copie a URL gerada pelo ngrok e configure no painel do Stripe
+    # Exemplo: https://1234-abcd-5678.ngrok.io/webhook
+    
+    # 4. Atualize a variável de ambiente STRIPE_WEBHOOK_SECRET
+    # com o secret gerado no painel do Stripe
+  `;
+  
+  const stripeCLIInstructions = `
+    # 1. Instale o Stripe CLI: https://stripe.com/docs/stripe-cli
+    # 2. Faça login com sua conta Stripe
+    stripe login
+    
+    # 3. Inicie o forwarding para seu servidor local
+    stripe listen --forward-to ${webhookUrl}
+    
+    # 4. Copie o webhook signing secret mostrado no terminal
+    # e defina como STRIPE_WEBHOOK_SECRET no seu .env
+    
+    # 5. Em outro terminal, simule eventos do Stripe:
+    stripe trigger payment_intent.succeeded
+    # ou
+    stripe trigger checkout.session.completed
+  `;
+  
+  const manualSolutionInstructions = `
+    # Se você não pode usar ngrok ou Stripe CLI, use a ferramenta de administração:
+    # 1. Acesse o painel de administração em ${baseUrl}
+    # 2. Clique em "Verificar Pagamentos"
+    # 3. Consulte o status de uma sessão do Stripe ou converta um usuário manualmente
+  `;
+  
+  // Verificar a configuração do webhook
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+  
+  res.send(`
+    <html>
+      <head>
+        <title>Documentação do Webhook Stripe</title>
+        <style>
+          body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 20px; }
+          pre { background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; }
+          .warning { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 20px 0; }
+          .success { background: #d4edda; border-left: 4px solid #28a745; padding: 10px 15px; margin: 20px 0; }
+          .error { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 15px; margin: 20px 0; }
+          h1, h2, h3 { margin-top: 30px; }
+          hr { margin: 30px 0; border: 0; border-top: 1px solid #eee; }
+        </style>
+      </head>
+      <body>
+        <h1>Documentação do Webhook Stripe</h1>
+        
+        <div class="${webhookSecret ? 'success' : 'error'}">
+          <h3>Status da Configuração</h3>
+          <p>Webhook Secret: ${webhookSecret ? 'Configurado ✅' : 'Não configurado ❌'}</p>
+          <p>Stripe Secret Key: ${stripeSecretKey ? 'Configurada ✅' : 'Não configurada ❌'}</p>
+          <p>URL do Webhook: ${webhookUrl}</p>
+          
+          ${!webhookSecret ? '<p><strong>Atenção:</strong> O webhook não funcionará sem o secret configurado.</p>' : ''}
+        </div>
+        
+        <div class="warning">
+          <p><strong>Problema:</strong> Em ambiente de desenvolvimento (localhost), o Stripe não pode enviar webhooks diretamente para sua máquina local.</p>
+          <p><strong>Solução:</strong> Use uma das opções abaixo para testar webhooks em desenvolvimento.</p>
+        </div>
+        
+        <h2>Opção 1: Usar ngrok para expor seu servidor local</h2>
+        <pre>${ngrokInstructions}</pre>
+        
+        <h2>Opção 2: Usar Stripe CLI para simular webhooks</h2>
+        <pre>${stripeCLIInstructions}</pre>
+        
+        <h2>Opção 3: Usar ferramenta de administração</h2>
+        <pre>${manualSolutionInstructions}</pre>
+        
+        <hr>
+        
+        <h3>Endpoints de Teste Disponíveis</h3>
+        <ul>
+          <li><a href="/webhook-test" target="_blank">/webhook-test</a> - Testa a configuração do webhook</li>
+          <li><code>POST /simulate-checkout</code> - Simula um evento de checkout.session.completed</li>
+          <li><code>POST /api/convert-user-to-active</code> - Converte um usuário de TRIAL para ATIVO manualmente</li>
+          <li><code>GET /check-payment-status/:sessionId</code> - Verifica o status de uma sessão de pagamento</li>
+        </ul>
+      </body>
+    </html>
+  `);
 });
 
 const PORT = process.env.PORT || 3001;
