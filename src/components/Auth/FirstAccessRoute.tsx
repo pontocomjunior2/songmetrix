@@ -7,7 +7,7 @@ import { Loader2 } from 'lucide-react';
 import { RadioStatus } from '../../types/components';
 
 export default function FirstAccessRoute() {
-  const { currentUser } = useAuth();
+  const { currentUser, updateFavoriteRadios } = useAuth();
   const [hasFavorites, setHasFavorites] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
@@ -32,6 +32,30 @@ export default function FirstAccessRoute() {
     checkFavorites();
   }, [currentUser]);
 
+  const handleSaveFavorites = async (selectedRadios: string[]) => {
+    if (!currentUser) return;
+
+    try {
+      setError('');
+      setLoading(true); // Ativar o loading enquanto processa
+      
+      // Update favorite radios in user metadata
+      await updateFavoriteRadios(selectedRadios);
+
+      console.log('Rádios favoritas salvas com sucesso, redirecionando para dashboard...');
+      
+      // Atualizar o estado para indicar que o usuário tem favoritos
+      setHasFavorites(true);
+      
+      // Forçar navegação direta para o dashboard
+      window.location.href = '/dashboard';
+    } catch (error) {
+      console.error('Erro ao salvar rádios favoritas:', error);
+      setLoading(false);
+      setError('Não foi possível salvar suas rádios favoritas. Por favor, tente novamente.');
+    }
+  };
+
   if (!currentUser) {
     return <Navigate to="/login" />;
   }
@@ -47,25 +71,6 @@ export default function FirstAccessRoute() {
   if (hasFavorites) {
     return <Navigate to="/dashboard" />;
   }
-
-  const { updateFavoriteRadios } = useAuth();
-
-  const handleSaveFavorites = async (selectedRadios: string[]) => {
-    if (!currentUser) return;
-
-    try {
-      setError('');
-      
-      // Update favorite radios in user metadata
-      await updateFavoriteRadios(selectedRadios);
-
-      // Navigate to dashboard
-      navigate('/dashboard');
-    } catch (error) {
-      console.error('Erro ao salvar rádios favoritas:', error);
-      setError('Não foi possível salvar suas rádios favoritas. Por favor, tente novamente.');
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">

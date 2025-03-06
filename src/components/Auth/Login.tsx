@@ -16,35 +16,33 @@ export default function Login() {
 
   const { login } = useAuth();
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    
     try {
-      setError('');
       setLoading(true);
-      console.log('Attempting login with:', { email });
-
-      console.log('Iniciando login com Supabase...');
-      const { error: signInError } = await login(email, password);
+      setError('');
       
-      if (signInError) {
-        throw signInError;
-      }
-
-      // login will handle navigation based on user status
-    } catch (error: any) {
-      console.error('Login error:', error);
-      let errorMessage = 'Falha ao fazer login. Verifique suas credenciais.';
-      
-      if (error.message === 'Invalid login credentials') {
-        errorMessage = 'Email ou senha incorretos.';
-      } else if (error.message === 'Email not confirmed') {
-        errorMessage = 'Por favor, confirme seu email antes de fazer login.';
-      } else if (error.message.includes('inativo')) {
-        errorMessage = error.message;
+      // Verificar se os campos estão preenchidos
+      if (!email || !password) {
+        setError('Por favor, preencha todos os campos.');
+        setLoading(false);
+        return;
       }
       
-      setError(errorMessage);
-    } finally {
+      const { error } = await login(email, password);
+      
+      if (error) {
+        setError(error.message);
+        setLoading(false);
+        return;
+      }
+      
+      // Se chegou até aqui, o login foi bem-sucedido
+      // O redirecionamento será feito pela função login
+    } catch (err) {
+      console.error('Erro ao fazer login:', err);
+      setError('Ocorreu um erro durante o login. Tente novamente.');
       setLoading(false);
     }
   };
@@ -90,7 +88,7 @@ export default function Login() {
             <ErrorAlert message={error} onClose={() => setError('')} />
           )}
 
-          <form className="space-y-4" onSubmit={handleEmailLogin}>
+          <form className="space-y-4" onSubmit={handleSubmit}>
             <div>
               <EmailInput
                 id="email"

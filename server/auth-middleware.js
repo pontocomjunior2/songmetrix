@@ -66,6 +66,49 @@ export const authenticateBasicUser = async (req, res, next) => {
       console.error('Error fetching user from database:', dbError);
     }
 
+    // Se o usuário não existir no banco, mas existir na autenticação, criar no banco
+    if (dbError && dbError.code === 'PGRST116') {
+      console.log('Usuário não encontrado no banco. Criando registro:', user.id);
+      
+      // Verificar se é um usuário novo para determinar o status
+      const createdAt = new Date(user.created_at);
+      const now = new Date();
+      const diffTime = Math.abs(now.getTime() - createdAt.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const isNewUser = diffDays <= 7;
+      const initialStatus = isNewUser ? 'TRIAL' : 'INATIVO';
+      
+      console.log(`Criando usuário com status ${initialStatus} (dias desde criação: ${diffDays})`);
+      
+      // Criar usuário no banco de dados
+      const { error: insertError } = await supabaseAdmin
+        .from('users')
+        .insert({
+          id: user.id,
+          email: user.email,
+          status: initialStatus,
+          created_at: user.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+        
+      if (insertError) {
+        console.error('Erro ao criar usuário no banco de dados:', insertError);
+        return res.status(500).json({ error: 'Erro ao criar perfil de usuário' });
+      }
+      
+      // Recarregar os dados do usuário
+      const { data: refreshedDbUser, error: refreshDbError } = await supabaseAdmin
+        .from('users')
+        .select('id, email, status, created_at, updated_at')
+        .eq('id', user.id)
+        .single();
+        
+      if (!refreshDbError && refreshedDbUser) {
+        console.log('Usuário criado com sucesso no banco:', refreshedDbUser);
+        dbUser = refreshedDbUser;
+      }
+    }
+
     console.log('User status from database:', dbUser?.status);
 
     // Verificar se há inconsistência entre o status do banco e dos metadados
@@ -103,17 +146,28 @@ export const authenticateBasicUser = async (req, res, next) => {
     // Determinar o status final
     let finalStatus;
     
+    // Verificar se o usuário é novo (< 7 dias) e não é ADMIN/ATIVO, deve ser TRIAL
+    // Essa condição agora tem precedência sobre as condições de INATIVO
+    if (isNewUser && (!userStatus || userStatus === 'TRIAL' || userStatus === 'INATIVO')) {
+      finalStatus = 'TRIAL';
+      console.log('Novo usuário detectado. Definindo status como TRIAL:', user.id);
+      console.log('Detalhes do usuário novo:', {
+        id: user.id,
+        email: user.email,
+        created_at: user.created_at,
+        updated_at: user.updated_at,
+        idade_em_dias: diffDays,
+        status_banco: dbUser?.status,
+        status_metadata: userStatus
+      });
+    }
     // Se o status do banco é INATIVO, deve permanecer INATIVO
-    if (dbUser?.status === 'INATIVO') {
+    else if (dbUser?.status === 'INATIVO') {
       finalStatus = 'INATIVO';
     }
     // Se o status dos metadados é INATIVO, deve permanecer INATIVO
     else if (userStatus === 'INATIVO') {
       finalStatus = 'INATIVO';
-    }
-    // Se o usuário é novo (< 7 dias) e não é ADMIN/ATIVO, deve ser TRIAL
-    else if (isNewUser && (!userStatus || userStatus === 'TRIAL' || userStatus === 'INATIVO')) {
-      finalStatus = 'TRIAL';
     }
     // Em caso de inconsistência, priorizar o status mais permissivo
     else if (dbUser?.status && userStatus && dbUser.status !== userStatus) {
@@ -141,6 +195,60 @@ export const authenticateBasicUser = async (req, res, next) => {
     }
 
     console.log('Status final determinado:', finalStatus);
+
+    // Atualizar imediatamente se for um novo usuário com status TRIAL
+    if (isNewUser && finalStatus === 'TRIAL') {
+      // Verificar se é necessário atualizar os metadados e o registro no banco
+      const needsMetadataUpdate = !userStatus || userStatus !== 'TRIAL';
+      const needsDbUpdate = !dbUser?.status || dbUser.status !== 'TRIAL';
+      
+      console.log(`Verificação de sincronização para usuário novo ${user.id}:`, {
+        email: user.email,
+        email_confirmado: user.email_confirmed_at ? 'Sim' : 'Não',
+        needsMetadataUpdate,
+        needsDbUpdate,
+        status_atual_db: dbUser?.status || 'não definido',
+        status_atual_metadata: userStatus || 'não definido',
+        status_final: finalStatus
+      });
+
+      if (needsMetadataUpdate || needsDbUpdate) {
+        console.log('Atualizando status para TRIAL em sistema e metadados para novo usuário:', user.id);
+        
+        const updatePromises = [];
+        
+        // Atualizar nos metadados se necessário
+        if (needsMetadataUpdate) {
+          updatePromises.push(
+            supabaseAdmin.auth.admin.updateUserById(
+              user.id,
+              { user_metadata: { ...user.user_metadata, status: 'TRIAL' } }
+            )
+          );
+        }
+        
+        // Atualizar no banco de dados se necessário
+        if (needsDbUpdate) {
+          updatePromises.push(
+            supabaseAdmin
+              .from('users')
+              .upsert({
+                id: user.id,
+                email: user.email,
+                status: 'TRIAL',
+                updated_at: new Date().toISOString()
+              })
+          );
+        }
+        
+        try {
+          await Promise.all(updatePromises);
+          console.log('Status atualizado com sucesso para TRIAL:', user.id);
+        } catch (updateError) {
+          console.error('Erro ao atualizar status para TRIAL:', updateError);
+        }
+      }
+    }
 
     // Verificação estrita: rejeitar usuários com status INATIVO
     if (finalStatus === 'INATIVO') {
@@ -230,6 +338,49 @@ export const authenticateUser = async (req, res, next) => {
 
     if (dbError && dbError.code !== 'PGRST116') {
       console.error('Error fetching user from database:', dbError);
+    }
+
+    // Se o usuário não existir no banco, mas existir na autenticação, criar no banco
+    if (dbError && dbError.code === 'PGRST116') {
+      console.log('Usuário não encontrado no banco. Criando registro:', user.id);
+      
+      // Verificar se é um usuário novo para determinar o status
+      const createdAt = new Date(user.created_at);
+      const now = new Date();
+      const diffTime = Math.abs(now.getTime() - createdAt.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const isNewUser = diffDays <= 7;
+      const initialStatus = isNewUser ? 'TRIAL' : 'INATIVO';
+      
+      console.log(`Criando usuário com status ${initialStatus} (dias desde criação: ${diffDays})`);
+      
+      // Criar usuário no banco de dados
+      const { error: insertError } = await supabaseAdmin
+        .from('users')
+        .insert({
+          id: user.id,
+          email: user.email,
+          status: initialStatus,
+          created_at: user.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+        
+      if (insertError) {
+        console.error('Erro ao criar usuário no banco de dados:', insertError);
+        return res.status(500).json({ error: 'Erro ao criar perfil de usuário' });
+      }
+      
+      // Recarregar os dados do usuário
+      const { data: refreshedDbUser, error: refreshDbError } = await supabaseAdmin
+        .from('users')
+        .select('id, email, status, created_at, updated_at')
+        .eq('id', user.id)
+        .single();
+        
+      if (!refreshDbError && refreshedDbUser) {
+        console.log('Usuário criado com sucesso no banco:', refreshedDbUser);
+        dbUser = refreshedDbUser;
+      }
     }
 
     console.log('User status from database:', dbUser?.status);
