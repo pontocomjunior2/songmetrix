@@ -168,7 +168,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           const createdAt = new Date(dbUser.created_at);
           const now = new Date();
           const diffTime = Math.abs(now.getTime() - createdAt.getTime());
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
           const daysRemaining = Math.max(0, 7 - diffDays);
           
           if (isMounted.current) {
