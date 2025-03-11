@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import Select from 'react-select';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase-client';
-import { Loader2, FileDown, Calendar, MapPin, Radio, ChevronRight } from 'lucide-react';
+import { Loader2, FileDown, Calendar, MapPin, Radio, ChevronRight, ToggleLeft, ToggleRight, InfoIcon } from 'lucide-react';
 import moment from 'moment';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import apiServices, { getAuthHeaders } from '../services/api';
+import { fetchTracksPopularity } from './Relatorios/services/spotify';
 
 import './Ranking/styles/Ranking.css';
 
@@ -17,6 +18,7 @@ interface ReportData {
     [radioKey: string]: number;
   };
   total: number;
+  spotifyPopularity?: string;
 }
 
 interface RadioAbbreviation {
@@ -69,10 +71,15 @@ const RelatoriosWizard: React.FC = () => {
   const [selectedState, setSelectedState] = useState<{ value: string; label: string } | null>(null);
   const [citiesOptions, setCitiesOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [statesOptions, setStatesOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [includeSpotify, setIncludeSpotify] = useState(false);
+  const [loadingSpotify, setLoadingSpotify] = useState(false);
 
-  // Helper functions
   const getRadioAbbreviation = (radioName: string): string => {
     return radioAbbreviations[radioName] || radioName.substring(0, 3).toUpperCase();
+  };
+
+  const getSpotifyAbbreviation = (): string => {
+    return radioAbbreviations['Spotify'] || 'SFY';
   };
 
   const clearReportData = () => {
@@ -107,6 +114,38 @@ const RelatoriosWizard: React.FC = () => {
     }
   };
 
+  const fetchSpotifyData = async (reportData: ReportData[]): Promise<ReportData[]> => {
+    try {
+      setLoadingSpotify(true);
+      console.log('Buscando dados de popularidade do Spotify para as músicas...');
+      console.log(`Período selecionado: ${startDate} a ${endDate}`);
+      
+      const tracksToFetch = reportData.map(item => ({
+        title: item.title,
+        artist: item.artist
+      }));
+      
+      const popularityData = await fetchTracksPopularity(tracksToFetch, startDate, endDate);
+      
+      const updatedReportData = reportData.map(item => {
+        const trackKey = `${item.title}|${item.artist}`.toLowerCase();
+        const formattedPlays = popularityData[trackKey] || "0";
+        return {
+          ...item,
+          spotifyPopularity: formattedPlays
+        };
+      });
+      
+      console.log('Dados do Spotify obtidos com sucesso');
+      return updatedReportData;
+    } catch (error) {
+      console.error('Erro ao buscar dados do Spotify:', error);
+      return reportData;
+    } finally {
+      setLoadingSpotify(false);
+    }
+  };
+
   const generatePDF = () => {
     const doc = new jsPDF();
     doc.setFontSize(16);
@@ -114,8 +153,16 @@ const RelatoriosWizard: React.FC = () => {
     doc.setFontSize(12);
     doc.text(`${chartSize.label}`, 14, 30);
     doc.text(`Período: ${moment(startDate).format('DD/MM/YYYY')} - ${moment(endDate).format('DD/MM/YYYY')}`, 14, 40);
+    
     const selectedAbbreviations = selectedRadios.map(radio => getRadioAbbreviation(radio.label));
-    const headers = ['POS', 'TÍTULO', 'ARTISTA', ...selectedAbbreviations, 'TOTAL'];
+    const headers = ['POS', 'TÍTULO', 'ARTISTA', ...selectedAbbreviations];
+    
+    if (includeSpotify) {
+      headers.push(getSpotifyAbbreviation());
+    }
+    
+    headers.push('TOTAL');
+    
     let currentPosition = 1;
     let previousTotal = -1;
     const tableData = reportData.map((item, index) => {
@@ -123,18 +170,28 @@ const RelatoriosWizard: React.FC = () => {
         currentPosition = index + 1;
       }
       previousTotal = item.total;
-      return [
+      
+      const radioValues = selectedRadios.map(radio =>
+        item.executions[radio.value] !== undefined ? item.executions[radio.value] : 0
+      );
+      
+      const row = [
         `${currentPosition}º`,
         item.title,
         item.artist,
-        ...selectedRadios.map(radio =>
-          item.executions[radio.value] !== undefined ? item.executions[radio.value] : 0
-        ),
-        item.total
+        ...radioValues
       ];
+      
+      if (includeSpotify) {
+        row.push(item.spotifyPopularity || 0);
+      }
+      
+      row.push(item.total);
+      
+      return row;
     });
+    
     autoTable(doc, {
-
       head: [headers],
       body: tableData.slice(0, parseInt(chartSize.value)),
       startY: 50,
@@ -154,6 +211,7 @@ const RelatoriosWizard: React.FC = () => {
         2: { cellWidth: 40 },
       },
     });
+    
     const legendY = (doc as any).lastAutoTable.finalY + 20;
     doc.setFontSize(10);
     doc.text('Legenda:', 14, legendY);
@@ -161,6 +219,12 @@ const RelatoriosWizard: React.FC = () => {
       const abbrev = getRadioAbbreviation(radio.label);
       doc.text(`${abbrev} (${radio.label})`, 14, legendY + 10 + (index * 6));
     });
+    
+    if (includeSpotify) {
+      const abbrev = getSpotifyAbbreviation();
+      doc.text(`${abbrev} (Spotify - Reproduções estimadas no período)`, 14, legendY + 10 + (selectedRadios.length * 6));
+    }
+    
     doc.save(`relatorio-${moment().format('YYYY-MM-DD')}.pdf`);
   };
 
@@ -216,7 +280,12 @@ const RelatoriosWizard: React.FC = () => {
         params.state = selectedState.value;
       }
       
-      const data = await apiServices.reports.generateReport(params);
+      let data = await apiServices.reports.generateReport(params);
+      
+      if (includeSpotify) {
+        data = await fetchSpotifyData(data);
+      }
+      
       setReportData(data);
       setReportGenerated(true);
     } catch (error: any) {
@@ -300,7 +369,6 @@ const RelatoriosWizard: React.FC = () => {
     }
   }, [currentUser]);
 
-  // Step rendering functions
   const renderStep1 = () => (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       {reportTypes.map((type) => (
@@ -309,7 +377,6 @@ const RelatoriosWizard: React.FC = () => {
           onClick={() => {
             setSelectedReportType(type.id);
             setCurrentStep(2);
-            // Reset selections when changing report type
             setSelectedRadios([]);
             setSelectedCity(null);
             setSelectedState(null);
@@ -428,12 +495,42 @@ const RelatoriosWizard: React.FC = () => {
           />
         </div>
       </div>
+      
+      <div className="mt-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Incluir Dados do Spotify
+            </label>
+            <div className="group relative">
+              <InfoIcon className="w-4 h-4 text-gray-500 cursor-help" />
+              <div className="absolute left-0 bottom-6 hidden group-hover:block bg-white dark:bg-gray-800 p-2 rounded shadow-lg border border-gray-200 dark:border-gray-700 w-72 text-xs text-gray-600 dark:text-gray-300 z-10">
+                Adiciona uma coluna com o número estimado de reproduções no Spotify para cada música durante o período selecionado. Os valores são aproximados e apresentados em formato abreviado (k = mil, mi = milhão, bi = bilhão).
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIncludeSpotify(!includeSpotify)}
+            className="text-navy-600 hover:text-navy-700 focus:outline-none"
+            aria-pressed={includeSpotify}
+          >
+            {includeSpotify ? (
+              <ToggleRight className="w-10 h-10" />
+            ) : (
+              <ToggleLeft className="w-10 h-10" />
+            )}
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          Adiciona uma coluna com o número estimado de reproduções de cada música no Spotify durante o período selecionado.
+        </p>
+      </div>
     </div>
   );
 
   return (
     <div className="space-y-6">
-      {/* Header with Steps */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Relatórios</h1>
@@ -472,13 +569,11 @@ const RelatoriosWizard: React.FC = () => {
         </div>
       </div>
 
-      {/* Step Content */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
         {currentStep === 1 && renderStep1()}
         {currentStep === 2 && renderStep2()}
         {currentStep === 3 && renderStep3()}
 
-        {/* Navigation Buttons */}
         <div className="mt-6 flex justify-between">
           {currentStep > 1 && (
             <button
@@ -505,12 +600,12 @@ const RelatoriosWizard: React.FC = () => {
             <button
               onClick={handleGenerateReport}
               className="ml-auto flex items-center gap-2 px-6 py-2 bg-navy-600 text-white rounded-lg hover:bg-navy-700 transition-colors disabled:bg-navy-400"
-              disabled={loading}
+              disabled={loading || loadingSpotify}
             >
-              {loading ? (
+              {loading || loadingSpotify ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  Gerando...
+                  {loadingSpotify ? 'Buscando dados do Spotify...' : 'Gerando...'}
                 </>
               ) : (
                 'Gerar Relatório'
@@ -520,7 +615,6 @@ const RelatoriosWizard: React.FC = () => {
         </div>
       </div>
 
-      {/* Results Table */}
       {reportData.length > 0 && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
           <div className="p-6">
@@ -539,6 +633,11 @@ const RelatoriosWizard: React.FC = () => {
                         {getRadioAbbreviation(radio.label)}
                       </th>
                     ))}
+                    {includeSpotify && (
+                      <th className="px-4 py-3 text-left text-sm font-medium text-white bg-green-600 dark:bg-green-800">
+                        {getSpotifyAbbreviation()}
+                      </th>
+                    )}
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-200">Total</th>
                   </tr>
                 </thead>
@@ -553,6 +652,14 @@ const RelatoriosWizard: React.FC = () => {
                           {item.executions[radio.value] || 0}
                         </td>
                       ))}
+                      {includeSpotify && (
+                        <td className="px-4 py-3 text-sm bg-green-50 dark:bg-green-950 text-gray-700 dark:text-gray-200">
+                          <div className="flex flex-col">
+                            <span>{item.spotifyPopularity || "0"}</span>
+                            <span className="text-xs text-green-600 dark:text-green-400 mt-1">No período</span>
+                          </div>
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{item.total}</td>
                     </tr>
                   ))}

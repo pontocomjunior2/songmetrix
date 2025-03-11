@@ -19,6 +19,7 @@ import PaymentSuccess from './components/Payment/PaymentSuccess';
 import PaymentCanceled from './components/Payment/PaymentCanceled';
 import Relatorios from './components/Relatorios';
 import Plans from './components/Plans';
+import Spotify from './components/Spotify';
 
 function App() {
   const [currentView, setCurrentView] = useState('dashboard');
@@ -50,6 +51,7 @@ function App() {
             <Route path="realtime" element={<RealTime />} />
             <Route path="radios" element={<Radios />} />
             <Route path="relatorios" element={<Relatorios />} />
+            <Route path="spotify" element={<Spotify />} />
             <Route path="admin/users" element={
               <AdminRoute>
                 <UserList />
