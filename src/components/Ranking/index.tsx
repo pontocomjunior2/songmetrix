@@ -113,6 +113,10 @@ export default function Ranking() {
     setErrorMessage(null);
     try {
       const headers = await getAuthHeaders();
+      
+      console.log('Rádios selecionadas:', selectedRadios);
+      console.log('Parâmetro radio:', selectedRadios.length > 0 ? selectedRadios.map(r => r.value).join('||') : 'nenhuma');
+      
       const params = new URLSearchParams({
         startDate: filters.startDate,
         endDate: filters.endDate,
@@ -120,7 +124,7 @@ export default function Ranking() {
         startTime: filters.hourStart,
         endTime: filters.hourEnd,
         ...(selectedRadios.length > 0 && { 
-          radio: selectedRadios.map(r => r.value).join(',') 
+          radio: selectedRadios.map(r => r.value).join('||') 
         })
       });
 
@@ -203,7 +207,12 @@ export default function Ranking() {
               isMulti
               value={selectedRadios}
               onChange={(newValue: MultiValue<{ value: string; label: string }>) => {
-                setSelectedRadios(newValue as { value: string; label: string }[]);
+                const selectedValues = newValue as { value: string; label: string }[];
+                setSelectedRadios(selectedValues);
+                setFilters({
+                  ...filters,
+                  selectedRadios: selectedValues.map(item => item.value)
+                });
               }}
               placeholder="Selecione as rádios"
               className="react-select-container"
