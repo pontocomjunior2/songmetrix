@@ -54,6 +54,7 @@ const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
     if (currentView === 'realtime') return 'Tempo Real';
     if (currentView === 'radios') return 'Rádios';
     if (currentView === 'relatorios') return 'Relatórios';
+    if (currentView === 'spotify') return 'Spotify Charts';
     if (currentView === 'admin/users') return 'Gerenciar Usuários';
     if (currentView === 'admin/abbreviations') return 'Abreviações';
     if (currentView === 'admin/streams') return 'Gerenciar Streams';

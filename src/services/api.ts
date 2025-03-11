@@ -160,7 +160,8 @@ export const apiServices = {
       limit: string,
       radios?: string,
       city?: string,
-      state?: string
+      state?: string,
+      includeSpotify?: boolean
     }) => apiGet('/api/report', params),
   },
   
