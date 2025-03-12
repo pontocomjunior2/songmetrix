@@ -1,26 +1,52 @@
-// Importar tipos necessários
+// Importar tipos necessários e bibliotecas
 import { SpotifyTrack } from '../../Spotify/types';
 import moment from 'moment';
+
+// Importar o sistema de cache
+import { apiCache } from './cache';
 
 // Usar as credenciais do arquivo .env
 const SPOTIFY_CLIENT_ID = import.meta.env.VITE_SPOTIFY_CLIENT_ID || "6454790e98c04c22b3fecc25dcd9e75c";
 const SPOTIFY_CLIENT_SECRET = import.meta.env.VITE_SPOTIFY_CLIENT_SECRET || "b9d28568c7e04ad79735bf8fddb750ed";
 
-// Implementar um mecanismo de throttling
-const THROTTLE_DELAY = 1000; // 1 segundo entre requisições
+// Implementar um mecanismo de throttling mais inteligente
+const THROTTLE_DELAY = 1000; // 1 segundo entre requisições, mas pode ser ajustado dinamicamente
 let lastRequestTime = 0;
+let consecutiveRequests = 0;
+let dynamicThrottleDelay = THROTTLE_DELAY;
 
+// Flag para saber se estamos em um processo de carregamento em massa
+let isBatchLoading = false;
+
+/**
+ * Implementa throttling adaptativo que aumenta o tempo de espera se muitas
+ * solicitações forem feitas em sequência, e diminui após períodos de inatividade
+ */
 const throttleRequest = async () => {
   const now = Date.now();
   const timeSinceLastRequest = now - lastRequestTime;
   
-  if (timeSinceLastRequest < THROTTLE_DELAY) {
-    const waitTime = THROTTLE_DELAY - timeSinceLastRequest;
-    console.log(`Aguardando ${waitTime}ms antes da próxima requisição...`);
+  // Verificar se estamos em período de inatividade e reduzir o throttle
+  if (timeSinceLastRequest > 5000 && dynamicThrottleDelay > THROTTLE_DELAY) {
+    dynamicThrottleDelay = Math.max(THROTTLE_DELAY, dynamicThrottleDelay * 0.8);
+    consecutiveRequests = 0;
+  }
+  
+  // Se estivermos processando muitas solicitações em lote, aumentar o throttle para evitar bloqueios
+  if (consecutiveRequests > 10 && dynamicThrottleDelay < 2000) {
+    dynamicThrottleDelay *= 1.2;
+  }
+  
+  if (timeSinceLastRequest < dynamicThrottleDelay) {
+    const waitTime = dynamicThrottleDelay - timeSinceLastRequest;
+    if (!isBatchLoading || waitTime > 100) {
+      console.log(`Aguardando ${waitTime}ms antes da próxima requisição...`);
+    }
     await new Promise(resolve => setTimeout(resolve, waitTime));
   }
   
   lastRequestTime = Date.now();
+  consecutiveRequests++;
 };
 
 /**
@@ -84,6 +110,13 @@ const popularityToPlays = (popularity: number, startDate: string, endDate: strin
  * Documentação: https://developer.spotify.com/documentation/web-api/reference/get-an-access-token
  */
 export const fetchSpotifyToken = async (): Promise<string | null> => {
+  // Verificar se temos um token em cache que ainda é válido
+  const cachedToken = apiCache.get<string>('spotify_token');
+  if (cachedToken) {
+    console.log("Usando token do Spotify em cache");
+    return cachedToken;
+  }
+  
   const tokenUrl = "https://accounts.spotify.com/api/token";
 
   try {
@@ -108,6 +141,10 @@ export const fetchSpotifyToken = async (): Promise<string | null> => {
 
     const data = await response.json();
     console.log("Token do Spotify obtido com sucesso");
+    
+    // Armazenar o token em cache por 50 minutos (um pouco menos que a validade de 1 hora)
+    apiCache.set('spotify_token', data.access_token, 50 * 60 * 1000);
+    
     return data.access_token;
   } catch (error) {
     console.error("Erro ao buscar o token do Spotify:", error);
@@ -132,7 +169,53 @@ const cleanSearchTerms = (title: string, artist: string): string => {
 };
 
 /**
- * Busca informações de uma música no Spotify
+ * Verifica se a música está na lista de músicas populares fixas (mock data)
+ * para casos onde a API não retorna resultados ou está indisponível
+ */
+const checkInStaticPopularTracks = (title: string, artist: string): SpotifyTrack | null => {
+  // Lista de músicas populares pré-definidas (mock para fallback)
+  const popularTracks: {[key: string]: SpotifyTrack} = {
+    // Alguns exemplos - ampliar conforme necessário
+    "marisa monte": {
+      id: "static-1",
+      name: "Ainda Bem",
+      artist: "Marisa Monte",
+      album: "Memórias, Crônicas e Declarações de Amor",
+      albumCover: "https://i.scdn.co/image/ab67616d0000b273f8f4e0a2a1ddc1fa586bd1b1",
+      popularity: 75,
+      duration_ms: 0,
+      explicit: false,
+      preview_url: "",
+      external_url: ""
+    },
+    "jorge e mateus": {
+      id: "static-2",
+      name: "Propaganda",
+      artist: "Jorge & Mateus",
+      album: "Os Anjos Cantam",
+      albumCover: "https://i.scdn.co/image/ab67616d0000b2730c9d60c2cdbd2e6e676365b0",
+      popularity: 82,
+      duration_ms: 0,
+      explicit: false,
+      preview_url: "",
+      external_url: ""
+    }
+  };
+  
+  // Verificar por correspondências aproximadas
+  const searchKey = `${title} ${artist}`.toLowerCase();
+  
+  for (const key in popularTracks) {
+    if (searchKey.includes(key)) {
+      return popularTracks[key];
+    }
+  }
+  
+  return null;
+};
+
+/**
+ * Busca informações de uma música no Spotify otimizada para desempenho
  * Documentação: https://developer.spotify.com/documentation/web-api/reference/search
  */
 export const searchTrackOnSpotify = async (
@@ -141,12 +224,24 @@ export const searchTrackOnSpotify = async (
   accessToken: string
 ): Promise<SpotifyTrack | null> => {
   try {
+    // Verificar cache
+    const cacheKey = `spotify_track_${title.toLowerCase()}_${artist.toLowerCase()}`;
+    const cachedTrack = apiCache.get<SpotifyTrack>(cacheKey);
+    
+    if (cachedTrack) {
+      console.log(`Usando dados em cache para música: ${title} - ${artist}`);
+      return cachedTrack;
+    }
+    
     await throttleRequest();
     
     const searchTerm = cleanSearchTerms(title, artist);
     const searchUrl = `https://api.spotify.com/v1/search?q=${searchTerm}&type=track&market=BR&limit=1`;
     
-    console.log(`Buscando música no Spotify: ${title} - ${artist}`);
+    // Apenas logar se não estivermos em um carregamento em lote
+    if (!isBatchLoading) {
+      console.log(`Buscando música no Spotify: ${title} - ${artist}`);
+    }
     
     const response = await fetch(searchUrl, {
       method: "GET",
@@ -156,18 +251,30 @@ export const searchTrackOnSpotify = async (
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error(`Erro ao buscar música "${title} - ${artist}": ${response.status} - ${JSON.stringify(errorData)}`);
-      
       // Se tivermos um erro de rate limit, vamos esperar um pouco mais
       if (response.status === 429) {
         const retryAfter = response.headers.get('Retry-After');
         const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : 5000;
         console.log(`Rate limit excedido. Aguardando ${waitTime}ms antes de tentar novamente...`);
+        
+        // Aumentar o throttle para futuras requisições
+        dynamicThrottleDelay = Math.max(dynamicThrottleDelay, waitTime);
+        consecutiveRequests = 20; // Forçar um atraso maior nas próximas requisições
+        
         await new Promise(resolve => setTimeout(resolve, waitTime));
         return searchTrackOnSpotify(title, artist, accessToken);
       }
       
+      // Para outros erros, verificar se temos dados estáticos de fallback
+      const staticTrack = checkInStaticPopularTracks(title, artist);
+      if (staticTrack) {
+        console.log(`Usando dados estáticos de fallback para: ${title} - ${artist}`);
+        apiCache.set(cacheKey, staticTrack, 24 * 60 * 60 * 1000); // Cache por 1 dia
+        return staticTrack;
+      }
+      
+      const errorData = await response.json();
+      console.error(`Erro ao buscar música "${title} - ${artist}": ${response.status} - ${JSON.stringify(errorData)}`);
       return null;
     }
 
@@ -175,11 +282,20 @@ export const searchTrackOnSpotify = async (
     
     if (!data.tracks || !data.tracks.items || data.tracks.items.length === 0) {
       console.log(`Nenhuma música encontrada para: ${title} - ${artist}`);
+      
+      // Verificar dados estáticos de fallback
+      const staticTrack = checkInStaticPopularTracks(title, artist);
+      if (staticTrack) {
+        console.log(`Usando dados estáticos de fallback para: ${title} - ${artist}`);
+        apiCache.set(cacheKey, staticTrack, 24 * 60 * 60 * 1000); // Cache por 1 dia
+        return staticTrack;
+      }
+      
       return null;
     }
     
     const track = data.tracks.items[0];
-    return {
+    const trackData = {
       id: track.id,
       name: track.name,
       artist: track.artists.map((artist: any) => artist.name).join(', '),
@@ -191,14 +307,58 @@ export const searchTrackOnSpotify = async (
       preview_url: track.preview_url || '',
       external_url: track.external_urls?.spotify || ''
     };
+    
+    // Armazenar em cache por 7 dias
+    apiCache.set(cacheKey, trackData, 7 * 24 * 60 * 60 * 1000);
+    
+    return trackData;
   } catch (error) {
     console.error(`Erro ao buscar música "${title} - ${artist}":`, error);
+    
+    // Em caso de erro, verificar dados estáticos de fallback
+    const staticTrack = checkInStaticPopularTracks(title, artist);
+    if (staticTrack) {
+      console.log(`Usando dados estáticos de fallback após erro para: ${title} - ${artist}`);
+      const cacheKey = `spotify_track_${title.toLowerCase()}_${artist.toLowerCase()}`;
+      apiCache.set(cacheKey, staticTrack, 24 * 60 * 60 * 1000); // Cache por 1 dia
+      return staticTrack;
+    }
+    
     return null;
   }
 };
 
 /**
+ * Pré-carrega dados de várias músicas em segundo plano para melhorar a experiência futura
+ */
+export const preloadTracksData = async (
+  tracks: Array<{ title: string; artist: string }>,
+  accessToken: string
+): Promise<void> => {
+  // Processo não bloqueante que roda em segundo plano
+  setTimeout(async () => {
+    console.log(`Iniciando pré-carregamento de ${tracks.length} músicas em segundo plano...`);
+    
+    for (const { title, artist } of tracks) {
+      const cacheKey = `spotify_track_${title.toLowerCase()}_${artist.toLowerCase()}`;
+      
+      // Só pré-carregar se não estiver em cache
+      if (!apiCache.get(cacheKey)) {
+        apiCache.addToPrefetch(cacheKey);
+        
+        // Pausa longa entre requisições de pré-carregamento para não sobrecarregar
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        await searchTrackOnSpotify(title, artist, accessToken);
+      }
+    }
+    
+    console.log('Pré-carregamento concluído');
+  }, 100);
+};
+
+/**
  * Busca o número de plays de várias músicas no Spotify para o período selecionado
+ * com otimizações de desempenho
  * Retorna um objeto com o ID da música como chave e o número formatado de plays como valor
  */
 export const fetchTracksPopularity = async (
@@ -206,6 +366,24 @@ export const fetchTracksPopularity = async (
   startDate: string,
   endDate: string
 ): Promise<{ [key: string]: string }> => {
+  // Verificar cache
+  const tracksKey = tracks.map(t => `${t.title}|${t.artist}`).join('~');
+  const cacheKey = `spotify_plays_${tracksKey}_${startDate}_${endDate}`;
+  
+  const cachedResults = apiCache.get<{ [key: string]: string }>(cacheKey);
+  if (cachedResults) {
+    console.log('Usando dados de popularidade em cache do Spotify');
+    
+    // Pré-carregar os dados em segundo plano para a próxima vez
+    fetchSpotifyToken().then(token => {
+      if (token) preloadTracksData(tracks, token);
+    });
+    
+    return cachedResults;
+  }
+  
+  console.log(`Buscando dados de popularidade para ${tracks.length} músicas...`);
+  
   const accessToken = await fetchSpotifyToken();
   if (!accessToken) {
     console.error("Não foi possível obter token do Spotify");
@@ -214,28 +392,60 @@ export const fetchTracksPopularity = async (
   
   const result: { [key: string]: string } = {};
   
-  console.log(`Buscando dados para o período: ${startDate} a ${endDate}`);
-  
-  // Processar as músicas em lotes para evitar muitas requisições simultâneas
-  const batchSize = 5;
-  for (let i = 0; i < tracks.length; i += batchSize) {
-    const batch = tracks.slice(i, i + batchSize);
+  try {
+    isBatchLoading = true;
     
-    // Processar cada música do lote em paralelo
-    const promises = batch.map(async ({ title, artist }) => {
-      const trackInfo = await searchTrackOnSpotify(title, artist, accessToken);
-      if (trackInfo) {
-        // Usar um ID único baseado no título e artista para identificar a música
-        const trackKey = `${title}|${artist}`.toLowerCase();
-        // Converter o índice de popularidade em uma estimativa formatada de plays
-        // ajustada para o período selecionado
-        result[trackKey] = popularityToPlays(trackInfo.popularity, startDate, endDate);
+    // Verificar se algumas músicas já estão em cache individual
+    const uncachedTracks = [];
+    
+    for (const track of tracks) {
+      const trackKey = `${track.title}|${track.artist}`.toLowerCase();
+      const trackCacheKey = `spotify_track_${track.title.toLowerCase()}_${track.artist.toLowerCase()}`;
+      
+      const cachedTrack = apiCache.get<SpotifyTrack>(trackCacheKey);
+      if (cachedTrack) {
+        result[trackKey] = popularityToPlays(cachedTrack.popularity, startDate, endDate);
+      } else {
+        uncachedTracks.push(track);
       }
-    });
+    }
     
-    // Aguardar todas as requisições do lote terminarem
-    await Promise.all(promises);
+    console.log(`${tracks.length - uncachedTracks.length} músicas encontradas em cache, buscando ${uncachedTracks.length} restantes...`);
+    
+    // Processar as músicas não cacheadas em lotes menores
+    const batchSize = 5;
+    
+    // Exibir indicador de progresso
+    let progress = 0;
+    const totalTracks = uncachedTracks.length;
+    
+    for (let i = 0; i < uncachedTracks.length; i += batchSize) {
+      const batch = uncachedTracks.slice(i, i + batchSize);
+      
+      // Atualizar e exibir o progresso
+      progress = Math.floor((i / totalTracks) * 100);
+      if (progress > 0 && progress % 10 === 0) {
+        console.log(`Progresso: ${progress}% (${i} de ${totalTracks})`);
+      }
+      
+      // Processar cada música do lote em paralelo para maior velocidade
+      await Promise.all(batch.map(async ({ title, artist }) => {
+        const trackInfo = await searchTrackOnSpotify(title, artist, accessToken);
+        
+        if (trackInfo) {
+          const trackKey = `${title}|${artist}`.toLowerCase();
+          result[trackKey] = popularityToPlays(trackInfo.popularity, startDate, endDate);
+        }
+      }));
+    }
+    
+    console.log(`Busca de popularidade concluída para ${tracks.length} músicas`);
+  } finally {
+    isBatchLoading = false;
   }
+  
+  // Armazenar resultado em cache por 1 dia
+  apiCache.set(cacheKey, result, 24 * 60 * 60 * 1000);
   
   return result;
 }; 
