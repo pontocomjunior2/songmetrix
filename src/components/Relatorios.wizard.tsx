@@ -749,40 +749,40 @@ const RelatoriosWizard: React.FC = () => {
               <table className="w-full">
                 <thead>
                   <tr className="bg-gray-50 dark:bg-gray-700">
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-200">Pos</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-200">Título</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-200">Artista</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-200 w-12">Pos</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-200 w-44">Título</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-200 w-44">Artista</th>
                     {selectedRadios.map((radio) => (
-                      <th key={radio.value} className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-200">
+                      <th key={radio.value} className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-200 w-16">
                         {getRadioAbbreviation(radio.label)}
                       </th>
                     ))}
                     {includeSpotify && (
-                      <th className="px-4 py-3 text-left text-sm font-medium text-white bg-green-600 dark:bg-green-800">
+                      <th className="px-4 py-3 text-center text-sm font-medium text-white bg-green-600 dark:bg-green-800 w-28">
                         {getSpotifyAbbreviation()}
                       </th>
                     )}
                     {includeYoutube && (
-                      <th className="px-4 py-3 text-left text-sm font-medium text-white bg-red-600 dark:bg-red-800">
+                      <th className="px-4 py-3 text-center text-sm font-medium text-white bg-red-600 dark:bg-red-800 w-28">
                         {getYoutubeAbbreviation()}
                       </th>
                     )}
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-200">Total</th>
+                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-200 w-16">Total</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                   {reportData.slice(0, parseInt(chartSize.value)).map((item, index) => (
                     <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                      <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-200">{getPosition(index, item)}º</td>
-                      <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-200">{item.title}</td>
-                      <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-200">{item.artist}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-200 text-center">{getPosition(index, item)}º</td>
+                      <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-200 truncate max-w-xs">{item.title}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-200 truncate max-w-xs">{item.artist}</td>
                       {selectedRadios.map((radio) => (
-                        <td key={radio.value} className="px-4 py-3 text-sm text-gray-700 dark:text-gray-200">
+                        <td key={radio.value} className="px-4 py-3 text-sm text-gray-700 dark:text-gray-200 text-center">
                           {item.executions[radio.value] || 0}
                         </td>
                       ))}
                       {includeSpotify && (
-                        <td className="px-4 py-3 text-sm bg-green-50 dark:bg-green-950 text-gray-700 dark:text-gray-200">
+                        <td className="px-3 py-2 text-sm bg-green-50 dark:bg-green-950 text-gray-700 dark:text-gray-200">
                           {item.spotify ? (
                             <PopularityIndicator 
                               type="spotify"
@@ -790,7 +790,7 @@ const RelatoriosWizard: React.FC = () => {
                               trend={item.spotify.trend}
                               trendPercentage={item.spotify.trendPercentage}
                               showSparkline={false}
-                              size="md"
+                              size="sm"
                             />
                           ) : (
                             <span className="text-gray-400">-</span>
@@ -798,7 +798,7 @@ const RelatoriosWizard: React.FC = () => {
                         </td>
                       )}
                       {includeYoutube && (
-                        <td className="px-4 py-3 text-sm bg-red-50 dark:bg-red-950 text-gray-700 dark:text-gray-200">
+                        <td className="px-3 py-2 text-sm bg-red-50 dark:bg-red-950 text-gray-700 dark:text-gray-200">
                           {item.youtube ? (
                             <PopularityIndicator 
                               type="youtube"
@@ -806,14 +806,14 @@ const RelatoriosWizard: React.FC = () => {
                               trend={item.youtube.trend}
                               trendPercentage={item.youtube.trendPercentage}
                               showSparkline={false}
-                              size="md"
+                              size="sm"
                             />
                           ) : (
                             <span className="text-gray-400">-</span>
                           )}
                         </td>
                       )}
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{item.total}</td>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white text-center">{item.total}</td>
                     </tr>
                   ))}
                 </tbody>

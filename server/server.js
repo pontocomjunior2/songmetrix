@@ -364,46 +364,116 @@ app.post('/api/radios/favorite', authenticateBasicUser, async (req, res) => {
 // Rotas de abreviações de rádios
 app.get('/api/radio-abbreviations', authenticateBasicUser, async (req, res) => {
   try {
-    // Consulta SQL para obter abreviações das rádios
+    console.log('[GET /api/radio-abbreviations] Iniciando busca de abreviações');
+    
+    // Verificar se a tabela radio_abbreviations existe
+    let hasAbbreviationsTable = false;
+    try {
+      const checkTableQuery = `
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_name = 'radio_abbreviations'
+        )
+      `;
+      
+      const tableExists = await safeQuery(checkTableQuery);
+      hasAbbreviationsTable = tableExists.rows[0].exists;
+    } catch (error) {
+      console.log('Erro ao verificar tabela radio_abbreviations:', error);
+    }
+    
+    // Consulta SQL para obter todas as rádios da tabela music_log
     const query = `
-      SELECT 
-        name as radio_name, 
-        MAX(abbreviation) FILTER (WHERE abbreviation IS NOT NULL),
-        COALESCE(MAX(abbreviation), SUBSTRING(name FROM 1 FOR 3)) as abbreviation
-      FROM radios 
-      GROUP BY name
+      SELECT DISTINCT 
+        name as radio_name
+      FROM music_log 
       ORDER BY name
     `;
+    
+    console.log('[GET /api/radio-abbreviations] Executando consulta SQL:', query);
     
     // Executar a consulta no banco de dados
     const result = await safeQuery(query);
     
-    // Obter resultado e adicionar a abreviação padrão do Spotify
-    let abbreviations = result.rows;
+    console.log('[GET /api/radio-abbreviations] Resultado da consulta SQL. Linhas retornadas:', result.rows.length);
+    console.log(`[GET /api/radio-abbreviations] Primeiras 5 rádios: ${JSON.stringify(result.rows.slice(0, 5))}`);
+    
+    // Buscar abreviações da tabela radio_abbreviations se ela existir
+    let abbreviationsMap = {};
+    if (hasAbbreviationsTable) {
+      try {
+        const abbrevQuery = `SELECT radio_name, abbreviation FROM radio_abbreviations`;
+        const abbrevResult = await safeQuery(abbrevQuery);
+        
+        // Criar um mapa de abreviações
+        abbreviationsMap = abbrevResult.rows.reduce((map, row) => {
+          map[row.radio_name] = row.abbreviation;
+          return map;
+        }, {});
+      } catch (error) {
+        console.log('Erro ao buscar abreviações da tabela:', error);
+      }
+    }
+    
+    // Processar o resultado para gerar abreviações
+    let abbreviations = result.rows.map(row => ({
+      radio_name: row.radio_name,
+      abbreviation: abbreviationsMap[row.radio_name] || row.radio_name.substring(0, 3).toUpperCase()
+    }));
+    
+    // Buscar abreviação personalizada do Spotify da tabela específica
+    let spotifyAbbreviation = 'SFY';
+    try {
+      const spotifyQuery = 'SELECT abbreviation FROM spotify_abbreviation LIMIT 1';
+      const spotifyResult = await safeQuery(spotifyQuery);
+      if (spotifyResult.rows.length > 0) {
+        spotifyAbbreviation = spotifyResult.rows[0].abbreviation;
+      }
+    } catch (error) {
+      // Se a tabela não existir, usar o valor padrão
+      console.log('Tabela spotify_abbreviation não encontrada, usando abreviação padrão');
+    }
     
     // Verificar se já existe uma abreviação para o Spotify
     const spotifyExists = abbreviations.some(abbr => abbr.radio_name === 'Spotify');
     
-    // Se não existir, adicionar a abreviação padrão do Spotify
+    // Se não existir, adicionar a abreviação do Spotify
     if (!spotifyExists) {
       abbreviations.push({
         radio_name: 'Spotify',
-        abbreviation: 'SFY'
+        abbreviation: spotifyAbbreviation
       });
+    }
+    
+    // Buscar abreviação personalizada do YouTube da tabela específica
+    let youtubeAbbreviation = 'YTB';
+    try {
+      const youtubeQuery = 'SELECT abbreviation FROM youtube_abbreviation LIMIT 1';
+      const youtubeResult = await safeQuery(youtubeQuery);
+      if (youtubeResult.rows.length > 0) {
+        youtubeAbbreviation = youtubeResult.rows[0].abbreviation;
+      }
+    } catch (error) {
+      // Se a tabela não existir, usar o valor padrão
+      console.log('Tabela youtube_abbreviation não encontrada, usando abreviação padrão');
     }
     
     // Verificar se já existe uma abreviação para o YouTube
     const youtubeExists = abbreviations.some(abbr => abbr.radio_name === 'Youtube');
     
-    // Se não existir, adicionar a abreviação padrão do YouTube
+    // Se não existir, adicionar a abreviação do YouTube
     if (!youtubeExists) {
       abbreviations.push({
         radio_name: 'Youtube',
-        abbreviation: 'YTB'
+        abbreviation: youtubeAbbreviation
       });
     }
     
     res.json(abbreviations);
+    
+    console.log(`[GET /api/radio-abbreviations] Total de abreviações enviadas: ${abbreviations.length}`);
+    console.log(`[GET /api/radio-abbreviations] Inclui Spotify: ${abbreviations.some(abbr => abbr.radio_name === 'Spotify')}`);
+    console.log(`[GET /api/radio-abbreviations] Inclui Youtube: ${abbreviations.some(abbr => abbr.radio_name === 'Youtube')}`);
   } catch (error) {
     console.error('GET /api/radio-abbreviations - Erro:', error);
     res.status(500).json({ error: 'Erro ao buscar abreviações' });
@@ -413,17 +483,7 @@ app.get('/api/radio-abbreviations', authenticateBasicUser, async (req, res) => {
 app.post('/api/radio-abbreviations', authenticateBasicUser, async (req, res) => {
   try {
     // Permissão apenas para administradores
-    const { data: userData } = await supabase.auth.getUser();
-    
-    if (!userData || !userData.user) {
-      return res.status(401).json({ error: 'Usuário não autenticado' });
-    }
-    
-    // Verificar se o usuário tem perfil de admin através do Firebase
-    const userSnapshot = await db.collection('users').doc(userData.user.id).get();
-    const userProfileData = userSnapshot.data();
-    
-    if (!userProfileData || userProfileData.status !== 'ADMIN') {
+    if (req.user.user_metadata?.status !== 'ADMIN') {
       return res.status(403).json({ error: 'Permissão negada. Apenas administradores podem editar abreviações.' });
     }
     
@@ -493,35 +553,118 @@ app.post('/api/radio-abbreviations', authenticateBasicUser, async (req, res) => 
       }
     }
     
-    // Verificar se a abreviação já está em uso por outra rádio
-    const duplicateQuery = `
-      SELECT name FROM radios 
-      WHERE abbreviation = $1 
-      AND name != $2 
-      LIMIT 1
-    `;
-    
-    const duplicateResult = await safeQuery(duplicateQuery, [abbreviation, radioName]);
-    
-    if (duplicateResult.rows.length > 0) {
-      return res.status(400).json({ 
-        error: `Abreviação "${abbreviation}" já está em uso pela rádio "${duplicateResult.rows[0].name}"`
-      });
+    // Caso especial para o YouTube (armazenar em uma tabela separada)
+    if (radioName === 'Youtube') {
+      // Verificar se já existe uma abreviação para o YouTube em uma tabela especial
+      const checkYoutubeQuery = `
+        SELECT * FROM youtube_abbreviation LIMIT 1
+      `;
+      
+      try {
+        const youtubeResult = await safeQuery(checkYoutubeQuery);
+        
+        if (youtubeResult.rows.length > 0) {
+          // Atualizar a abreviação existente
+          const updateYoutubeQuery = `
+            UPDATE youtube_abbreviation
+            SET abbreviation = $1
+          `;
+          await safeQuery(updateYoutubeQuery, [abbreviation]);
+        } else {
+          // Inserir nova abreviação
+          const insertYoutubeQuery = `
+            INSERT INTO youtube_abbreviation (abbreviation)
+            VALUES ($1)
+          `;
+          await safeQuery(insertYoutubeQuery, [abbreviation]);
+        }
+        
+        return res.json({
+          radio_name: radioName,
+          abbreviation: abbreviation
+        });
+      } catch (error) {
+        // Se a tabela não existir, criar a tabela e inserir o valor padrão
+        if (error.code === '42P01') {  // Código de erro para "tabela não existe"
+          const createTableQuery = `
+            CREATE TABLE youtube_abbreviation (
+              abbreviation VARCHAR(3) NOT NULL
+            )
+          `;
+          await safeQuery(createTableQuery);
+          
+          const insertYoutubeQuery = `
+            INSERT INTO youtube_abbreviation (abbreviation)
+            VALUES ($1)
+          `;
+          await safeQuery(insertYoutubeQuery, [abbreviation]);
+          
+          return res.json({
+            radio_name: radioName,
+            abbreviation: abbreviation
+          });
+        } else {
+          throw error;
+        }
+      }
     }
     
-    // Atualizar a abreviação da rádio
-    const updateQuery = `
-      UPDATE radios 
-      SET abbreviation = $2 
-      WHERE name = $1
-    `;
-    
-    await safeQuery(updateQuery, [radioName, abbreviation]);
-    
-    res.json({
-      radio_name: radioName,
-      abbreviation: abbreviation
-    });
+    // Para as rádios normais, usar a tabela radio_abbreviations
+    try {
+      // Verificar se a tabela radio_abbreviations existe
+      const checkTableQuery = `
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_name = 'radio_abbreviations'
+        )
+      `;
+      
+      const tableExists = await safeQuery(checkTableQuery);
+      
+      // Se a tabela não existir, criar
+      if (!tableExists.rows[0].exists) {
+        const createTableQuery = `
+          CREATE TABLE radio_abbreviations (
+            radio_name VARCHAR(255) PRIMARY KEY,
+            abbreviation VARCHAR(3) NOT NULL
+          )
+        `;
+        await safeQuery(createTableQuery);
+      }
+      
+      // Verificar se já existe uma abreviação para esta rádio
+      const checkQuery = `
+        SELECT * FROM radio_abbreviations
+        WHERE radio_name = $1
+      `;
+      
+      const checkResult = await safeQuery(checkQuery, [radioName]);
+      
+      if (checkResult.rows.length > 0) {
+        // Atualizar a abreviação existente
+        const updateQuery = `
+          UPDATE radio_abbreviations
+          SET abbreviation = $2
+          WHERE radio_name = $1
+        `;
+        await safeQuery(updateQuery, [radioName, abbreviation]);
+      } else {
+        // Inserir nova abreviação
+        const insertQuery = `
+          INSERT INTO radio_abbreviations (radio_name, abbreviation)
+          VALUES ($1, $2)
+        `;
+        await safeQuery(insertQuery, [radioName, abbreviation]);
+      }
+      
+      return res.json({
+        radio_name: radioName,
+        abbreviation: abbreviation
+      });
+    } catch (error) {
+      console.error('Erro ao salvar abreviação:', error);
+      throw error;
+    }
   } catch (error) {
     console.error('POST /api/radio-abbreviations - Erro:', error);
     res.status(500).json({ error: 'Erro ao atualizar abreviação' });

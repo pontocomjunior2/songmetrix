@@ -39,6 +39,17 @@ export default function RadioAbbreviations() {
       if (!response.ok) throw new Error('Falha ao buscar abreviações');
       
       const data = await response.json();
+      console.log('Dados recebidos da API:', data);
+      console.log('Total de abreviações recebidas:', data.length);
+      
+      // Registrar abreviações por tipo
+      const streamingPlatforms = data.filter((abbr: RadioAbbreviation) => ['Spotify', 'Youtube'].includes(abbr.radio_name));
+      const radios = data.filter((abbr: RadioAbbreviation) => !['Spotify', 'Youtube'].includes(abbr.radio_name));
+      
+      console.log('Plataformas de streaming:', streamingPlatforms);
+      console.log('Rádios:', radios);
+      console.log('Total de rádios:', radios.length);
+      
       setAbbreviations(data);
     } catch (error) {
       console.error('Erro ao buscar abreviações:', error);
