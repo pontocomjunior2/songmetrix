@@ -392,6 +392,17 @@ app.get('/api/radio-abbreviations', authenticateBasicUser, async (req, res) => {
       });
     }
     
+    // Verificar se já existe uma abreviação para o YouTube
+    const youtubeExists = abbreviations.some(abbr => abbr.radio_name === 'Youtube');
+    
+    // Se não existir, adicionar a abreviação padrão do YouTube
+    if (!youtubeExists) {
+      abbreviations.push({
+        radio_name: 'Youtube',
+        abbreviation: 'YTB'
+      });
+    }
+    
     res.json(abbreviations);
   } catch (error) {
     console.error('GET /api/radio-abbreviations - Erro:', error);
