@@ -24,11 +24,13 @@ interface ReportData {
     trend: 'up' | 'down' | 'stable';
     trendPercentage: number;
   };
+  /* Comentado para remoção do YouTube
   youtube?: {
     popularity: number;
     trend: 'up' | 'down' | 'stable';
     trendPercentage: number;
   };
+  */
 }
 
 interface RadioAbbreviation {
@@ -82,9 +84,11 @@ const RelatoriosWizard: React.FC = () => {
   const [citiesOptions, setCitiesOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [statesOptions, setStatesOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [includeSpotify, setIncludeSpotify] = useState(false);
-  const [includeYoutube, setIncludeYoutube] = useState(false);
   const [loadingSpotify, setLoadingSpotify] = useState(false);
+  /* Comentado para remoção do YouTube  
+  const [includeYoutube, setIncludeYoutube] = useState(false);
   const [loadingYoutube, setLoadingYoutube] = useState(false);
+  */
 
   const getRadioAbbreviation = (radioName: string): string => {
     return radioAbbreviations[radioName] || radioName.substring(0, 3).toUpperCase();
@@ -94,9 +98,11 @@ const RelatoriosWizard: React.FC = () => {
     return radioAbbreviations['Spotify'] || 'SFY';
   };
 
+  /* Comentado para remoção do YouTube
   const getYoutubeAbbreviation = (): string => {
     return radioAbbreviations['Youtube'] || 'YTB';
   };
+  */
 
   const clearReportData = () => {
     if (reportGenerated) {
@@ -131,16 +137,18 @@ const RelatoriosWizard: React.FC = () => {
   };
 
   const fetchOnlineData = async (reportData: ReportData[]): Promise<ReportData[]> => {
-    if (!includeSpotify && !includeYoutube) {
+    if (!includeSpotify /* Comentado: && !includeYoutube */) {
       return reportData;
     }
 
     try {
       setLoadingSpotify(includeSpotify);
+      /* Comentado para remoção do YouTube
       setLoadingYoutube(includeYoutube);
+      */
       
       console.log(`Buscando dados de popularidade para o período: ${startDate} a ${endDate}`);
-      console.log(`Plataformas incluídas: ${includeSpotify ? 'Spotify' : ''} ${includeYoutube ? 'YouTube' : ''}`);
+      console.log(`Plataformas incluídas: ${includeSpotify ? 'Spotify' : ''}`);
       
       const tracksToFetch = reportData.map(item => ({
         title: item.title,
@@ -155,7 +163,10 @@ const RelatoriosWizard: React.FC = () => {
         endDate,
         {
           includeSpotify,
+          /* Comentado para remoção do YouTube
           includeYoutube
+          */
+          includeYoutube: false // Substituindo por false para desativar
         }
       );
       
@@ -165,8 +176,10 @@ const RelatoriosWizard: React.FC = () => {
         // Dados do Spotify
         const spotifyData = includeSpotify ? popularityData.spotify[trackKey] : undefined;
         
+        /* Comentado para remoção do YouTube
         // Dados do YouTube
         const youtubeData = includeYoutube ? popularityData.youtube[trackKey] : undefined;
+        */
         
         return {
           ...item,
@@ -175,11 +188,13 @@ const RelatoriosWizard: React.FC = () => {
             trend: spotifyData.trend,
             trendPercentage: spotifyData.trendPercentage
           } : undefined,
+          /* Comentado para remoção do YouTube
           youtube: youtubeData ? {
             popularity: youtubeData.score,
             trend: youtubeData.trend,
             trendPercentage: youtubeData.trendPercentage
           } : undefined
+          */
         };
       });
       
@@ -190,7 +205,9 @@ const RelatoriosWizard: React.FC = () => {
       return reportData;
     } finally {
       setLoadingSpotify(false);
+      /* Comentado para remoção do YouTube
       setLoadingYoutube(false);
+      */
     }
   };
 
@@ -249,7 +266,7 @@ const RelatoriosWizard: React.FC = () => {
       let data = await apiServices.reports.generateReport(params);
       
       // Buscar dados de popularidade online (Spotify e YouTube)
-      if (includeSpotify || includeYoutube) {
+      if (includeSpotify /* Comentado: || includeYoutube */) {
         data = await fetchOnlineData(data);
       }
       
@@ -480,30 +497,31 @@ const RelatoriosWizard: React.FC = () => {
                 <div className="group relative">
                   <InfoIcon className="w-4 h-4 text-gray-500 cursor-help" />
                   <div className="absolute left-0 bottom-6 hidden group-hover:block bg-white dark:bg-gray-800 p-2 rounded shadow-lg border border-gray-200 dark:border-gray-700 w-72 text-xs text-gray-600 dark:text-gray-300 z-10">
-                    Adiciona uma coluna com o número estimado de reproduções no Spotify para cada música durante o período selecionado. Os valores são aproximados e apresentados em formato abreviado (k = mil, mi = milhão, bi = bilhão).
+                    Adiciona uma coluna que exibe o índice de popularidade da música no Spotify (escala de 0-100). Este índice reflete o quão popular a música está na plataforma, baseado em número de streams recentes. As setas indicam a tendência de crescimento ou queda na popularidade da música.
                   </div>
                 </div>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Reproduções estimadas durante o período selecionado
+                Índice de popularidade da música no Spotify
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={() => setIncludeSpotify(!includeSpotify)}
-            className="text-navy-600 hover:text-navy-700 focus:outline-none"
+            className={`relative w-12 h-6 rounded-full transition-colors flex items-center ${
+              includeSpotify ? 'bg-green-600' : 'bg-gray-300 dark:bg-gray-600'
+            }`}
             aria-pressed={includeSpotify}
           >
-            {includeSpotify ? (
-              <ToggleRight className="w-10 h-10" />
-            ) : (
-              <ToggleLeft className="w-10 h-10" />
-            )}
+            <span className={`absolute block w-5 h-5 rounded-full bg-white shadow transform transition-transform ${
+              includeSpotify ? 'right-0.5' : 'left-0.5'
+            }`}></span>
           </button>
         </div>
         
-        {/* YouTube Toggle */}
+        {/* Comentado para remoção do YouTube */}
+        {/* YouTube Toggle
         <div className="flex items-center justify-between bg-white dark:bg-gray-900 p-3 rounded-lg shadow-sm">
           <div className="flex items-center gap-2">
             <div className="p-2 bg-red-100 dark:bg-red-900 rounded-full">
@@ -519,28 +537,29 @@ const RelatoriosWizard: React.FC = () => {
                 <div className="group relative">
                   <InfoIcon className="w-4 h-4 text-gray-500 cursor-help" />
                   <div className="absolute left-0 bottom-6 hidden group-hover:block bg-white dark:bg-gray-800 p-2 rounded shadow-lg border border-gray-200 dark:border-gray-700 w-72 text-xs text-gray-600 dark:text-gray-300 z-10">
-                    Adiciona uma coluna com o número estimado de visualizações no YouTube para cada música durante o período selecionado. Os valores são aproximados e apresentados em formato abreviado (k = mil, mi = milhão, bi = bilhão).
+                    Adiciona uma coluna que exibe o índice de popularidade da música no YouTube (escala de 0-100). Este índice é calculado com base no número de visualizações, likes e engajamento recentes. As setas indicam se a popularidade da música está crescendo ou diminuindo.
                   </div>
                 </div>
               </div>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Visualizações estimadas durante o período selecionado
+                Índice de popularidade da música no YouTube
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={() => setIncludeYoutube(!includeYoutube)}
-            className="text-navy-600 hover:text-navy-700 focus:outline-none"
+            className={`relative w-12 h-6 rounded-full transition-colors flex items-center ${
+              includeYoutube ? 'bg-red-600' : 'bg-gray-300 dark:bg-gray-600'
+            }`}
             aria-pressed={includeYoutube}
           >
-            {includeYoutube ? (
-              <ToggleRight className="w-10 h-10" />
-            ) : (
-              <ToggleLeft className="w-10 h-10" />
-            )}
+            <span className={`absolute block w-5 h-5 rounded-full bg-white shadow transform transition-transform ${
+              includeYoutube ? 'right-0.5' : 'left-0.5'
+            }`}></span>
           </button>
         </div>
+        */}
       </div>
     </div>
   );
@@ -566,12 +585,14 @@ const RelatoriosWizard: React.FC = () => {
     
     // Adicionar colunas de streaming
     if (includeSpotify) {
-      headers.push(getSpotifyAbbreviation());
+      headers.push('Spotify');
     }
     
+    /* Comentado para remoção do YouTube
     if (includeYoutube) {
-      headers.push(getYoutubeAbbreviation());
+      headers.push('YouTube');
     }
+    */
     
     headers.push('Total');
     
@@ -593,10 +614,12 @@ const RelatoriosWizard: React.FC = () => {
         row.push(item.spotify ? `${item.spotify.popularity}/100` : '-');
       }
       
+      /* Comentado para remoção do YouTube
       // Adicionar dados do YouTube (apenas o valor numérico para PDF)
       if (includeYoutube) {
         row.push(item.youtube ? `${item.youtube.popularity}/100` : '-');
       }
+      */
       
       row.push(String(item.total));
       
@@ -644,11 +667,13 @@ const RelatoriosWizard: React.FC = () => {
       legendIndex++;
     }
     
+    /* Comentado para remoção do YouTube
     // Adicionar YouTube à legenda, se incluído
     if (includeYoutube) {
       const abbrev = getYoutubeAbbreviation();
       doc.text(`${abbrev} (YouTube - Pontuação de 0-100)`, 14, legendY + 10 + (legendIndex * 6));
     }
+    */
     
     doc.save(`relatorio-${moment().format('YYYY-MM-DD')}.pdf`);
   };
@@ -724,12 +749,12 @@ const RelatoriosWizard: React.FC = () => {
             <button
               onClick={handleGenerateReport}
               className="ml-auto flex items-center gap-2 px-6 py-2 bg-navy-600 text-white rounded-lg hover:bg-navy-700 transition-colors disabled:bg-navy-400"
-              disabled={loading || loadingSpotify || loadingYoutube}
+              disabled={loading || loadingSpotify}
             >
-              {loading || loadingSpotify || loadingYoutube ? (
+              {loading || loadingSpotify ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  {loadingSpotify ? 'Buscando dados do Spotify...' : loadingYoutube ? 'Buscando dados do YouTube...' : 'Gerando...'}
+                  {loadingSpotify ? 'Buscando dados do Spotify...' : 'Gerando...'}
                 </>
               ) : (
                 'Gerar Relatório'
@@ -759,12 +784,15 @@ const RelatoriosWizard: React.FC = () => {
                     ))}
                     {includeSpotify && (
                       <th className="px-4 py-3 text-center text-sm font-medium text-white bg-green-600 dark:bg-green-800 w-28">
-                        {getSpotifyAbbreviation()}
-                      </th>
-                    )}
-                    {includeYoutube && (
-                      <th className="px-4 py-3 text-center text-sm font-medium text-white bg-red-600 dark:bg-red-800 w-28">
-                        {getYoutubeAbbreviation()}
+                        <div className="flex items-center justify-center gap-2 group relative">
+                          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="white">
+                            <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
+                          </svg>
+                          <span>Spotify</span>
+                          <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 hidden group-hover:block bg-green-700 text-white text-xs rounded p-1 w-40 mb-1 z-10 text-center whitespace-normal">
+                            Índice de popularidade de 0-100, com tendência de alta ou baixa
+                          </div>
+                        </div>
                       </th>
                     )}
                     <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 dark:text-gray-200 w-16">Total</th>
@@ -783,34 +811,20 @@ const RelatoriosWizard: React.FC = () => {
                       ))}
                       {includeSpotify && (
                         <td className="px-3 py-2 text-sm bg-green-50 dark:bg-green-950 text-gray-700 dark:text-gray-200">
-                          {item.spotify ? (
-                            <PopularityIndicator 
-                              type="spotify"
-                              popularity={item.spotify.popularity}
-                              trend={item.spotify.trend}
-                              trendPercentage={item.spotify.trendPercentage}
-                              showSparkline={false}
-                              size="sm"
-                            />
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
-                        </td>
-                      )}
-                      {includeYoutube && (
-                        <td className="px-3 py-2 text-sm bg-red-50 dark:bg-red-950 text-gray-700 dark:text-gray-200">
-                          {item.youtube ? (
-                            <PopularityIndicator 
-                              type="youtube"
-                              popularity={item.youtube.popularity}
-                              trend={item.youtube.trend}
-                              trendPercentage={item.youtube.trendPercentage}
-                              showSparkline={false}
-                              size="sm"
-                            />
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
+                          <div className="flex flex-col items-center justify-center">
+                            {item.spotify ? (
+                              <PopularityIndicator 
+                                type="spotify"
+                                popularity={item.spotify.popularity}
+                                trend={item.spotify.trend}
+                                trendPercentage={item.spotify.trendPercentage}
+                                showSparkline={false}
+                                size="sm"
+                              />
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </div>
                         </td>
                       )}
                       <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white text-center">{item.total}</td>
