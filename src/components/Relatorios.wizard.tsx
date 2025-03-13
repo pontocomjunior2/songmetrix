@@ -565,15 +565,53 @@ const RelatoriosWizard: React.FC = () => {
   );
 
   const generatePDF = () => {
-    const doc = new jsPDF();
+    // Criar documento PDF
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
     
-    // Configurar título do documento
-    doc.setFontSize(20);
-    doc.text('Relatório SongMetrix', 14, 22);
+    // Definir cores
+    const primaryColor = [25, 55, 109]; // Azul escuro do Songmetrix
+    const secondaryColor = [41, 128, 185]; // Azul mais claro para cabeçalhos
+    const spotifyColor = [29, 185, 84]; // Verde do Spotify
     
-    // Configurar subtítulo (data)
-    doc.setFontSize(12);
-    doc.text(`Período: ${startDate} a ${endDate}`, 14, 32);
+    // Adicionar título do relatório (sem logo)
+    doc.setFontSize(24);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.text('SongMetrix', 14, 20);
+    
+    // Adicionar subtítulo do relatório
+    doc.setFontSize(16);
+    doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+    doc.setFont('helvetica', 'bold');
+    doc.text(chartSize.label, 14, 30);
+    
+    // Adicionar informações do período
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Período: ${moment(startDate).format('DD/MM/YYYY')} a ${moment(endDate).format('DD/MM/YYYY')}`, 14, 36);
+    
+    // Adicionar informações de seleção
+    let selectionText = '';
+    if (selectedReportType === 'radios') {
+      selectionText = `Rádios: ${selectedRadios.map(r => r.label).join(', ')}`;
+    } else if (selectedReportType === 'city') {
+      selectionText = `Cidade: ${selectedCity?.label}`;
+    } else if (selectedReportType === 'state') {
+      selectionText = `Estado: ${selectedState?.label}`;
+    }
+    
+    // Verificar se o texto é muito longo e quebrar em múltiplas linhas se necessário
+    if (selectionText.length > 100) {
+      const splitText = doc.splitTextToSize(selectionText, 180);
+      doc.text(splitText, 14, 42);
+    } else {
+      doc.text(selectionText, 14, 42);
+    }
     
     // Cabeçalhos da tabela
     const headers = ['Pos', 'Título', 'Artista'];
@@ -587,12 +625,6 @@ const RelatoriosWizard: React.FC = () => {
     if (includeSpotify) {
       headers.push('Spotify');
     }
-    
-    /* Comentado para remoção do YouTube
-    if (includeYoutube) {
-      headers.push('YouTube');
-    }
-    */
     
     headers.push('Total');
     
@@ -611,71 +643,143 @@ const RelatoriosWizard: React.FC = () => {
       
       // Adicionar dados do Spotify (apenas o valor numérico para PDF)
       if (includeSpotify) {
-        row.push(item.spotify ? `${item.spotify.popularity}/100` : '-');
+        if (item.spotify) {
+          // Abordagem completamente nova para formatar o valor do Spotify
+          // Garantindo que não haja espaços extras entre os números
+          const popularity = Math.round(item.spotify.popularity);
+          const trend = item.spotify.trend === 'up' ? '↑' : 
+                        item.spotify.trend === 'down' ? '↓' : '';
+          
+          // Remover qualquer espaço e garantir que o formato seja "XX/100↑" sem espaços
+          row.push(popularity + '/100' + trend);
+        } else {
+          row.push('-');
+        }
       }
-      
-      /* Comentado para remoção do YouTube
-      // Adicionar dados do YouTube (apenas o valor numérico para PDF)
-      if (includeYoutube) {
-        row.push(item.youtube ? `${item.youtube.popularity}/100` : '-');
-      }
-      */
       
       row.push(String(item.total));
       
       return row;
     });
     
+    // Gerar tabela com estilos modernos
     autoTable(doc, {
       head: [headers],
       body: tableData.slice(0, parseInt(chartSize.value)),
       startY: 50,
       styles: {
-        fontSize: 8,
-        cellPadding: 2,
+        fontSize: 9,
+        cellPadding: 3,
       },
       headStyles: {
-        fillColor: [41, 128, 185],
+        fillColor: [secondaryColor[0], secondaryColor[1], secondaryColor[2]],
         textColor: 255,
-        fontSize: 8,
+        fontSize: 9,
         fontStyle: 'bold',
+        halign: 'center',
       },
       columnStyles: {
-        0: { cellWidth: 15 },
-        1: { cellWidth: 40 },
-        2: { cellWidth: 40 },
+        0: { cellWidth: 12, halign: 'center' }, // Posição
+        1: { cellWidth: 50 }, // Título
+        2: { cellWidth: 40 }, // Artista
       },
+      alternateRowStyles: {
+        fillColor: [248, 248, 248],
+      },
+      didParseCell: (data) => {
+        // Centralizar os valores numéricos
+        if (data.column.index >= 3) {
+          data.cell.styles.halign = 'center';
+        }
+        
+        // Destacar a coluna Total
+        if (data.column.index === headers.length - 1) {
+          data.cell.styles.fontStyle = 'bold';
+        }
+        
+        // Aplicar estilo ao cabeçalho do Spotify
+        if (includeSpotify) {
+          const spotifyColIndex = 3 + selectedRadios.length;
+          
+          // Apenas o cabeçalho (primeira linha) da coluna Spotify terá verde escuro
+          if (data.column.index === spotifyColIndex) {
+            if (data.section === 'head') {
+              data.cell.styles.fillColor = [spotifyColor[0], spotifyColor[1], spotifyColor[2]];
+            }
+            // Todas as linhas de dados (não cabeçalho) terão verde claro
+            else if (data.section === 'body') {
+              data.cell.styles.fillColor = [240, 255, 240];
+            }
+          }
+        }
+      }
     });
     
-    const legendY = (doc as any).lastAutoTable.finalY + 20;
+    // Adicionar legendas em formato de tabela
+    const legendY = (doc as any).lastAutoTable.finalY + 10;
+    
+    // Adicionar título da legenda
     doc.setFontSize(10);
+    doc.setTextColor(80, 80, 80);
+    doc.setFont('helvetica', 'bold');
     doc.text('Legenda:', 14, legendY);
     
-    let legendIndex = 0;
+    // Criar tabela de legendas
+    const legendHeaders = ['Abreviação', 'Nome Completo'];
+    const legendData: string[][] = [];
     
-    // Adicionar abreviações de rádios à legenda
+    // Adicionar cada rádio à legenda
     selectedRadios.forEach((radio) => {
       const abbrev = getRadioAbbreviation(radio.label);
-      doc.text(`${abbrev} (${radio.label})`, 14, legendY + 10 + (legendIndex * 6));
-      legendIndex++;
+      legendData.push([abbrev, radio.label]);
     });
     
     // Adicionar Spotify à legenda, se incluído
     if (includeSpotify) {
-      const abbrev = getSpotifyAbbreviation();
-      doc.text(`${abbrev} (Spotify - Pontuação de 0-100)`, 14, legendY + 10 + (legendIndex * 6));
-      legendIndex++;
+      legendData.push(['Spotify', 'Índice de popularidade no formato XX/100']);
+      legendData.push(['↑', 'Tendência de alta na popularidade']);
+      legendData.push(['↓', 'Tendência de queda na popularidade']);
     }
     
-    /* Comentado para remoção do YouTube
-    // Adicionar YouTube à legenda, se incluído
-    if (includeYoutube) {
-      const abbrev = getYoutubeAbbreviation();
-      doc.text(`${abbrev} (YouTube - Pontuação de 0-100)`, 14, legendY + 10 + (legendIndex * 6));
-    }
-    */
+    // Gerar tabela de legendas
+    autoTable(doc, {
+      head: [legendHeaders],
+      body: legendData,
+      startY: legendY + 5,
+      styles: {
+        fontSize: 8,
+        cellPadding: 2,
+      },
+      headStyles: {
+        fillColor: [200, 200, 200],
+        textColor: 80,
+        fontSize: 8,
+        fontStyle: 'bold',
+      },
+      columnStyles: {
+        0: { cellWidth: 25, halign: 'center' },
+        1: { cellWidth: 120 },
+      },
+      margin: { left: 14 },
+      tableWidth: 145,
+    });
     
-    doc.save(`relatorio-${moment().format('YYYY-MM-DD')}.pdf`);
+    // Adicionar rodapé
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      
+      // Adicionar data de geração
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text(`Gerado em ${moment().format('DD/MM/YYYY HH:mm')}`, 14, 285);
+      
+      // Adicionar número da página
+      doc.text(`Página ${i} de ${pageCount}`, 180, 285, { align: 'right' });
+    }
+    
+    // Salvar o PDF
+    doc.save(`relatorio-songmetrix-${moment().format('YYYY-MM-DD')}.pdf`);
   };
 
   return (
@@ -810,21 +914,19 @@ const RelatoriosWizard: React.FC = () => {
                         </td>
                       ))}
                       {includeSpotify && (
-                        <td className="px-3 py-2 text-sm bg-green-50 dark:bg-green-950 text-gray-700 dark:text-gray-200">
-                          <div className="flex flex-col items-center justify-center">
-                            {item.spotify ? (
-                              <PopularityIndicator 
-                                type="spotify"
-                                popularity={item.spotify.popularity}
-                                trend={item.spotify.trend}
-                                trendPercentage={item.spotify.trendPercentage}
-                                showSparkline={false}
-                                size="sm"
-                              />
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </div>
+                        <td className="px-4 py-3 text-center text-sm bg-green-50 dark:bg-green-900/20">
+                          {item.spotify ? (
+                            <PopularityIndicator
+                              type="spotify"
+                              popularity={item.spotify.popularity}
+                              trend={item.spotify.trend}
+                              trendPercentage={item.spotify.trendPercentage}
+                              size="sm"
+                              variant="compact"
+                            />
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
                         </td>
                       )}
                       <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white text-center">{item.total}</td>

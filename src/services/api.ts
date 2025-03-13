@@ -141,6 +141,43 @@ export const apiDelete = async (endpoint: string) => {
 };
 
 /**
+ * Função para fazer upload de arquivos
+ */
+export const apiUpload = async (endpoint: string, formData: FormData) => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) {
+      throw new Error('Nenhum token de autenticação disponível');
+    }
+
+    const headers = {
+      'Authorization': `Bearer ${token}`,
+      // Não incluir Content-Type aqui, o navegador irá definir automaticamente com o boundary correto
+    };
+
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: 'POST',
+      headers,
+      credentials: 'include',
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Falha na requisição: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error: any) {
+    console.error(`Erro na requisição de upload para ${endpoint}:`, error);
+    if (error?.code === 'auth/requires-recent-login') {
+      alert('Sua sessão expirou. Por favor, faça login novamente.');
+    }
+    throw error;
+  }
+};
+
+/**
  * Serviços específicos da API
  */
 export const apiServices = {
@@ -170,7 +207,10 @@ export const apiServices = {
     getAll: () => apiGet('/api/streams'),
     getById: (id: number) => apiGet(`/api/streams/${id}`),
     create: (stream: any) => apiPost('/api/streams', stream),
-    update: (id: number, stream: any) => apiPut(`/api/streams/${id}`, stream),
+    update: (id: number, stream: any) => {
+      console.log('Chamando apiPut para atualizar stream:', id, stream);
+      return apiPut(`/api/streams/${id}`, stream);
+    },
     delete: (id: number) => apiDelete(`/api/streams/${id}`),
     search: (query: string) => apiGet('/api/streams/search', { query }),
     filterByRegion: (region: string) => apiGet('/api/streams/filter', { region }),
@@ -186,6 +226,11 @@ export const apiServices = {
   
   dashboard: {
     getDashboardData: (radioParams: string) => apiGet(`/api/dashboard?${radioParams}`),
+  },
+  
+  // Serviços de upload
+  uploads: {
+    uploadLogo: (formData: FormData) => apiUpload('/api/uploads/logo', formData),
   },
 };
 

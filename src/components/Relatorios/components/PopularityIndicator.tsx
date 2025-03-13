@@ -9,6 +9,7 @@ interface PopularityIndicatorProps {
   trendPercentage?: number;
   showSparkline?: boolean;
   size?: 'sm' | 'md' | 'lg';
+  variant?: 'default' | 'compact'; // Adicionado novo prop para variante compacta
 }
 
 // Cores para cada serviço
@@ -41,7 +42,8 @@ const PopularityIndicator: React.FC<PopularityIndicatorProps> = ({
   trend = 'stable',
   trendPercentage,
   showSparkline = false, // Por padrão não mostra mais o sparkline
-  size = 'md'
+  size = 'md',
+  variant = 'default'
 }) => {
   const colors = serviceColors[type];
   
@@ -70,7 +72,26 @@ const PopularityIndicator: React.FC<PopularityIndicatorProps> = ({
         return <Minus size={iconSize} className={`text-gray-500`} />;
     }
   };
+
+  // Variante compacta para uso em espaços menores
+  if (variant === 'compact') {
+    return (
+      <div className="flex items-center space-x-1 justify-center">
+        <span className="font-medium text-xs">{normalizedPopularity}</span>
+        <span className={`flex items-center ${
+          trend === 'up' 
+            ? 'text-emerald-500'
+            : trend === 'down'
+              ? 'text-rose-500'
+              : 'text-gray-500'
+        }`}>
+          {renderTrendIcon()}
+        </span>
+      </div>
+    );
+  }
   
+  // Variante padrão
   return (
     <div className="flex items-center space-x-2 justify-between w-full">
       {/* Pontuação no formato X/100 */}
