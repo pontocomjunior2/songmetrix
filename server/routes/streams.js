@@ -57,16 +57,25 @@ router.get('/:id', requireAuth, async (req, res) => {
  */
 router.post('/', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { url, name, sheet, cidade, estado, regiao, segmento, index } = req.body;
+    const { 
+      url, name, sheet, cidade, estado, regiao, segmento, index,
+      formato, frequencia, pais, facebook, instagram, twitter, youtube, site, monitoring_url, logo_url 
+    } = req.body;
     
-    // Validação básica
+    // Validação básica dos campos obrigatórios
     if (!url || !name || !sheet || !cidade || !estado || !regiao || !segmento || !index) {
-      return res.status(400).json({ error: 'Todos os campos são obrigatórios' });
+      return res.status(400).json({ error: 'Todos os campos obrigatórios devem ser preenchidos' });
     }
     
     const result = await pool.query(
-      'INSERT INTO streams (url, name, sheet, cidade, estado, regiao, segmento, index) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-      [url, name, sheet, cidade, estado, regiao, segmento, index]
+      `INSERT INTO streams (
+        url, name, sheet, cidade, estado, regiao, segmento, index,
+        formato, frequencia, pais, facebook, instagram, twitter, youtube, site, monitoring_url, logo_url
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
+      [
+        url, name, sheet, cidade, estado, regiao, segmento, index,
+        formato || segmento, frequencia, pais || 'Brasil', facebook, instagram, twitter, youtube, site, monitoring_url, logo_url
+      ]
     );
     
     res.status(201).json(result.rows[0]);
@@ -84,23 +93,48 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
 router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { url, name, sheet, cidade, estado, regiao, segmento, index } = req.body;
+    console.log('Atualizando stream com ID:', id);
+    console.log('Dados recebidos:', req.body);
     
-    // Validação básica
+    const { 
+      url, name, sheet, cidade, estado, regiao, segmento, index,
+      formato, frequencia, pais, facebook, instagram, twitter, youtube, site, monitoring_url, logo_url 
+    } = req.body;
+    
+    // Validação básica dos campos obrigatórios
     if (!url || !name || !sheet || !cidade || !estado || !regiao || !segmento || !index) {
-      return res.status(400).json({ error: 'Todos os campos são obrigatórios' });
+      console.log('Validação falhou. Campos obrigatórios faltando.');
+      return res.status(400).json({ error: 'Todos os campos obrigatórios devem ser preenchidos' });
     }
     
     // Verificar se o stream existe
     const checkResult = await pool.query('SELECT * FROM streams WHERE id = $1', [id]);
     if (checkResult.rows.length === 0) {
+      console.log('Stream não encontrado com ID:', id);
       return res.status(404).json({ error: 'Stream não encontrado' });
     }
     
-    const result = await pool.query(
-      'UPDATE streams SET url = $1, name = $2, sheet = $3, cidade = $4, estado = $5, regiao = $6, segmento = $7, index = $8, updated_at = NOW() WHERE id = $9 RETURNING *',
-      [url, name, sheet, cidade, estado, regiao, segmento, index, id]
-    );
+    console.log('Stream encontrado. Atualizando...');
+    
+    const queryText = `UPDATE streams SET 
+      url = $1, name = $2, sheet = $3, cidade = $4, estado = $5, regiao = $6, segmento = $7, index = $8,
+      formato = $9, frequencia = $10, pais = $11, facebook = $12, instagram = $13, twitter = $14, youtube = $15, site = $16,
+      monitoring_url = $17, logo_url = $18, updated_at = NOW() 
+    WHERE id = $19 RETURNING *`;
+    
+    const values = [
+      url, name, sheet, cidade, estado, regiao, segmento, index,
+      formato || segmento, frequencia, pais || 'Brasil', facebook, instagram, twitter, youtube, site,
+      monitoring_url, logo_url, id
+    ];
+    
+    console.log('Query SQL:', queryText);
+    console.log('Valores:', values);
+    
+    const result = await pool.query(queryText, values);
+    
+    console.log('Atualização bem-sucedida. Linhas afetadas:', result.rowCount);
+    console.log('Dados atualizados:', result.rows[0]);
     
     res.json(result.rows[0]);
   } catch (error) {
