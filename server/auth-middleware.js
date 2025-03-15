@@ -397,13 +397,8 @@ export const authenticateUser = async (req, res, next) => {
     // Determinar o status correto
     let correctStatus;
 
-    // Se o usuário é novo, deve ser TRIAL (prioridade máxima)
-    if (isNewUser) {
-      correctStatus = 'TRIAL';
-      console.log('Usuário novo, definindo status como TRIAL');
-    } 
-    // Se o usuário é ADMIN em qualquer lugar, manter como ADMIN
-    else if (userStatus === 'ADMIN' || dbUser?.status === 'ADMIN') {
+    // Se o usuário é ADMIN em qualquer lugar, manter como ADMIN (prioridade máxima)
+    if (userStatus === 'ADMIN' || dbUser?.status === 'ADMIN') {
       correctStatus = 'ADMIN';
       console.log('Usuário é ADMIN, mantendo status');
     }
@@ -411,6 +406,11 @@ export const authenticateUser = async (req, res, next) => {
     else if (userStatus === 'ATIVO' || dbUser?.status === 'ATIVO') {
       correctStatus = 'ATIVO';
       console.log('Usuário é ATIVO, mantendo status');
+    }
+    // Se o usuário é novo e não tem status definido, definir como TRIAL
+    else if (isNewUser && !userStatus && !dbUser?.status) {
+      correctStatus = 'TRIAL';
+      console.log('Usuário novo sem status, definindo como TRIAL');
     }
     // Se o usuário tem status TRIAL em qualquer lugar e ainda está no período de trial, manter como TRIAL
     else if ((userStatus === 'TRIAL' || dbUser?.status === 'TRIAL') && isNewUser) {

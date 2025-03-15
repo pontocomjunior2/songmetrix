@@ -1,7 +1,7 @@
 import React, { useState, useEffect, Suspense, memo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase-client';
-import { Radio as RadioIcon, Music, Info, Clock, RefreshCw } from 'lucide-react';
+import { Radio as RadioIcon, Music, Info, Clock, RefreshCw, LockIcon } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 
@@ -76,6 +76,16 @@ const Dashboard = () => {
   
   // Cache TTL em milissegundos (5 minutos)
   const CACHE_TTL = 5 * 60 * 1000;
+
+  // Verificar se o usuário está com TRIAL expirado
+  const isExpiredTrial = () => {
+    // Verificar se o status atual é INATIVO e se o status anterior era TRIAL
+    const previousStatus = localStorage.getItem('previousUserStatus');
+    return userStatus === 'INATIVO' && previousStatus === 'TRIAL';
+  };
+
+  // Classe CSS para aplicar o efeito de embaçamento
+  const blurClass = isExpiredTrial() ? 'filter blur-md pointer-events-none' : '';
 
   // Buscar rádios favoritas do usuário
   useEffect(() => {
@@ -391,6 +401,29 @@ const Dashboard = () => {
         </div>
       )}
 
+      {isExpiredTrial() && (
+        <div className="bg-yellow-50 dark:bg-yellow-900 border-l-4 border-yellow-500 p-4 mb-4 rounded-md">
+          <div className="flex items-center">
+            <LockIcon className="h-6 w-6 text-yellow-500 dark:text-yellow-400 mr-2" />
+            <div>
+              <p className="font-medium text-yellow-700 dark:text-yellow-300">Período de avaliação expirado</p>
+              <p className="text-yellow-600 dark:text-yellow-200">
+                Seu período de avaliação gratuito expirou. Alguns componentes estão com visualização limitada.
+              </p>
+              <p className="text-sm text-yellow-500 dark:text-yellow-300 mt-1">
+                Para desbloquear todas as funcionalidades, assine um de nossos planos.
+              </p>
+              <button 
+                onClick={() => navigate('/plans')} 
+                className="mt-2 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-md transition-colors"
+              >
+                Ver planos
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
         <div className="flex items-center gap-2">
@@ -424,7 +457,7 @@ const Dashboard = () => {
         </div>
 
         {/* Top Músicas */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
+        <div className={`bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm ${blurClass}`}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <Music className="w-5 h-5" />
@@ -435,7 +468,7 @@ const Dashboard = () => {
         </div>
 
         {/* Artistas Mais Tocados */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
+        <div className={`bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm ${blurClass}`}>
           <div className="mb-4">
             <TooltipHeader title="Artistas Mais Tocados" />
           </div>
@@ -451,7 +484,7 @@ const Dashboard = () => {
         </div>
 
         {/* Distribuição por Gênero */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
+        <div className={`bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm ${blurClass}`}>
           <div className="mb-4">
             <TooltipHeader title="Distribuição por Gênero" />
           </div>

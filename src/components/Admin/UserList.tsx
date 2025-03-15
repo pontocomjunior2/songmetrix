@@ -38,6 +38,7 @@ export default function UserList() {
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [newStatus, setNewStatus] = useState<UserStatusType>('INATIVO');
   const [refreshing, setRefreshing] = useState(false);
+  const [processingTasks, setProcessingTasks] = useState(false);
   const { updateUserStatus, currentUser, userStatus } = useAuth();
 
   useEffect(() => {
@@ -77,11 +78,57 @@ export default function UserList() {
         throw fetchError;
       }
       
-      console.log('Usuários carregados:', usersData);
+      console.log('Usuários carregados da tabela:', usersData);
       
-      // Não vamos mais alterar automaticamente o status dos usuários
-      // Isso respeitará o status definido pelo administrador
+      // Verificar com o servidor se há informações adicionais sobre os usuários
+      if (usersData?.length > 0) {
+        const session = await supabase.auth.getSession();
+        if (!session.data.session) {
+          throw new Error('Sessão não encontrada');
+        }
+        
+        try {
+          // Chamar API para obter informações atualizadas dos usuários
+          const response = await fetch('/api/users/metadata', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.data.session.access_token}`
+            },
+            body: JSON.stringify({
+              userIds: usersData.map(user => user.id)
+            })
+          });
+          
+          if (response.ok) {
+            const result = await response.json();
+            
+            if (result.users && Array.isArray(result.users)) {
+              // Combinar os dados da tabela users com os metadados
+              const combinedUsers = usersData.map(tableUser => {
+                const metadataUser = result.users.find((u: { id: string, metadata?: { status?: string } }) => u.id === tableUser.id);
+                if (metadataUser && metadataUser.metadata && metadataUser.metadata.status) {
+                  // Se o status nos metadados for diferente do status na tabela, use o dos metadados
+                  return {
+                    ...tableUser,
+                    status: metadataUser.metadata.status as UserStatusType
+                  };
+                }
+                return tableUser;
+              });
+              
+              console.log('Usuários combinados com metadados:', combinedUsers);
+              setUsers(combinedUsers);
+              return;
+            }
+          }
+        } catch (apiError) {
+          console.error('Erro ao buscar metadados:', apiError);
+          // Continuar com os dados da tabela em caso de erro
+        }
+      }
       
+      // Se não conseguir dados combinados, usar apenas os dados da tabela
       setUsers(usersData);
     } catch (error: any) {
       console.error('Erro ao carregar usuários:', error);
@@ -126,39 +173,136 @@ export default function UserList() {
       // Se o novo status for TRIAL, vamos incluir a data atual como trial_start_date
       const additionalData = newStatus === 'TRIAL' ? { trial_start_date: new Date().toISOString() } : {};
       
-      const response = await fetch('/api/users/update-status', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.data.session.access_token}`
-        },
-        body: JSON.stringify({
-          userId,
-          newStatus,
-          ...additionalData
-        })
-      });
+      // Declarar variáveis fora do bloco try/catch para torná-las acessíveis em todo o escopo da função
+      let responseData: any = null;
+      let logoutNotice = '';
       
-      const result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(result.error || 'Erro ao atualizar status');
+      try {
+        // NOVA LÓGICA: Se estamos definindo como ADMIN, usar a rota dedicada
+        if (newStatus === 'ADMIN') {
+          try {
+            console.log('Usando rota dedicada para definir status ADMIN...');
+            
+            const adminResponse = await fetch('/api/admin/set-admin-status', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.data.session.access_token}`
+              },
+              body: JSON.stringify({ userId })
+            });
+            
+            const adminResult = await adminResponse.json();
+            responseData = adminResult;
+            
+            if (!adminResponse.ok || !adminResult.success) {
+              console.error('Falha na definição de ADMIN:', adminResult);
+              throw new Error(adminResult.message || 'Erro ao definir status ADMIN');
+            }
+            
+            console.log('Resposta do servidor (rota ADMIN dedicada):', adminResult);
+            
+            // Exibir notificação específica para ADMIN
+            if (adminResult.instructions) {
+              reactToast.info(adminResult.instructions, { autoClose: 8000 });
+            }
+          } catch (adminError) {
+            console.error('Erro na rota ADMIN dedicada:', adminError);
+            // Falhar completamente para evitar inconsistências
+            throw adminError;
+          }
+        } else {
+          // Para outros status, manter a lógica original
+          try {
+            const response = await fetch('/api/users/update-status', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.data.session.access_token}`
+              },
+              body: JSON.stringify({
+                userId,
+                newStatus,
+                ...additionalData
+              })
+            });
+            
+            const result = await response.json();
+            responseData = result;
+            
+            if (!response.ok) {
+              console.error('Falha na atualização padrão:', result.error);
+              console.log('Tentando método alternativo para definir status...');
+              throw new Error(result.error || 'Erro ao atualizar status');
+            }
+            
+            console.log('Resposta do servidor (método padrão):', result);
+          } catch (error) {
+            // Se houver erro, tentar o método direto
+            console.log('Usando método direto para atualização...');
+            
+            const directResponse = await fetch('/api/users/direct-update-status', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.data.session.access_token}`
+              },
+              body: JSON.stringify({
+                userId,
+                newStatus,
+                ...additionalData
+              })
+            });
+            
+            const directResult = await directResponse.json();
+            responseData = directResult;
+            
+            if (!directResponse.ok) {
+              throw new Error(directResult.error || 'Erro ao atualizar status (método direto)');
+            }
+            
+            console.log('Resposta do servidor (método direto):', directResult);
+          }
+        }
+      } catch (error) {
+        // Atualizar a lista de usuários localmente
+        setUsers(users.map(user => {
+          if (user.id === userId) {
+            // Usar o status fornecido pelo backend nos metadados, mesmo que a tabela users
+            // não tenha sido atualizada devido a restrições de política
+            const effectiveStatus = responseData?.newMetadata?.status || newStatus;
+            console.log(`Atualizando status do usuário ${userId} na interface para ${effectiveStatus}`);
+            return { ...user, status: effectiveStatus };
+          }
+          return user;
+        }));
+        
+        setEditingUser(null);
+        
+        // Mostrar notificação de sucesso
+        reactToast.success(`Status do usuário alterado para ${newStatus}`);
+        
+        // Exibir a mensagem de notificação sobre logout/login se estiver presente na resposta
+        if (logoutNotice) {
+          reactToast.info(logoutNotice, {
+            autoClose: 8000, // Mantém a notificação visível por mais tempo
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true
+          });
+        }
+        
+        // Se estamos promovendo para ADMIN e houve uma notificação de sistema, adicionar uma
+        // notificação extra sobre a atualização da interface
+        if (newStatus === 'ADMIN' && logoutNotice) {
+          setTimeout(() => {
+            reactToast.info("A interface mostrará o status atual mesmo que a tabela não tenha sido atualizada. O dropdown será sincronizado na próxima vez que o usuário acessar o sistema.", {
+              autoClose: 10000,
+              pauseOnHover: true
+            });
+          }, 1000);
+        }
       }
-      
-      console.log('Resposta do servidor:', result);
-      
-      // Atualizar a lista de usuários localmente
-      setUsers(users.map(user => 
-        user.id === userId ? { ...user, status: newStatus } : user
-      ));
-      
-      setEditingUser(null);
-      
-      // Mostrar notificação de sucesso
-      reactToast.success(`Status do usuário alterado com sucesso para ${newStatus}`);
-      
-      // Recarregar a lista para garantir que temos os dados mais atualizados
-      await loadUsers();
     } catch (error: any) {
       console.error('Erro ao atualizar status:', error);
       setError(`Erro ao atualizar status: ${error.message}`);
@@ -277,6 +421,49 @@ export default function UserList() {
     }
   };
 
+  const handleProcessTasks = async () => {
+    try {
+      setProcessingTasks(true);
+      setError('');
+      
+      const session = await supabase.auth.getSession();
+      if (!session.data.session) {
+        throw new Error('Sessão não encontrada');
+      }
+      
+      const response = await fetch('/api/admin/process-tasks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.data.session.access_token}`
+        }
+      });
+      
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Erro ao processar tarefas');
+      }
+      
+      console.log('Resposta do processamento de tarefas:', result);
+      
+      if (result.results && result.results.length > 0) {
+        reactToast.success(`${result.message}`);
+        
+        // Recarregar a lista de usuários para refletir as mudanças
+        await loadUsers();
+      } else {
+        reactToast.info('Nenhuma tarefa pendente encontrada');
+      }
+    } catch (error: any) {
+      console.error('Erro ao processar tarefas:', error);
+      setError(`Erro ao processar tarefas: ${error.message}`);
+      reactToast.error(`Erro ao processar tarefas: ${error.message}`);
+    } finally {
+      setProcessingTasks(false);
+    }
+  };
+
   const formatDate = (dateString: string | undefined) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('pt-BR', {
@@ -313,6 +500,13 @@ export default function UserList() {
               disabled={refreshing}
             >
               <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
+            <button
+              onClick={handleProcessTasks}
+              className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              disabled={processingTasks}
+            >
+              {processingTasks ? 'Processando...' : 'Sincronizar Usuários'}
             </button>
           </div>
         </div>

@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
+  <style>
+    .bg { fill: #f5f8fa; }
+    .panel { fill: #ffffff; stroke: #e1e5e8; stroke-width: 1; }
+    .accent { fill: #1a377d; }
+    .accent-light { fill: #3498db; }
+    .text-dark { fill: #333333; font-family: Arial, sans-serif; }
+    .text-light { fill: #ffffff; font-family: Arial, sans-serif; }
+    .chart-bar { fill: #3498db; }
+    .chart-line { stroke: #3498db; stroke-width: 2; fill: none; }
+    .chart-area { fill: url(#chartGradient); opacity: 0.3; }
+    .chart-dot { fill: #3498db; }
+    .grid-line { stroke: #e1e5e8; stroke-width: 1; }
+    .device { fill: #ffffff; stroke: #e1e5e8; stroke-width: 2; }
+  </style>
+  
+  <defs>
+    <linearGradient id="chartGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3498db;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#3498db;stop-opacity:0" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="10" />
+      <feOffset dx="0" dy="10" result="offsetblur" />
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.2" />
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Main Device (Desktop) -->
+  <rect class="device" x="50" y="100" width="500" height="350" rx="10" filter="url(#shadow)" />
+  <rect class="accent" x="50" y="100" width="500" height="30" rx="10 10 0 0" />
+  <circle cx="70" cy="115" r="5" fill="#ff6b6b" />
+  <circle cx="90" cy="115" r="5" fill="#feca57" />
+  <circle cx="110" cy="115" r="5" fill="#1dd1a1" />
+  
+  <!-- Dashboard on Desktop -->
+  <rect class="bg" x="50" y="130" width="500" height="320" />
+  
+  <!-- Dashboard Header -->
+  <rect class="accent" x="70" y="150" width="460" height="40" rx="5" />
+  <text x="90" y="175" class="text-light" font-size="16">SONGMETRIX Dashboard</text>
+  
+  <!-- Charts and Stats -->
+  <rect class="panel" x="70" y="200" width="220" height="100" rx="5" />
+  <text x="90" y="230" class="text-dark" font-size="14" font-weight="bold">Execuções Diárias</text>
+  <polyline class="chart-line" points="90,270 120,250 150,260 180,240 210,230 240,245 270,235" />
+  
+  <rect class="panel" x="310" y="200" width="220" height="100" rx="5" />
+  <text x="330" y="230" class="text-dark" font-size="14" font-weight="bold">Top Artistas</text>
+  <rect class="chart-bar" x="330" y="250" width="150" height="10" rx="2" />
+  <rect class="chart-bar" x="330" y="270" width="120" height="10" rx="2" />
+  
+  <rect class="panel" x="70" y="310" width="460" height="120" rx="5" />
+  <text x="90" y="340" class="text-dark" font-size="14" font-weight="bold">Análise Competitiva</text>
+  
+  <!-- Mobile Device -->
+  <rect class="device" x="600" y="150" width="150" height="280" rx="20" filter="url(#shadow)" />
+  <rect class="accent" x="600" y="150" width="150" height="30" rx="20 20 0 0" />
+  <circle cx="675" cy="165" r="8" fill="#e1e5e8" />
+  
+  <!-- Mobile App Screen -->
+  <rect class="bg" x="600" y="180" width="150" height="250" />
+  
+  <!-- Mobile App Content -->
+  <rect class="accent" x="610" y="190" width="130" height="30" rx="5" />
+  <text x="620" y="210" class="text-light" font-size="10">SONGMETRIX</text>
+  
+  <rect class="panel" x="610" y="230" width="130" height="60" rx="5" />
+  <rect class="panel" x="610" y="300" width="130" height="60" rx="5" />
+  <rect class="panel" x="610" y="370" width="130" height="40" rx="5" />
+  
+  <!-- Connecting Lines -->
+  <path d="M550,200 C580,200 580,165 600,165" stroke="#3498db" stroke-width="2" stroke-dasharray="5,5" fill="none" />
+  <path d="M550,350 C580,350 580,400 600,400" stroke="#3498db" stroke-width="2" stroke-dasharray="5,5" fill="none" />
+  
+  <!-- Decorative Elements -->
+  <circle cx="580" cy="250" r="15" fill="#1a377d" opacity="0.1" />
+  <circle cx="620" cy="280" r="25" fill="#3498db" opacity="0.1" />
+  <circle cx="550" cy="320" r="20" fill="#f39c12" opacity="0.1" />
+</svg>
