@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ferramenta de Correção de Status ADMIN</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #ddd;
+            padding-bottom: 10px;
+        }
+        .container {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .instructions {
+            background-color: #e9f7ef;
+            padding: 15px;
+            border-left: 4px solid #4CAF50;
+            margin-bottom: 20px;
+        }
+        .sql-alternative {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-left: 4px solid #3498db;
+            margin-top: 20px;
+            font-family: monospace;
+            overflow-x: auto;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            background-color: #f5f5f5;
+            display: none;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            overflow-x: auto;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <h1>Ferramenta de Correção de Status ADMIN</h1>
+    
+    <div class="instructions">
+        <h3>Instruções</h3>
+        <p>Esta ferramenta permite corrigir o status de um usuário para ADMIN ou outro status quando a atualização normal não estiver funcionando.</p>
+        <p>Use esta ferramenta apenas quando:</p>
+        <ul>
+            <li>O status do usuário estiver sendo mostrado incorretamente</li>
+            <li>As permissões de administrador não estiverem funcionando corretamente</li>
+        </ul>
+        <p><strong>Importante:</strong> Você precisa estar logado como administrador para usar esta ferramenta.</p>
+    </div>
+    
+    <div class="container">
+        <div class="form-group">
+            <label for="userId">ID do Usuário:</label>
+            <input type="text" id="userId" placeholder="ex: 0b671175-c282-4e3b-b53d-e82468d315e5">
+        </div>
+        
+        <div class="form-group">
+            <label for="status">Novo Status:</label>
+            <select id="status">
+                <option value="ADMIN">ADMIN</option>
+                <option value="ATIVO">ATIVO</option>
+                <option value="INATIVO">INATIVO</option>
+                <option value="TRIAL">TRIAL</option>
+            </select>
+        </div>
+        
+        <button onclick="updateStatus()">Atualizar Status</button>
+    </div>
+    
+    <div id="result"></div>
+    
+    <div class="sql-alternative">
+        <h3>Alternativa: Usar SQL Direto</h3>
+        <p>Se a abordagem via API não funcionar, você pode executar o seguinte SQL diretamente no SQL Editor do Supabase:</p>
+        <pre>
+-- Substitua os valores
+DO $$
+DECLARE
+  target_user_id UUID := '0b671175-c282-4e3b-b53d-e82468d315e5';
+  new_status TEXT := 'ADMIN';
+BEGIN
+  -- Desativar RLS temporariamente
+  SET session_replication_role = 'replica';
+  
+  -- Atualizar status
+  UPDATE public.users 
+  SET status = new_status, updated_at = NOW() 
+  WHERE id = target_user_id;
+  
+  -- Reativar RLS
+  SET session_replication_role = 'origin';
+END
+$$;</pre>
+    </div>
+    
+    <script>
+        async function updateStatus() {
+            const userId = document.getElementById('userId').value.trim();
+            const status = document.getElementById('status').value;
+            const resultDiv = document.getElementById('result');
+            
+            if (!userId) {
+                showResult('Erro: ID do usuário é obrigatório', true);
+                return;
+            }
+            
+            try {
+                // Obter token do localStorage (assumindo que está no formato do Supabase)
+                const token = localStorage.getItem('supabase.auth.token');
+                let bearerToken = '';
+                
+                if (token) {
+                    try {
+                        const tokenData = JSON.parse(token);
+                        bearerToken = tokenData.access_token || '';
+                    } catch (e) {
+                        console.error('Erro ao analisar token:', e);
+                    }
+                }
+                
+                if (!bearerToken) {
+                    showResult('Erro: Você precisa estar logado como administrador para usar esta ferramenta', true);
+                    return;
+                }
+                
+                showResult('Enviando solicitação...', false);
+                
+                // Tentar primeiro a nova rota especializada
+                const forceResponse = await fetch('/api/admin/force-update-status', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${bearerToken}`
+                    },
+                    body: JSON.stringify({ userId, newStatus: status })
+                });
+                
+                const forceData = await forceResponse.json();
+                
+                if (forceResponse.ok) {
+                    showResult(`✅ Operação concluída com sucesso!\n\n${JSON.stringify(forceData, null, 2)}`, false);
+                } else {
+                    // Se a rota especializada falhar, tentar a rota normal
+                    console.log('Rota especializada falhou, tentando rota padrão...');
+                    
+                    const response = await fetch('/api/users/update-status', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${bearerToken}`
+                        },
+                        body: JSON.stringify({ userId, newStatus: status })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        showResult(`✅ Status atualizado com sucesso (rota padrão)!\n\n${JSON.stringify(data, null, 2)}`, false);
+                    } else {
+                        showResult(`❌ Erro (ambas as rotas falharam):\n\nRota especializada: ${JSON.stringify(forceData)}\n\nRota padrão: ${JSON.stringify(data)}`, true);
+                    }
+                }
+            } catch (error) {
+                showResult(`❌ Erro ao enviar solicitação: ${error.message}`, true);
+            }
+        }
+        
+        function showResult(message, isError) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `<p class="${isError ? 'error' : 'success'}">${message}</p>`;
+            resultDiv.style.display = 'block';
+        }
+    </script>
+</body>
+</html> 

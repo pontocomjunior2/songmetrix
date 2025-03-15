@@ -7,6 +7,7 @@ import ProtectedRoute from './components/Auth/ProtectedRoute';
 import AdminRoute from './components/Auth/AdminRoute';
 import FirstAccessRoute from './components/Auth/FirstAccessRoute';
 import PendingApproval from './components/Auth/PendingApproval';
+// TrialExpired import removed
 import MainLayout from './components/Layout/MainLayout';
 import Dashboard from './components/Dashboard';
 import Ranking from './components/Ranking';
@@ -35,6 +36,7 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/pending-approval" element={<PendingApproval />} />
+          {/* TrialExpired route removed */}
           <Route path="/payment/success" element={<PaymentSuccess />} />
           <Route path="/payment/canceled" element={<PaymentCanceled />} />
           <Route path="/first-access" element={<FirstAccessRoute />} />
