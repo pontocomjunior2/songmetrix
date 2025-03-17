@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 import { RadioStatus } from '../types/components';
 import { supabase } from '../lib/supabase-client';
+import { useNavigate } from 'react-router-dom';
 
 interface FavoriteRadiosProps {
   onSave: (selectedRadios: string[]) => void;
@@ -15,56 +16,68 @@ const FavoriteRadios: React.FC<FavoriteRadiosProps> = ({ onSave }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [retryCount, setRetryCount] = useState(0);
+  const [firstVisit, setFirstVisit] = useState(false);
+  const navigate = useNavigate();
+
+  // Verificar se é primeira visita (sem rádios favoritas)
+  useEffect(() => {
+    if (currentUser) {
+      const userFavorites = currentUser.user_metadata?.favorite_radios || [];
+      if (userFavorites.length === 0) {
+        setFirstVisit(true);
+      } else {
+        // Pré-selecionar as rádios favoritas do usuário
+        setSelectedRadios(userFavorites);
+      }
+    }
+  }, [currentUser]);
 
   useEffect(() => {
-    if (retryCount < 3) { // Limitar a 3 tentativas
-      fetchRadios();
-    }
-  }, [retryCount]);
+    fetchRadios();
+  }, []);
+
+  const getAuthHeaders = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    };
+  };
 
   const fetchRadios = async () => {
     try {
       setLoading(true);
       setError('');
       
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
+      const headers = await getAuthHeaders();
+      
+      // Adicionar timeout para a requisição
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 segundos
+      
       const response = await fetch('/api/radios/status', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers, 
+        signal: controller.signal 
       });
+      
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
-        if (response.status === 403) {
-          // Se receber 403, esperar um pouco e tentar novamente
-          setTimeout(() => {
-            setRetryCount(prev => prev + 1);
-          }, 2000);
-          return;
-        }
-        throw new Error('Falha ao carregar lista de rádios');
+        throw new Error(`Erro ao carregar rádios: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
-      if (Array.isArray(data) && data.length > 0) {
-        setRadios(data);
-        setError('');
-      } else {
-        setError('Nenhuma rádio disponível no momento');
-      }
-    } catch (error) {
-      console.error('Erro ao carregar rádios:', error);
-      setError('Não foi possível carregar a lista de rádios. Por favor, tente novamente.');
       
-      // Se ainda não atingiu o limite de tentativas, tentar novamente
-      if (retryCount < 3) {
-        setTimeout(() => {
-          setRetryCount(prev => prev + 1);
-        }, 2000);
+      if (!data || !Array.isArray(data) || data.length === 0) {
+        throw new Error('Nenhuma rádio disponível no momento.');
       }
-    } finally {
+      
+      setRadios(data);
+      setLoading(false);
+    } catch (error) {
+      console.error('Erro ao buscar rádios:', error);
+      setError('Erro ao carregar rádios. Por favor, tente novamente.');
       setLoading(false);
     }
   };
@@ -92,6 +105,11 @@ const FavoriteRadios: React.FC<FavoriteRadiosProps> = ({ onSave }) => {
 
       // Call the parent's onSave callback to update UI
       await onSave(selectedRadios);
+      
+      // Se for primeira visita, redirecionar para o dashboard
+      if (firstVisit) {
+        navigate('/dashboard');
+      }
     } catch (error) {
       console.error('Erro ao salvar rádios favoritas:', error);
       setError('Não foi possível salvar suas rádios favoritas. Por favor, tente novamente.');
@@ -101,7 +119,6 @@ const FavoriteRadios: React.FC<FavoriteRadiosProps> = ({ onSave }) => {
   };
 
   const handleRetry = () => {
-    setRetryCount(0); // Resetar contador de tentativas
     fetchRadios();
   };
 
@@ -119,23 +136,34 @@ const FavoriteRadios: React.FC<FavoriteRadiosProps> = ({ onSave }) => {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
       <div className="space-y-4">
+        {firstVisit && (
+          <div className="bg-blue-50 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 p-3 rounded-lg mb-4">
+            <p>Bem-vindo(a) ao Songmetrix! Para começar, selecione suas rádios favoritas.</p>
+            <p className="mt-2 text-sm">Estas informações serão usadas para personalizar seu dashboard.</p>
+          </div>
+        )}
+        
         {error && (
           <div className="bg-red-50 dark:bg-red-900/50 text-red-600 dark:text-red-400 p-3 rounded-lg flex justify-between items-center">
             <span>{error}</span>
-            {retryCount >= 3 && (
-              <button
-                onClick={handleRetry}
-                className="px-3 py-1 bg-red-100 dark:bg-red-800 rounded-md text-sm hover:bg-red-200 dark:hover:bg-red-700"
-              >
-                Tentar novamente
-              </button>
-            )}
+            <button
+              onClick={handleRetry}
+              className="px-3 py-1 bg-red-100 dark:bg-red-800 rounded-md text-sm hover:bg-red-200 dark:hover:bg-red-700"
+            >
+              Tentar novamente
+            </button>
           </div>
         )}
 
         {radios.length === 0 ? (
           <div className="text-center text-gray-500 dark:text-gray-400 py-8">
             Nenhuma rádio disponível no momento.
+            <button
+              onClick={handleRetry}
+              className="block mx-auto mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Tentar novamente
+            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

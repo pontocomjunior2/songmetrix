@@ -2,11 +2,25 @@
 import express from 'express';
 import streamsRoutes from './routes/streams.js';
 import uploadsRoutes from './routes/uploads.js';
+import dashboardRoutes from './routes/dashboard.js';
+import executionsRoutes from './routes/executions.js';
+import radiosRoutes from './routes/radios.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import pkg from 'pg';
+const { Pool } = pkg;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Configuração da conexão com o banco de dados
+const pool = new Pool({
+  user: process.env.POSTGRES_USER,
+  host: process.env.POSTGRES_HOST,
+  database: process.env.POSTGRES_DB,
+  password: process.env.POSTGRES_PASSWORD,
+  port: process.env.POSTGRES_PORT,
+});
 
 export default function registerRoutes(app) {
   // Servir arquivos estáticos da pasta uploads
@@ -17,6 +31,60 @@ export default function registerRoutes(app) {
   
   // Registrar as rotas de uploads
   app.use('/api/uploads', uploadsRoutes);
+  
+  // Registrar as rotas do dashboard
+  app.use('/api/dashboard', dashboardRoutes);
+  
+  // Registrar as rotas de execuções
+  app.use('/api/executions', executionsRoutes);
+  
+  // Registrar as rotas de rádios
+  app.use('/api/radios', radiosRoutes);
+  
+  // Rota de diagnóstico para verificar a conexão com o banco de dados
+  app.get('/api/diagnostico', async (req, res) => {
+    try {
+      // Verificar a conexão com o banco de dados
+      const dbResult = await pool.query('SELECT NOW() as time');
+      
+      // Verificar variáveis de ambiente
+      const env = {
+        NODE_ENV: process.env.NODE_ENV,
+        VITE_ENV: process.env.VITE_ENV,
+        POSTGRES_HOST: process.env.POSTGRES_HOST,
+        POSTGRES_DB: process.env.POSTGRES_DB,
+        POSTGRES_PORT: process.env.POSTGRES_PORT,
+        VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL ? 'Configurado' : 'Não configurado',
+        SUPABASE_URL: process.env.SUPABASE_URL ? 'Configurado' : 'Não configurado',
+        VITE_API_BASE_URL: process.env.VITE_API_BASE_URL
+      };
+      
+      res.json({
+        status: 'OK',
+        timestamp: new Date().toISOString(),
+        database: {
+          connected: true,
+          time: dbResult.rows[0].time
+        },
+        environment: env,
+        routes: {
+          streams: '/api/streams',
+          uploads: '/api/uploads',
+          dashboard: '/api/dashboard',
+          executions: '/api/executions',
+          radios: '/api/radios'
+        }
+      });
+    } catch (error) {
+      console.error('Erro no diagnóstico:', error);
+      res.status(500).json({
+        status: 'ERROR',
+        timestamp: new Date().toISOString(),
+        error: error.message,
+        stack: process.env.NODE_ENV === 'production' ? null : error.stack
+      });
+    }
+  });
   
   // Aqui podem ser registradas outras rotas no futuro
   

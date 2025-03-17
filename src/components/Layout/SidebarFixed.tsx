@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserStatus } from '../../lib/auth';
-import { Home, BarChart3, FileText, Users, Type, Radio, LogOut, Clock, X, Music } from 'lucide-react';
+import { Home, BarChart3, FileText, Users, Type, Radio, LogOut, Clock, X } from 'lucide-react';
 import clsx from 'clsx';
 
 interface SidebarProps {
@@ -39,11 +39,6 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
       name: 'Relatórios',
       icon: FileText,
       view: 'relatorios'
-    },
-    {
-      name: 'Spotify',
-      icon: Music,
-      view: 'spotify'
     }
   ];
 
