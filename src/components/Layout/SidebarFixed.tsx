@@ -54,9 +54,19 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
       view: 'admin/abbreviations'
     },
     {
-      name: 'Gerenciar Streams',
+      name: 'Gerenciar Rádios',
       icon: Radio,
-      view: 'admin/streams'
+      view: 'admin/radios',
+      subItems: [
+        {
+          name: 'Streams',
+          view: 'admin/streams'
+        },
+        {
+          name: 'Relay',
+          view: 'admin/relay-streams'
+        }
+      ]
     }
   ];
 
@@ -97,23 +107,44 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
       {/* Navigation Menu */}
       <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
         {menuItems.map((item) => (
-          <button
-            key={item.view}
-            onClick={() => handleItemClick(item.view)}
-            className={`
-              w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium
-              transition-colors duration-150 ease-in-out
-              ${currentView === item.view
-                ? 'bg-white/10 text-white'
-                : 'text-white/70 hover:text-white hover:bg-white/5'
-              }
-              ${isMobile ? 'text-base py-4' : ''}
-            `}
-            aria-current={currentView === item.view ? 'page' : undefined}
-          >
-            <item.icon className={`${isMobile ? 'w-6 h-6' : 'w-5 h-5'} flex-shrink-0`} />
-            <span className="truncate">{item.name}</span>
-          </button>
+          <div key={item.view}>
+            <button
+              onClick={() => handleItemClick(item.view)}
+              className={`
+                w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium
+                transition-colors duration-150 ease-in-out
+                ${currentView === item.view || (item.subItems && item.subItems.some(sub => currentView === sub.view))
+                  ? 'bg-white/10 text-white'
+                  : 'text-white/70 hover:text-white hover:bg-white/5'
+                }
+                ${isMobile ? 'text-base py-4' : ''}
+              `}
+              aria-current={currentView === item.view ? 'page' : undefined}
+            >
+              <item.icon className={`${isMobile ? 'w-6 h-6' : 'w-5 h-5'} flex-shrink-0`} />
+              <span className="truncate">{item.name}</span>
+            </button>
+            {item.subItems && (
+              <div className="ml-8 mt-1 space-y-1">
+                {item.subItems.map((subItem) => (
+                  <button
+                    key={subItem.view}
+                    onClick={() => handleItemClick(subItem.view)}
+                    className={`
+                      w-full flex items-center gap-3 px-4 py-2 rounded-lg text-sm font-medium
+                      transition-colors duration-150 ease-in-out
+                      ${currentView === subItem.view
+                        ? 'bg-white/10 text-white'
+                        : 'text-white/70 hover:text-white hover:bg-white/5'
+                      }
+                    `}
+                  >
+                    <span className="truncate">{subItem.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         ))}
       </nav>
 

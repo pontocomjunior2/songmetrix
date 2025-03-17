@@ -5,6 +5,7 @@ import uploadsRoutes from './routes/uploads.js';
 import dashboardRoutes from './routes/dashboard.js';
 import executionsRoutes from './routes/executions.js';
 import radiosRoutes from './routes/radios.js';
+import relayStreamsRoutes from './routes/relay-streams.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import pkg from 'pg';
@@ -40,6 +41,9 @@ export default function registerRoutes(app) {
   
   // Registrar as rotas de rádios
   app.use('/api/radios', radiosRoutes);
+
+  // Registrar as rotas de relay streams
+  app.use('/api/relay-streams', relayStreamsRoutes);
   
   // Rota de diagnóstico para verificar a conexão com o banco de dados
   app.get('/api/diagnostico', async (req, res) => {
@@ -72,7 +76,8 @@ export default function registerRoutes(app) {
           uploads: '/api/uploads',
           dashboard: '/api/dashboard',
           executions: '/api/executions',
-          radios: '/api/radios'
+          radios: '/api/radios',
+          relayStreams: '/api/relay-streams'
         }
       });
     } catch (error) {
@@ -89,4 +94,4 @@ export default function registerRoutes(app) {
   // Aqui podem ser registradas outras rotas no futuro
   
   console.log('Rotas registradas com sucesso');
-} 
+}
