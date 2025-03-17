@@ -110,7 +110,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         },
         body: JSON.stringify({
           userId,
-          newStatus
+          status: newStatus
         })
       });
 
@@ -159,10 +159,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // Verificar status permitidos
       if (dbUser.status === 'ADMIN' || dbUser.status === 'ATIVO' || dbUser.status === 'TRIAL') {
         if (isMounted.current) {
-          // Armazenar o status anterior no localStorage antes de atualizar
-          if (userStatus) {
-            localStorage.setItem('previousUserStatus', userStatus);
-          }
           setCurrentUser(user);
           setUserStatus(dbUser.status as UserStatusType);
         }
@@ -173,7 +169,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           const now = new Date();
           const diffTime = Math.abs(now.getTime() - createdAt.getTime());
           const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-          const daysRemaining = Math.max(0, 14 - diffDays);
+          const daysRemaining = Math.max(0, 7 - diffDays);
           
           if (isMounted.current) {
             setTrialDaysRemaining(daysRemaining);
@@ -186,18 +182,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               .update({ status: 'INATIVO' })
               .eq('id', user.id);
               
-            // Armazenar que o usuário era TRIAL antes de ficar INATIVO
-            localStorage.setItem('previousUserStatus', 'TRIAL');
-            
-            // Não redirecionamos mais para /plans, permitimos acesso ao dashboard com restrições
-            if (isMounted.current) {
-              setCurrentUser(user);
-              setUserStatus('INATIVO');
-              setTrialDaysRemaining(0);
-              setLoading(false);
-            }
+            navigate('/plans', { 
+              state: { 
+                trialExpired: true,
+                message: 'Seu período de avaliação gratuito expirou. Escolha um plano para continuar utilizando o sistema.'
+              },
+              replace: true
+            });
             isRefreshing.current = false;
-            return true;
+            return false;
           }
         } else if (isMounted.current) {
           setTrialDaysRemaining(null);
@@ -209,28 +202,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         isRefreshing.current = false;
         return true;
       } else if (dbUser.status === 'INATIVO') {
-        // Verificar se o usuário estava em TRIAL anteriormente
-        const previousStatus = localStorage.getItem('previousUserStatus');
-        
-        if (previousStatus === 'TRIAL') {
-          // Se o usuário estava em TRIAL e agora está INATIVO, permitimos acesso ao dashboard com restrições
-          if (isMounted.current) {
-            setCurrentUser(user);
-            setUserStatus('INATIVO');
-            setTrialDaysRemaining(0);
-            setLoading(false);
-          }
-          isRefreshing.current = false;
-          return true;
-        } else {
-          // Caso contrário, redirecionar para pending-approval como antes
-          navigate('/pending-approval', {
-            state: {
-              message: 'Sua conta está aguardando aprovação. Por favor, aguarde o contato do nosso atendimento.'
-            },
-            replace: true
-          });
-        }
+        // Usuário inativo - não fazer logout, apenas redirecionar
+        navigate('/pending-approval', {
+          state: {
+            message: 'Sua conta está aguardando aprovação. Por favor, aguarde o contato do nosso atendimento.'
+          },
+          replace: true
+        });
         isRefreshing.current = false;
         return false;
       } else {

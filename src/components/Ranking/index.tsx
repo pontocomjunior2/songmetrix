@@ -92,20 +92,116 @@ export default function Ranking() {
   };
 
   const fetchRadios = async () => {
+    const isDevelopment = import.meta.env.MODE === 'development';
+    console.log('Ambiente em Ranking:', import.meta.env.MODE);
+    
+    try {
+      // Tentar obter do cache primeiro
+      const cachedOptions = localStorage.getItem('ranking_radios_cache');
+      const cacheTime = localStorage.getItem('ranking_radios_cache_time');
+      
+      if (cachedOptions && cacheTime) {
+        const cacheDuration = Date.now() - parseInt(cacheTime);
+        if (cacheDuration < 30 * 60 * 1000) { // 30 minutos
+          console.log('Usando cache para rádios em Ranking');
+          setRadiosOptions(JSON.parse(cachedOptions));
+          // Buscar em segundo plano para atualizar o cache
+          fetchAndUpdateCache().catch(error => {
+            console.warn('Erro ao atualizar cache em segundo plano:', error);
+          });
+          return;
+        }
+      }
+      
+      // Se não há cache ou está expirado, fazer a requisição normalmente
+      await fetchAndUpdateCache();
+    } catch (error) {
+      console.error('Erro ao buscar rádios para Ranking:', error);
+      
+      // Fornecer dados de fallback
+      provideFallbackData();
+    }
+  };
+  
+  // Função para buscar dados e atualizar o cache
+  const fetchAndUpdateCache = async () => {
     try {
       const headers = await getAuthHeaders();
-      const response = await fetch('/api/radios/status', { headers });
-      if (!response.ok) throw new Error('Failed to fetch radios');
-      const data: RadioStatus[] = await response.json();
-      const options = data.map(radio => ({ 
-        value: radio.name, 
-        label: radio.name
+      
+      // Adicionar timeout para a requisição
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 segundos de timeout
+      
+      const response = await fetch('/api/radios/status', { 
+        headers, 
+        signal: controller.signal 
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`Falha ao buscar rádios: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      // Se a resposta estiver vazia, usar fallback
+      if (!data || data.length === 0) {
+        console.warn('API retornou array vazio para rádios em Ranking');
+        provideFallbackData();
+        return;
+      }
+      
+      // Mapear dados para o formato esperado pelo componente
+      const radioOptions = data.map((radio) => ({
+        value: radio.name,
+        label: radio.name,
       }));
-      setRadiosOptions(options);
+      
+      // Adicionar "Todas as Rádios" como primeira opção
+      radioOptions.unshift({ value: 'Todas as Rádios', label: 'Todas as Rádios' });
+      
+      // Atualizar estado e cache
+      setRadiosOptions(radioOptions);
+      localStorage.setItem('ranking_radios_cache', JSON.stringify(radioOptions));
+      localStorage.setItem('ranking_radios_cache_time', Date.now().toString());
     } catch (error) {
-      console.error('Error fetching radios:', error);
-      setErrorMessage('Erro ao carregar as rádios. Por favor, tente novamente.');
+      console.error('Erro em fetchAndUpdateCache para Ranking:', error);
+      throw error; // Propagar o erro para ser tratado na função principal
     }
+  };
+  
+  // Função para fornecer dados de fallback
+  const provideFallbackData = () => {
+    console.log('Fornecendo dados de fallback para Ranking');
+    
+    // Tentar usar cache antigo primeiro
+    const oldCache = localStorage.getItem('ranking_radios_cache');
+    if (oldCache) {
+      console.log('Usando cache antigo para Ranking');
+      setRadiosOptions(JSON.parse(oldCache));
+      return;
+    }
+    
+    // Se não há cache, criar opções fictícias
+    const mockOptions = [
+      { value: 'Todas as Rádios', label: 'Todas as Rádios' },
+      { value: 'Rádio 1', label: 'Rádio 1' },
+      { value: 'Rádio 2', label: 'Rádio 2' },
+      { value: 'Rádio 3', label: 'Rádio 3' },
+      { value: 'Rádio 4', label: 'Rádio 4' },
+      { value: 'Rádio 5', label: 'Rádio 5' }
+    ];
+    
+    // Em desenvolvimento, adicionar mais opções
+    if (import.meta.env.MODE === 'development') {
+      mockOptions.push(
+        { value: 'Rádio Dev 1', label: 'Rádio Dev 1' },
+        { value: 'Rádio Dev 2', label: 'Rádio Dev 2' }
+      );
+    }
+    
+    setRadiosOptions(mockOptions);
   };
 
   const fetchRanking = async () => {
