@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -76,6 +77,26 @@ app.use((req, res, next) => {
   console.log('Body:', req.body);
   next();
 });
+
+// Configurar middleware para servir arquivos estáticos
+app.use(express.static(path.join(__dirname, 'public')));
+console.log('Diretório de arquivos estáticos:', path.join(__dirname, 'public'));
+
+// Verificar se o diretório de uploads existe
+const uploadsDir = path.join(__dirname, 'public', 'uploads', 'logos');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log('Diretório de uploads criado:', uploadsDir);
+} else {
+  console.log('Diretório de uploads existente:', uploadsDir);
+  // Listar arquivos no diretório de uploads
+  try {
+    const files = fs.readdirSync(uploadsDir);
+    console.log('Arquivos no diretório de uploads:', files);
+  } catch (error) {
+    console.error('Erro ao listar arquivos no diretório de uploads:', error);
+  }
+}
 
 // Registrar as rotas
 registerRoutes(app);

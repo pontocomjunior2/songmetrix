@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import apiServices from '../../services/api';
 import { toast } from 'react-toastify';
@@ -36,14 +36,28 @@ const ESTADOS = [
 const imageErrorCache: Record<string, boolean> = {};
 
 // Função para salvar imagem base64 no localStorage
-const saveBase64ToLocalStorage = (url: string, base64Data: string) => {
+const saveBase64ToLocalStorage = (url: string, base64Data: string, radioId?: number | string) => {
   try {
     // Extrair apenas o nome do arquivo da URL para usar como chave
-    const fileName = url.split('/').pop() || '';
+    const fileName = url.split('/').pop()?.split('?')[0] || '';
+    
+    // Verificar se a URL contém informação da rádio
+    const radioParam = url.includes('?radio=') 
+      ? decodeURIComponent(url.split('?radio=')[1]) 
+      : '';
+    
+    // Usar o ID da rádio se disponível para garantir exclusividade
+    const radioIdentifier = radioId 
+      ? `radio_${radioId}_` 
+      : radioParam 
+        ? `${radioParam.toLowerCase().replace(/[^a-z0-9]/g, '_')}_` 
+        : '';
+    
     if (fileName) {
-      const cacheKey = `logo_cache_${fileName}`;
+      // Criar uma chave única que inclui o ID da rádio para evitar conflitos
+      const cacheKey = `logo_cache_${radioIdentifier}${fileName}`;
       localStorage.setItem(cacheKey, base64Data);
-      console.log('Imagem base64 armazenada em cache local com chave:', cacheKey);
+      console.log('Imagem base64 armazenada em cache local com chave exclusiva:', cacheKey);
       return cacheKey;
     }
   } catch (error) {
@@ -53,13 +67,40 @@ const saveBase64ToLocalStorage = (url: string, base64Data: string) => {
 };
 
 // Função para recuperar imagem base64 do localStorage
-const getBase64FromLocalStorage = (url: string): string | null => {
+const getBase64FromLocalStorage = (url: string, radioId?: number | string, radioName?: string): string | null => {
   try {
     if (!url) return null;
     
-    // Tentar encontrar pelo nome do arquivo
-    const fileName = url.split('/').pop() || '';
+    // Extrair apenas o nome do arquivo da URL para usar como chave
+    const fileName = url.split('/').pop()?.split('?')[0] || '';
+    
+    // Verificar se a URL contém informação da rádio
+    const radioParam = url.includes('?radio=') 
+      ? decodeURIComponent(url.split('?radio=')[1]) 
+      : radioName || '';
+    
     if (fileName) {
+      // Tentar encontrar pelo ID específico da rádio primeiro (mais preciso)
+      if (radioId) {
+        const radioSpecificKey = `logo_cache_radio_${radioId}_${fileName}`;
+        const cachedImage = localStorage.getItem(radioSpecificKey);
+        if (cachedImage) {
+          console.log('Imagem base64 recuperada do cache local com ID específico da rádio:', radioSpecificKey);
+          return cachedImage;
+        }
+      }
+      
+      // Tentar encontrar pelo nome específico da rádio
+      if (radioParam) {
+        const radioSpecificKey = `logo_cache_${radioParam.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${fileName}`;
+        const cachedImage = localStorage.getItem(radioSpecificKey);
+        if (cachedImage) {
+          console.log('Imagem base64 recuperada do cache local com nome específico da rádio:', radioSpecificKey);
+          return cachedImage;
+        }
+      }
+      
+      // Tentar encontrar pelo nome do arquivo
       const cacheKey = `logo_cache_${fileName}`;
       const cachedImage = localStorage.getItem(cacheKey);
       if (cachedImage) {
@@ -68,18 +109,9 @@ const getBase64FromLocalStorage = (url: string): string | null => {
       }
     }
     
-    // Se não encontrou pelo nome específico, procurar em todas as chaves do localStorage
-    // que começam com logo_cache_
-    const keys = Object.keys(localStorage);
-    for (const key of keys) {
-      if (key.startsWith('logo_cache_')) {
-        const cachedImage = localStorage.getItem(key);
-        if (cachedImage) {
-          console.log('Imagem base64 encontrada no cache local com chave:', key);
-          return cachedImage;
-        }
-      }
-    }
+    // Se não encontrou por nenhum método específico, não fazer busca geral
+    // para evitar confusão entre imagens de diferentes rádios
+    return null;
   } catch (error) {
     console.error('Erro ao recuperar imagem base64 do cache local:', error);
   }
@@ -87,15 +119,26 @@ const getBase64FromLocalStorage = (url: string): string | null => {
 };
 
 // Adicionar um componente reutilizável para exibição de imagens com tratamento de erro
-const ImageWithFallback = ({ src, alt, className }: { src: string, alt: string, className: string }) => {
+const ImageWithFallback = ({ src, alt, className, radioName, radioId }: { 
+  src: string, 
+  alt: string, 
+  className: string, 
+  radioName?: string,
+  radioId?: number | string 
+}) => {
   const [imageError, setImageError] = useState(false);
   const [imgSrc, setImgSrc] = useState<string | null>(null);
   
   useEffect(() => {
+    // Adicionar o nome da rádio à URL para busca no cache, se disponível
+    const urlWithRadio = radioName && !src.includes('?radio=') 
+      ? `${src}?radio=${encodeURIComponent(radioName)}` 
+      : src;
+      
     // Verificar se temos uma versão em cache no localStorage
-    const cachedBase64 = getBase64FromLocalStorage(src);
+    const cachedBase64 = getBase64FromLocalStorage(urlWithRadio, radioId, radioName);
     if (cachedBase64) {
-      console.log('Usando versão base64 do localStorage para:', src);
+      console.log('Usando versão base64 do localStorage para rádio:', radioName || radioId, urlWithRadio);
       setImgSrc(cachedBase64);
       return;
     }
@@ -127,7 +170,7 @@ const ImageWithFallback = ({ src, alt, className }: { src: string, alt: string, 
       console.error('Erro ao normalizar URL:', e);
       setImageError(true);
     }
-  }, [src]);
+  }, [src, radioName, radioId]);
   
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
     console.error('Erro ao carregar imagem:', src);
@@ -250,6 +293,163 @@ const ImageWithFallback = ({ src, alt, className }: { src: string, alt: string, 
   );
 };
 
+// Função para limpar o cache de imagens de uma rádio específica
+const clearRadioImageCache = (radioId?: number | string, radioName?: string, logoUrl?: string) => {
+  try {
+    if (!radioId && !radioName && !logoUrl) return;
+    
+    console.log('Limpando cache de imagens para rádio:', radioId || radioName);
+    
+    // Obter todas as chaves do localStorage
+    const keys = Object.keys(localStorage);
+    
+    // Padrões para identificar chaves relacionadas a esta rádio
+    const patterns = [
+      radioId ? `logo_cache_radio_${radioId}_` : null,
+      radioName ? `logo_cache_${radioName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_` : null
+    ].filter(Boolean);
+    
+    // Se temos uma URL específica, extrair o nome do arquivo
+    let fileName = '';
+    if (logoUrl) {
+      fileName = logoUrl.split('/').pop()?.split('?')[0] || '';
+    }
+    
+    // Remover todas as entradas que correspondem aos padrões
+    let removedCount = 0;
+    for (const key of keys) {
+      // Verificar se a chave corresponde a algum dos padrões
+      const matchesPattern = patterns.some(pattern => pattern && key.includes(pattern));
+      
+      // Verificar se a chave contém o nome do arquivo específico
+      const matchesFileName = fileName && key.includes(fileName);
+      
+      if (matchesPattern || matchesFileName) {
+        localStorage.removeItem(key);
+        removedCount++;
+        console.log('Removida entrada de cache:', key);
+      }
+    }
+    
+    console.log(`Limpeza de cache concluída. Removidas ${removedCount} entradas.`);
+  } catch (error) {
+    console.error('Erro ao limpar cache de imagens:', error);
+  }
+};
+
+// Função para limpar o cache de imagens antigas de uma rádio específica
+const clearOldImageCache = (radioId?: number | string, radioName?: string) => {
+  try {
+    if (!radioId && !radioName) return;
+    
+    console.log('Limpando cache de imagens antigas para rádio:', radioId || radioName);
+    
+    // Obter todas as chaves do localStorage
+    const keys = Object.keys(localStorage);
+    
+    // Padrões para identificar chaves relacionadas a esta rádio
+    const patterns = [
+      radioId ? `logo_cache_radio_${radioId}_` : null,
+      radioName ? `logo_cache_${radioName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_` : null
+    ].filter(Boolean);
+    
+    // Remover todas as entradas que correspondem aos padrões
+    let removedCount = 0;
+    for (const key of keys) {
+      // Verificar se a chave corresponde a algum dos padrões
+      const matchesPattern = patterns.some(pattern => pattern && key.includes(pattern));
+      
+      if (matchesPattern) {
+        localStorage.removeItem(key);
+        removedCount++;
+        console.log('Removida entrada de cache antiga:', key);
+      }
+    }
+    
+    console.log(`Limpeza de cache concluída. Removidas ${removedCount} entradas antigas.`);
+  } catch (error) {
+    console.error('Erro ao limpar cache de imagens antigas:', error);
+  }
+};
+
+// Função para verificar se uma URL de imagem existe no servidor
+const checkImageExists = async (url: string): Promise<boolean> => {
+  try {
+    // Adicionar um parâmetro de timestamp para evitar cache
+    const urlWithTimestamp = `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`;
+    const response = await fetch(urlWithTimestamp, { method: 'HEAD' });
+    return response.ok;
+  } catch (error) {
+    console.error('Erro ao verificar existência da imagem:', error);
+    return false;
+  }
+};
+
+// Função para pré-carregar imagens de todas as rádios
+const preloadAllImages = async (streams: Stream[]) => {
+  if (!streams || streams.length === 0) return;
+  
+  console.log('Iniciando pré-carregamento de imagens para', streams.length, 'streams');
+  
+  for (const stream of streams) {
+    if (!stream.logo_url) continue;
+    
+    // Verificar se já temos a imagem em cache
+    const cachedBase64 = getBase64FromLocalStorage(stream.logo_url, stream.name, stream.id?.toString());
+    
+    if (cachedBase64) {
+      console.log('Imagem já disponível em cache para:', stream.name, stream.logo_url);
+      continue;
+    }
+    
+    // Verificar se a imagem está marcada como erro no cache
+    if (imageErrorCache[stream.logo_url]) {
+      console.log('Imagem já marcada como erro no cache:', stream.logo_url);
+      continue;
+    }
+    
+    // Verificar se a imagem existe no servidor antes de tentar carregá-la
+    const imageExists = await checkImageExists(stream.logo_url);
+    if (!imageExists) {
+      console.log('Imagem não encontrada no servidor:', stream.logo_url);
+      imageErrorCache[stream.logo_url] = true;
+      continue;
+    }
+    
+    console.log('Pré-carregando imagem para rádio:', stream.name, stream.logo_url);
+    
+    // Criar um elemento de imagem para pré-carregar
+    const img = document.createElement('img');
+    
+    // Configurar handlers de sucesso e erro
+    img.onload = () => {
+      try {
+        // Converter a imagem para base64 usando canvas
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0);
+        const base64 = canvas.toDataURL('image/png');
+        
+        // Salvar no localStorage
+        saveBase64ToLocalStorage(stream.logo_url || '', base64, stream.id?.toString());
+        console.log('Imagem pré-carregada e salva em cache para:', stream.name);
+      } catch (error) {
+        console.error('Erro ao converter imagem para base64:', error);
+      }
+    };
+    
+    img.onerror = () => {
+      console.log(' Erro ao pré-carregar imagem para rádio:', stream.name, stream.logo_url);
+      imageErrorCache[stream.logo_url || ''] = true;
+    };
+    
+    // Iniciar o carregamento da imagem
+    img.src = `${stream.logo_url}${stream.logo_url.includes('?') ? '&' : '?'}t=${Date.now()}`;
+  }
+};
+
 const StreamsManager: React.FC = () => {
   const { currentUser } = useAuth();
   const [streams, setStreams] = useState<Stream[]>([]);
@@ -312,11 +512,58 @@ const StreamsManager: React.FC = () => {
     }
   };
 
+  // Atualizar a função fetchStreams para ser mais robusta
+  const fetchStreams = useCallback(async () => {
+    try {
+      setLoading(true);
+      console.log('Buscando streams...');
+      
+      // Verificar se há token no localStorage
+      const token = localStorage.getItem('token');
+      console.log('Token disponível:', !!token);
+      
+      // Usar fetch diretamente para diagnóstico
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/streams`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token || ''}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar streams: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log('Streams obtidos:', data.length);
+      
+      if (Array.isArray(data)) {
+        setStreams(data);
+        
+        // Iniciar pré-carregamento de imagens após obter os streams
+        setTimeout(() => {
+          preloadAllImages(data);
+        }, 500);
+      } else {
+        console.error('Dados recebidos não são um array:', data);
+        setStreams([]);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar streams:', error);
+      toast.error('Erro ao carregar os streams. Tente novamente mais tarde.');
+      setStreams([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [preloadAllImages]);
+
+  // Efeito para carregar streams quando o componente montar
   useEffect(() => {
     if (currentUser) {
       fetchStreams();
     }
-  }, [currentUser]);
+  }, [currentUser, fetchStreams]);
 
   useEffect(() => {
     if (streams.length > 0) {
@@ -378,11 +625,14 @@ const StreamsManager: React.FC = () => {
       console.log('Iniciando pré-carregamento de imagens para', streams.length, 'streams');
       // Pré-carregar logos para evitar problemas de CORS
       streams.forEach(stream => {
-        if (stream.logo_url) {
+        if (stream.logo_url && stream.name) {
+          // Criar URL com o nome da rádio para busca no cache
+          const urlWithRadio = `${stream.logo_url}?radio=${encodeURIComponent(stream.name)}`;
+          
           // Verificar primeiro se já temos uma versão em cache
-          const cachedBase64 = getBase64FromLocalStorage(stream.logo_url);
+          const cachedBase64 = getBase64FromLocalStorage(urlWithRadio, stream.id, stream.name);
           if (cachedBase64) {
-            console.log('Imagem já disponível em cache para:', stream.logo_url);
+            console.log('Imagem já disponível em cache para:', stream.name, stream.logo_url);
             return; // Já temos a imagem em cache
           }
 
@@ -393,7 +643,7 @@ const StreamsManager: React.FC = () => {
           }
 
           // Tentar carregar a imagem e salvá-la em base64 no localStorage
-          console.log('Pré-carregando imagem:', stream.logo_url);
+          console.log('Pré-carregando imagem para rádio:', stream.name, stream.logo_url);
           
           // Criar um elemento de imagem para pré-carregar
           const img = document.createElement('img');
@@ -410,9 +660,9 @@ const StreamsManager: React.FC = () => {
                 ctx.drawImage(img, 0, 0);
                 const base64Image = canvas.toDataURL('image/png');
                 
-                // Salvar a imagem convertida no localStorage
-                saveBase64ToLocalStorage(stream.logo_url, base64Image);
-                console.log('Imagem pré-carregada e convertida para base64 com sucesso:', stream.logo_url);
+                // Salvar a imagem convertida no localStorage com o nome da rádio
+                saveBase64ToLocalStorage(urlWithRadio, base64Image, stream.id);
+                console.log('Imagem pré-carregada e convertida para base64 com sucesso para rádio:', stream.name);
               }
             } catch (e) {
               console.error('Erro ao converter imagem para base64:', stream.logo_url, e);
@@ -421,7 +671,7 @@ const StreamsManager: React.FC = () => {
           
           img.onerror = () => {
             // Adicionar ao cache de erros para evitar novas tentativas
-            console.error('Erro ao pré-carregar imagem:', stream.logo_url);
+            console.error('Erro ao pré-carregar imagem para rádio:', stream.name, stream.logo_url);
             imageErrorCache[stream.logo_url] = true;
           };
           
@@ -437,20 +687,6 @@ const StreamsManager: React.FC = () => {
       });
     }
   }, [streams]);
-
-  const fetchStreams = async () => {
-    setLoading(true);
-    try {
-      const data = await apiServices.streams.getAll();
-      setStreams(data);
-      setFilteredStreams(data);
-    } catch (error) {
-      console.error('Erro ao carregar streams:', error);
-      toast.error('Erro ao carregar lista de streams');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const applyFilters = () => {
     let result = [...streams];
@@ -516,9 +752,22 @@ const StreamsManager: React.FC = () => {
       return;
     }
 
-    // Criar um objeto FormData para enviar o arquivo
-    const formDataFile = new FormData();
-    formDataFile.append('logo', file);
+    // Obter a extensão do arquivo original
+    const fileExtension = file.name.split('.').pop()?.toLowerCase() || 'png';
+    
+    // Criar um nome de arquivo baseado no nome da rádio (se disponível)
+    const radioName = formData.name.trim();
+    const radioId = editingStream?.id;
+    
+    // Limpar o cache de imagens antigas para esta rádio
+    clearOldImageCache(radioId, radioName);
+    
+    // Garantir que o nome do arquivo seja único para esta rádio
+    let fileName = radioName 
+      ? `${radioName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${radioId || new Date().getTime()}.${fileExtension}`
+      : `radio_${radioId || new Date().getTime()}.${fileExtension}`;
+    
+    console.log('Nome do arquivo gerado para upload:', fileName);
 
     // Mostrar preview da imagem com base64
     const reader = new FileReader();
@@ -529,27 +778,48 @@ const StreamsManager: React.FC = () => {
       
       // Armazenar no localStorage para persistir entre sessões
       try {
-        // Usar um ID único com base no timestamp
-        const timestamp = new Date().getTime();
-        const cacheKey = `logo_cache_${timestamp}`;
+        // Usar o ID da rádio como parte da chave para garantir exclusividade
+        const cacheKey = `logo_cache_radio_${radioId || new Date().getTime()}_${fileName}`;
         localStorage.setItem(cacheKey, base64Image);
-        console.log('Imagem base64 armazenada em cache local com chave:', cacheKey);
+        console.log('Imagem base64 armazenada em cache local com chave exclusiva:', cacheKey);
       } catch (error) {
         console.error('Erro ao armazenar imagem base64 em cache local:', error);
       }
     };
     reader.readAsDataURL(file);
 
+    // Criar um objeto FormData para enviar o arquivo
+    const formDataFile = new FormData();
+    formDataFile.append('logo', file);
+    formDataFile.append('fileName', fileName);
+    formDataFile.append('radioId', String(radioId || ''));
+    formDataFile.append('radioName', radioName);
+
     // Enviar o arquivo para o servidor
     setLoading(true);
-    console.log('Iniciando upload de logo...', file.name);
-    apiServices.uploads.uploadLogo(formDataFile)
+    console.log('Iniciando upload de logo...', fileName, 'para rádio:', radioName, 'ID:', radioId);
+    
+    // Usar fetch diretamente para evitar problemas com o apiServices
+    const token = localStorage.getItem('token');
+    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/uploads/logo`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      body: formDataFile
+    })
       .then(response => {
-        console.log('Resposta do servidor após upload:', response);
+        if (!response.ok) {
+          throw new Error(`Erro no servidor: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log('Resposta do servidor após upload:', data);
         
-        if (response.success && response.url) {
+        if (data.success && data.url) {
           // Normalizar URL para garantir que esteja usando o domínio correto em produção
-          let logoUrl = response.url;
+          let logoUrl = data.url;
           
           // Se estamos em produção ou em ambiente que não seja localhost
           if (window.location.hostname !== 'localhost' && logoUrl.includes('localhost')) {
@@ -561,9 +831,16 @@ const StreamsManager: React.FC = () => {
             console.log('URL convertida para produção:', logoUrl);
           }
           
-          // Salvar a versão base64 no localStorage com a URL do servidor
+          // Limpar o cache de erros para esta URL
+          if (imageErrorCache[logoUrl]) {
+            delete imageErrorCache[logoUrl];
+            console.log('Cache de erro limpo para a URL:', logoUrl);
+          }
+          
+          // Salvar a versão base64 no localStorage com a URL do servidor e o ID da rádio
           if (logoBase64) {
-            saveBase64ToLocalStorage(logoUrl, logoBase64);
+            // Usar o ID da rádio como parte da chave para garantir exclusividade
+            saveBase64ToLocalStorage(logoUrl, logoBase64, radioId);
           }
           
           // Armazenar a URL da imagem no servidor, mas continuar usando o preview base64 para exibição
@@ -657,6 +934,11 @@ const StreamsManager: React.FC = () => {
   };
 
   const handleEdit = (stream: Stream) => {
+    // Limpar o cache de imagens da rádio anterior se estiver editando outra rádio
+    if (editingStream && editingStream.id !== stream.id) {
+      clearRadioImageCache(editingStream.id, editingStream.name, editingStream.logo_url);
+    }
+    
     setEditingStream(stream);
     setFormData(stream);
     setLogoPreview(null);
@@ -673,6 +955,12 @@ const StreamsManager: React.FC = () => {
     }
     
     try {
+      // Encontrar a rádio que está sendo excluída para limpar seu cache
+      const radioToDelete = streams.find(stream => stream.id === id);
+      if (radioToDelete) {
+        clearRadioImageCache(id, radioToDelete.name, radioToDelete.logo_url);
+      }
+      
       await apiServices.streams.delete(id);
       toast.success('Stream excluído com sucesso!');
       fetchStreams();
@@ -683,6 +971,13 @@ const StreamsManager: React.FC = () => {
   };
 
   const resetForm = () => {
+    // Se estávamos editando uma rádio e cancelamos, limpar o cache temporário
+    if (editingStream) {
+      // Não limpar o cache permanente, apenas o temporário (preview)
+      setLogoPreview(null);
+      setLogoBase64(null);
+    }
+    
     setEditingStream(null);
     setFormData({
       url: '',
@@ -805,6 +1100,8 @@ const StreamsManager: React.FC = () => {
                               src={imageSrc || ''} 
                               alt="Logo preview" 
                               className="w-full h-full object-contain"
+                              radioName={formData.name}
+                              radioId={editingStream?.id}
                             />
                           );
                         })()
@@ -1297,6 +1594,8 @@ const StreamsManager: React.FC = () => {
                                 src={stream.logo_url}
                                 alt={`Logo ${stream.name}`} 
                                 className="w-full h-full object-contain"
+                                radioName={stream.name}
+                                radioId={stream.id}
                               />
                             ) : (
                               <Radio className="w-6 h-6 text-gray-400" />
