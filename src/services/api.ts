@@ -206,10 +206,36 @@ export const apiServices = {
   streams: {
     getAll: () => apiGet('/api/streams'),
     getById: (id: number) => apiGet(`/api/streams/${id}`),
-    create: (stream: any) => apiPost('/api/streams', stream),
+    create: (stream: any) => {
+      // Normalizar URLs de imagens antes de enviar ao servidor
+      const normalizedStream = { ...stream };
+      if (normalizedStream.logo_url && normalizedStream.logo_url.includes('localhost') && 
+          window.location.hostname !== 'localhost') {
+        try {
+          const urlObj = new URL(normalizedStream.logo_url);
+          normalizedStream.logo_url = `${window.location.origin}${urlObj.pathname}`;
+          console.log('API: URL da logo normalizada para produção:', normalizedStream.logo_url);
+        } catch (e) {
+          console.error('Erro ao normalizar URL da logo:', e);
+        }
+      }
+      return apiPost('/api/streams', normalizedStream);
+    },
     update: (id: number, stream: any) => {
-      console.log('Chamando apiPut para atualizar stream:', id, stream);
-      return apiPut(`/api/streams/${id}`, stream);
+      // Normalizar URLs de imagens antes de enviar ao servidor
+      const normalizedStream = { ...stream };
+      if (normalizedStream.logo_url && normalizedStream.logo_url.includes('localhost') && 
+          window.location.hostname !== 'localhost') {
+        try {
+          const urlObj = new URL(normalizedStream.logo_url);
+          normalizedStream.logo_url = `${window.location.origin}${urlObj.pathname}`;
+          console.log('API: URL da logo normalizada para produção:', normalizedStream.logo_url);
+        } catch (e) {
+          console.error('Erro ao normalizar URL da logo:', e);
+        }
+      }
+      console.log('Chamando apiPut para atualizar stream:', id, normalizedStream);
+      return apiPut(`/api/streams/${id}`, normalizedStream);
     },
     delete: (id: number) => apiDelete(`/api/streams/${id}`),
     search: (query: string) => apiGet('/api/streams/search', { query }),
