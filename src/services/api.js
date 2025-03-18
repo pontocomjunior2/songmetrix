@@ -25,6 +25,23 @@ const getToken = async () => {
 // Função para verificar se está em produção
 const isProduction = () => window.location.hostname !== 'localhost';
 
+// Função para normalizar URLs de imagens
+const normalizeImageUrl = (url) => {
+  if (!url) return '';
+  
+  // Remover referências a [null]
+  let cleanUrl = url.replace(/\[null\]/g, '');
+  
+  // Extrair o nome do arquivo da URL (última parte após a última /)
+  const fileName = cleanUrl.split('/').pop();
+  
+  // Se o nome do arquivo é vazio ou indefinido, retornar string vazia
+  if (!fileName) return '';
+  
+  // Construir a URL correta com o nome do arquivo
+  return `https://songmetrix.com.br/uploads/logos/${fileName}`;
+};
+
 // Serviço de autenticação
 const auth = {
   login: async (credentials) => {
@@ -249,6 +266,35 @@ const uploads = {
       if (!token) {
         throw new Error('Token de autenticação não disponível para upload');
       }
+
+      // Verificar se o FormData contém os campos necessários
+      let hasLogo = false;
+      let hasRadioName = false;
+      let radioName = '';
+      let fileName = '';
+      
+      // Verificar campos sem consumir o FormData
+      for (let [key, value] of formData.entries()) {
+        console.log(`FormData campo: ${key}, valor: ${value instanceof File ? value.name : value}`);
+        if (key === 'logo') {
+          hasLogo = true;
+          if (value instanceof File) {
+            fileName = value.name;
+          }
+        }
+        if (key === 'radioName') {
+          hasRadioName = true;
+          radioName = value;
+        }
+      }
+      
+      if (!hasLogo || !hasRadioName) {
+        throw new Error('Arquivo e nome são obrigatórios para o upload');
+      }
+      
+      console.log('Dados do upload: FormData válido com logo e radioName');
+      console.log('Nome do arquivo original:', fileName);
+      console.log('Nome da rádio:', radioName);
       
       const response = await fetch(uploadUrl, {
         method: 'POST',
@@ -260,22 +306,105 @@ const uploads = {
         credentials: 'include'
       });
 
-      const data = await response.json();
+      let responseText;
+      try {
+        responseText = await response.text();
+        console.log('Resposta bruta do servidor:', responseText);
+      } catch (e) {
+        console.error('Erro ao ler resposta do servidor:', e);
+        throw new Error('Erro ao ler resposta do servidor');
+      }
+
+      let data;
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch (e) {
+        console.error('Erro ao parsear resposta do servidor:', e);
+        throw new Error('Resposta inválida do servidor');
+      }
 
       if (!response.ok) {
-        throw new Error(data.message || 'Erro ao fazer upload da imagem');
+        console.error('Erro do servidor:', data);
+        throw new Error(data.message || data.error || 'Erro ao fazer upload da imagem');
       }
 
       // Garantir que a URL retornada seja completa
       if (data.success && data.url) {
-        if (data.url.startsWith('/')) {
-          data.url = `${PROD_URL}${data.url}`;
-        } else if (!data.url.startsWith('http')) {
-          data.url = `${PROD_URL}/uploads/logos/${data.url}`;
+        // Corrigir URLs duplicadas
+        const fixDuplicatedUrl = (url) => {
+          if (url.includes('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/')) {
+            return url.replace('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/', 'https://songmetrix.com.br/uploads/logos/');
+          }
+          return url;
+        };
+        
+        // Extrair o nome do arquivo da URL original retornada pelo servidor
+        const originalFileName = data.fileName || data.url.split('/').pop();
+        console.log('Nome do arquivo retornado pelo servidor:', originalFileName);
+        
+        // Usar o nome do arquivo retornado pelo servidor (UUID)
+        const serverUrl = `https://songmetrix.com.br/uploads/logos/${originalFileName}`;
+        console.log('URL do servidor normalizada:', serverUrl);
+        
+        // Verificar se a imagem está acessível com o nome do servidor
+        try {
+          console.log('Verificando se a imagem está acessível com UUID:', serverUrl);
+          const checkResponse = await fetch(serverUrl, { method: 'HEAD' });
+          if (checkResponse.ok) {
+            console.log('Imagem acessível com UUID do servidor');
+            data.url = serverUrl;
+            return data;
+          }
+        } catch (error) {
+          console.warn('Erro ao verificar imagem com UUID:', error);
         }
+        
+        // Se não conseguir acessar com o UUID, tentar com o nome baseado na rádio
+        // Criar um nome de arquivo seguro baseado no nome da rádio
+        const safeFileName = radioName
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9]/g, '-');
+        
+        // Extrair a extensão do arquivo original
+        const fileExtension = originalFileName.split('.').pop();
+        
+        // Nome final do arquivo
+        const finalFileName = `${safeFileName}.${fileExtension}`;
+        console.log('Nome final do arquivo:', finalFileName);
+        
+        // Construir a URL com o nome da rádio
+        const radioNameUrl = `https://songmetrix.com.br/uploads/logos/${finalFileName}`;
+        console.log('Verificando se a imagem está acessível com nome da rádio:', radioNameUrl);
+        
+        try {
+          const checkRadioNameResponse = await fetch(radioNameUrl, { method: 'HEAD' });
+          if (checkRadioNameResponse.ok) {
+            console.log('Imagem acessível com nome da rádio');
+            data.url = radioNameUrl;
+            return data;
+          }
+        } catch (error) {
+          console.warn('Erro ao verificar imagem com nome da rádio:', error);
+        }
+        
+        // Se nenhuma das URLs funcionar, usar a URL original do servidor
+        console.warn('Nenhuma URL verificada está acessível, usando URL original do servidor');
+        // Garantir que a URL use HTTPS e o domínio correto
+        let originalUrl = data.url;
+        if (originalUrl.includes('localhost')) {
+          originalUrl = originalUrl.replace(/http:\/\/localhost:\d+\/uploads\/logos\//, 'https://songmetrix.com.br/uploads/logos/');
+        }
+        if (originalUrl.startsWith('http://')) {
+          originalUrl = originalUrl.replace('http://', 'https://');
+        }
+        
+        // Corrigir URLs duplicadas
+        data.url = fixDuplicatedUrl(originalUrl);
       }
 
-      console.log('Resposta do servidor após upload:', data);
+      console.log('Resposta final após upload:', data);
       return data;
     } catch (error) {
       console.error('Erro no upload:', error);
