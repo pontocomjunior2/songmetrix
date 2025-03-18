@@ -36,7 +36,7 @@ export interface AuthContextType {
   logout: () => Promise<void>;
   updateUserStatus: (userId: string, newStatus: UserStatusType) => Promise<void>;
   refreshUserStatus: () => Promise<boolean>;
-  signUp: (email: string, password: string) => Promise<{ 
+  signUp: (email: string, password: string, fullName?: string, whatsapp?: string) => Promise<{ 
     error: any, 
     confirmation_sent?: boolean,
     should_redirect?: boolean,
@@ -594,7 +594,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (email: string, password: string, fullName?: string, whatsapp?: string) => {
     try {
       // Verificar se o email já existe
       const { data: existingUsers, error: checkError } = await supabase
@@ -613,7 +613,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         password,
         options: {
           emailRedirectTo: `${window.location.origin}/login`,
-          data: { status: 'TRIAL' }
+          data: { status: 'TRIAL', fullName, whatsapp }
         }
       });
       
@@ -633,6 +633,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             id: data.user.id,
             email: data.user.email,
             status: 'TRIAL',
+            full_name: fullName,
+            whatsapp: whatsapp,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           });

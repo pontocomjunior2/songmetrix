@@ -6,11 +6,14 @@ import { PrimaryButton } from '../Common/Button';
 import { ErrorAlert } from '../Common/Alert';
 import Loading from '../Common/Loading';
 import { supabase } from '../../lib/supabase-client';
+import Input from '../Common/Input';
 
 export default function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { signUp } = useAuth();
@@ -35,12 +38,20 @@ export default function Register() {
       );
     }
 
+    if (!fullName.trim()) {
+      return setError('O Nome Completo é obrigatório');
+    }
+
+    if (!whatsapp.trim()) {
+      return setError('O WhatsApp é obrigatório');
+    }
+
     try {
       setError('');
       setLoading(true);
 
       // Usar a função signUp do AuthContext
-      const { error: signUpError, should_redirect, message } = await signUp(email, password);
+      const { error: signUpError, should_redirect, message } = await signUp(email, password, fullName, whatsapp);
 
       if (signUpError) throw signUpError;
 
@@ -157,6 +168,44 @@ export default function Register() {
           )}
 
           <form className="space-y-4" onSubmit={handleSubmit}>
+            <div>
+              <Input
+                id="fullName"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Nome Completo"
+                icon={
+                  <svg
+                    className="h-5 w-5 text-gray-400 group-focus-within:text-[#1a3891] transition-colors"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                  </svg>
+                }
+                required
+              />
+            </div>
+            <div>
+              <Input
+                id="whatsapp"
+                value={whatsapp}
+                onChange={(e) => setWhatsapp(e.target.value)}
+                placeholder="WhatsApp"
+                icon={
+                  <svg
+                    className="h-5 w-5 text-gray-400 group-focus-within:text-[#1a3891] transition-colors"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
+                  </svg>
+                }
+                required
+              />
+            </div>
             <div>
               <EmailInput
                 id="email"
