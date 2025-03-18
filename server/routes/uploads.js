@@ -1,11 +1,26 @@
 import express from 'express';
 import multer from 'multer';
+import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { requireAuth, requireAdmin, verifyAuth } from '../middleware/auth.js';
 
 const router = express.Router();
+
+// Configure CORS for image uploads
+router.use(cors({
+  origin: process.env.NODE_ENV === 'development' ? 'http://localhost:5173' : process.env.VITE_APP_URL,
+  credentials: true,
+  exposedHeaders: ['Content-Type', 'Content-Disposition']
+}));
+
+// Add headers for image serving
+router.use('/logos', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+});
 
 // Configurar o armazenamento para o multer
 const storage = multer.diskStorage({
@@ -101,4 +116,4 @@ router.post('/logo', upload.single('logo'), async (req, res) => {
   }
 });
 
-export default router; 
+export default router;
