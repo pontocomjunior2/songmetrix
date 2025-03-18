@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserStatus } from '../../lib/auth';
-import { Home, BarChart3, FileText, Users, Type, Radio, LogOut, Clock, X } from 'lucide-react';
+import { Home, BarChart3, FileText, Users, Type, Radio, LogOut, Clock, X, ChevronDown } from 'lucide-react';
 import clsx from 'clsx';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface SidebarProps {
   currentView: string;
@@ -11,10 +12,22 @@ interface SidebarProps {
   isMobile?: boolean;
 }
 
+interface MenuItem {
+  name: string;
+  icon: React.ElementType;
+  view: string;
+  hasSubMenu?: boolean;
+  subItems?: Array<{
+    name: string;
+    view: string;
+  }>;
+}
+
 export default function SidebarFixed({ currentView, onNavigate, onClose, isMobile }: SidebarProps) {
   const { userStatus, currentUser, logout } = useAuth();
+  const [hoveredMenu, setHoveredMenu] = useState<string | null>(null);
 
-  const baseMenuItems = [
+  const baseMenuItems: MenuItem[] = [
     {
       name: 'Painel',
       icon: Home,
@@ -42,7 +55,7 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
     }
   ];
 
-  const adminMenuItems = [
+  const adminMenuItems: MenuItem[] = [
     {
       name: 'Usuários',
       icon: Users,
@@ -57,6 +70,7 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
       name: 'Gerenciar Rádios',
       icon: Radio,
       view: 'admin/radios',
+      hasSubMenu: true,
       subItems: [
         {
           name: 'Streams',
@@ -71,13 +85,18 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
   ];
 
   // Usando o tipo correto para a comparação
-  const menuItems = [...baseMenuItems, ...(userStatus && userStatus === UserStatus.ADMIN ? adminMenuItems : [])];
+  const menuItems: MenuItem[] = [...baseMenuItems, ...(userStatus && userStatus === UserStatus.ADMIN ? adminMenuItems : [])];
 
-  const handleItemClick = (view: string) => {
+  const handleItemClick = (view: string, hasSubMenu?: boolean) => {
+    if (hasSubMenu) return;
     onNavigate(view);
     if (isMobile && onClose) {
       onClose();
     }
+  };
+
+  const isSubMenuActive = (item: MenuItem) => {
+    return item.subItems && item.subItems.some(sub => currentView === sub.view);
   };
 
   return (
@@ -107,13 +126,18 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
       {/* Navigation Menu */}
       <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
         {menuItems.map((item) => (
-          <div key={item.view}>
-            <button
-              onClick={() => handleItemClick(item.view)}
+          <div 
+            key={item.view} 
+            className="relative"
+            onMouseEnter={() => setHoveredMenu(item.view)}
+            onMouseLeave={() => setHoveredMenu(null)}
+          >
+            <div
+              onClick={() => handleItemClick(item.view, item.hasSubMenu)}
               className={`
                 w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium
-                transition-colors duration-150 ease-in-out
-                ${currentView === item.view || (item.subItems && item.subItems.some(sub => currentView === sub.view))
+                transition-colors duration-150 ease-in-out cursor-pointer
+                ${(currentView === item.view || isSubMenuActive(item))
                   ? 'bg-white/10 text-white'
                   : 'text-white/70 hover:text-white hover:bg-white/5'
                 }
@@ -123,26 +147,47 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
             >
               <item.icon className={`${isMobile ? 'w-6 h-6' : 'w-5 h-5'} flex-shrink-0`} />
               <span className="truncate">{item.name}</span>
-            </button>
+              {item.hasSubMenu && (
+                <ChevronDown 
+                  className={`ml-auto w-4 h-4 transition-transform duration-200 ${
+                    hoveredMenu === item.view || isSubMenuActive(item) ? 'rotate-180' : ''
+                  }`} 
+                />
+              )}
+            </div>
+            
             {item.subItems && (
-              <div className="ml-8 mt-1 space-y-1">
-                {item.subItems.map((subItem) => (
-                  <button
-                    key={subItem.view}
-                    onClick={() => handleItemClick(subItem.view)}
-                    className={`
-                      w-full flex items-center gap-3 px-4 py-2 rounded-lg text-sm font-medium
-                      transition-colors duration-150 ease-in-out
-                      ${currentView === subItem.view
-                        ? 'bg-white/10 text-white'
-                        : 'text-white/70 hover:text-white hover:bg-white/5'
-                      }
-                    `}
+              <AnimatePresence>
+                {(hoveredMenu === item.view || isMobile || isSubMenuActive(item)) && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2, ease: "easeInOut" }}
+                    className="ml-8 mt-1 space-y-1 overflow-hidden"
                   >
-                    <span className="truncate">{subItem.name}</span>
-                  </button>
-                ))}
-              </div>
+                    {item.subItems.map((subItem) => (
+                      <motion.button
+                        key={subItem.view}
+                        initial={{ x: -10, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        transition={{ duration: 0.2 }}
+                        onClick={() => handleItemClick(subItem.view)}
+                        className={`
+                          w-full flex items-center gap-3 px-4 py-2 rounded-lg text-sm font-medium
+                          transition-colors duration-150 ease-in-out
+                          ${currentView === subItem.view
+                            ? 'bg-white/10 text-white'
+                            : 'text-white/70 hover:text-white hover:bg-white/5'
+                          }
+                        `}
+                      >
+                        <span className="truncate">{subItem.name}</span>
+                      </motion.button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             )}
           </div>
         ))}
