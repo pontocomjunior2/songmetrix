@@ -90,7 +90,7 @@ const Dashboard = () => {
       
       // Se não houver rádios favoritas, redirecionar para página de seleção
       if (userFavorites.length === 0) {
-        navigate('/favorite-radios');
+        navigate('/first-access');
         return;
       }
       
@@ -275,7 +275,7 @@ const Dashboard = () => {
             Para visualizar o dashboard, selecione suas rádios favoritas.
           </p>
           <button
-            onClick={() => navigate('/favorite-radios')}
+            onClick={() => navigate('/first-access')}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             Selecionar Rádios Favoritas
