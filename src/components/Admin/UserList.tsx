@@ -26,6 +26,8 @@ interface User {
   created_at: string;
   updated_at: string;
   photoURL?: string;
+  full_name?: string;
+  whatsapp?: string;
 }
 
 export default function UserList() {
@@ -70,7 +72,7 @@ export default function UserList() {
       // Buscar usuários da tabela users
       const { data: usersData, error: fetchError } = await supabase
         .from('users')
-        .select('id, email, status, created_at, updated_at')
+        .select('id, email, status, created_at, updated_at, full_name, whatsapp')
         .order('created_at', { ascending: false });
       
       if (fetchError) {
@@ -327,6 +329,12 @@ export default function UserList() {
                   Usuário
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Nome Completo
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  WhatsApp
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -353,6 +361,12 @@ export default function UserList() {
                       />
                       <div className="text-sm text-gray-900">{user.email}</div>
                     </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">{user.full_name || '-'}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">{user.whatsapp || '-'}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
