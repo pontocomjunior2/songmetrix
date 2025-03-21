@@ -60,11 +60,22 @@ app.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);
 // Middlewares regulares
 // Configurar CORS antes de qualquer rota
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'https://songmetrix.com.br'],
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if(!origin) return callback(null, true);
+    
+    // Allow localhost and production URL
+    const allowedOrigins = ['http://localhost:5173', 'http://localhost:3000', 'https://songmetrix.com.br'];
+    if(allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range', 'Content-Type', 'Content-Disposition']
 }));
 
 // Configurar body parser

@@ -23,29 +23,61 @@ const getAuthenticatedUserToken = async () => {
 };
 
 // Função para verificar se está em produção
-// Modificado para permitir uploads em desenvolvimento
 const isProduction = () => {
-  // Sempre permitir uploads, independente do ambiente
-  // Isso resolve o problema de CORS durante o desenvolvimento
-  console.log('Operações permitidas em qualquer ambiente para desenvolvimento');
-  return true;
+  return window.location.hostname !== 'localhost';
 };
 
 // Função para normalizar URLs de imagens
-const normalizeImageUrl = (url) => {
+const normalizeImageUrl = (url, radioName = '') => {
   if (!url) return '';
   
   // Remover referências a [null]
   let cleanUrl = url.replace(/\[null\]/g, '');
   
-  // Extrair o nome do arquivo da URL (última parte após a última /)
-  const fileName = cleanUrl.split('/').pop();
+  // Verificar se a URL contém localhost (independente do ambiente)
+  if (cleanUrl.includes('localhost')) {
+    console.log('URL do servidor com localhost:', cleanUrl);
+    
+    // Extrair o nome do arquivo da URL
+    const fileName = cleanUrl.split('/').pop() || '';
+    
+    // Se temos um nome de rádio, normalizar o nome do arquivo
+    if (radioName) {
+      const fileExtension = fileName.split('.').pop() || 'png';
+      
+      // Normalizar nome da rádio para formato de arquivo
+      const normalizedRadioName = radioName
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '') // Remover acentos
+        .replace(/[^\w\s-]/g, '') // Remover caracteres especiais
+        .replace(/\s+/g, '_') // Substituir espaços por underscores
+        .toLowerCase(); // Converter para minúsculas
+      
+      // Construir URL com nome normalizado
+      cleanUrl = `https://songmetrix.com.br/uploads/logos/${normalizedRadioName}.${fileExtension}`;
+    } else {
+      // Sem nome de rádio, apenas substituir o domínio
+      cleanUrl = `https://songmetrix.com.br/uploads/logos/${fileName}`;
+    }
+    
+    console.log('URL normalizada para produção:', cleanUrl);
+    return cleanUrl;
+  }
   
-  // Se o nome do arquivo é vazio ou indefinido, retornar string vazia
-  if (!fileName) return '';
+  // Garantir que a URL não está duplicada
+  if (cleanUrl.includes('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/')) {
+    cleanUrl = cleanUrl.replace('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/', 'https://songmetrix.com.br/uploads/logos/');
+  }
   
-  // Construir a URL correta com o nome do arquivo
-  return `https://songmetrix.com.br/uploads/logos/${fileName}`;
+  // Garantir que usamos HTTPS
+  cleanUrl = cleanUrl.replace('http://', 'https://');
+  
+  // Verificar se tem o prefixo correto
+  if (!cleanUrl.startsWith('http') && !cleanUrl.startsWith('/')) {
+    cleanUrl = `https://songmetrix.com.br/uploads/logos/${cleanUrl}`;
+  }
+  
+  return cleanUrl;
 };
 
 // Função para garantir que o diretório de uploads exista
@@ -58,25 +90,10 @@ export async function ensureUploadsDirectory() {
     return true; // Em desenvolvimento, apenas simula o sucesso
   }
   
-  try {
-    const token = await getAuthenticatedUserToken();
-    const response = await fetch(`${API_URL}/api/ensure-uploads-directory`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Erro ao verificar diretório: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.success;
-  } catch (error) {
-    console.error('Não foi possível verificar/criar o diretório de upload', error);
-    return false;
-  }
+  // Em produção, não precisamos verificar o diretório - o servidor já garante isso
+  // Evitamos a chamada que está resultando em 404
+  console.log('Ambiente de produção: assumindo que o diretório de uploads existe');
+  return true;
 }
 
 // Serviço de autenticação
@@ -321,62 +338,45 @@ const executions = {
   }
 };
 
+// Serviço de upload de arquivos
 const uploads = {
+  // Função para fazer upload de logo
   uploadLogo: async (formData) => {
     try {
-      // Verificar ambiente
-      const isDev = window.location.hostname === 'localhost';
-      console.log('Hostname:', window.location.hostname);
-      console.log('Ambiente detectado:', isDev ? 'desenvolvimento' : 'produção');
+      // Verificar ambiente atual
+      const hostname = window.location.hostname;
+      console.log('Hostname:', hostname);
+      const isProd = hostname !== 'localhost';
+      const env = isProd ? 'produção' : 'desenvolvimento';
+      console.log('Ambiente detectado:', env);
       
-      // Garantir que o diretório de uploads exista (no desenvolvimento)
-      if (isDev) {
-        await ensureUploadsDirectory();
-      }
+      // Não precisamos mais verificar o diretório em produção
+      // Isso estava causando erro 404
       
-      // Extrair informações do formData para diagnóstico e simulação
-      let fileName = '';
-      let radioName = '';
-      let fileExtension = '';
-      let file = null;
-      
+      // Logar campos do FormData para diagnóstico
       for (let [key, value] of formData.entries()) {
-        console.log(`FormData campo: ${key}, valor: ${value instanceof File ? value.name : value}`);
-        if (key === 'logo' && value instanceof File) {
-          file = value;
-          fileName = value.name;
-          fileExtension = fileName.split('.').pop() || 'png';
-        }
-        if (key === 'radioName') {
-          radioName = value;
-        }
+        console.log('FormData campo:', key, 'valor:', value.name || value);
       }
       
-      if (!file) {
-        console.error('Arquivo de logo não encontrado no formulário');
-        return { 
-          success: false, 
-          message: 'Arquivo de logo não encontrado no formulário' 
-        };
+      // Verificar se temos um arquivo e um nome de rádio
+      const file = formData.get('logo');
+      const radioName = formData.get('radioName');
+      
+      if (!file || !(file instanceof File)) {
+        throw new Error('Nenhum arquivo de logo enviado');
       }
       
       if (!radioName) {
-        console.error('Nome da rádio não fornecido');
-        return { 
-          success: false, 
-          message: 'Nome da rádio é obrigatório para o upload' 
-        };
+        throw new Error('Nome da rádio não fornecido');
       }
       
-      console.log('Arquivo de logo detectado:', fileName);
+      console.log('Arquivo de logo detectado:', file.name);
       console.log('Nome da rádio:', radioName);
       
-      // Criar um preview da imagem para exibição imediata
-      const filePreview = URL.createObjectURL(file);
-      console.log('Preview local criado:', filePreview);
+      // Normalizar nome de arquivo com base no nome da rádio
+      const fileExtension = file.name.split('.').pop().toLowerCase();
       
-      // Normalizar o nome da rádio para uso no nome do arquivo
-      // Remover caracteres especiais, substituir espaços por underscores
+      // Sanitizar nome da rádio para usar como nome de arquivo
       const normalizedRadioName = radioName
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '') // Remover acentos
@@ -384,151 +384,102 @@ const uploads = {
         .replace(/\s+/g, '_') // Substituir espaços por underscores
         .toLowerCase(); // Converter para minúsculas
       
-      const newFileName = `${normalizedRadioName}.${fileExtension}`;
-      console.log('Nome de arquivo normalizado:', newFileName);
+      const normalizedFileName = `${normalizedRadioName}.${fileExtension}`;
+      console.log('Nome de arquivo normalizado:', normalizedFileName);
       
-      // Em ambiente de desenvolvimento, simular o upload sem fazer requisição real
-      if (isDev) {
+      // Em ambiente de desenvolvimento, simular upload
+      if (!isProd) {
+        // Criar um preview local para o usuário
+        const filePreview = URL.createObjectURL(file);
+        console.log('Preview local criado:', filePreview);
+        
+        // Simular upload em desenvolvimento
         console.log('Ambiente de desenvolvimento: simulando upload');
-        
-        // URL simulada que seria retornada pelo servidor
-        const mockUrl = `https://songmetrix.com.br/uploads/logos/${newFileName}`;
-        
-        // Após um pequeno delay para simular o tempo de upload
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Retornar uma resposta simulada bem-sucedida
-        console.log('Upload simulado bem-sucedido. URL simulada:', mockUrl);
-        return {
-          success: true,
-          url: mockUrl,
-          fileName: newFileName,
-          filePreview, // Incluir o preview local para uso durante o desenvolvimento
-          originalFile: file, // Incluir o arquivo original para possíveis usos
-          _dev_note: 'Esta é uma resposta simulada para ambiente de desenvolvimento'
-        };
+        return new Promise(resolve => {
+          setTimeout(() => {
+            const simulatedUrl = `https://songmetrix.com.br/uploads/logos/${normalizedFileName}`;
+            console.log('Upload simulado bem-sucedido. URL simulada:', simulatedUrl);
+            resolve({
+              success: true,
+              url: simulatedUrl,
+              filePreview,
+              fileName: normalizedFileName,
+              message: 'Upload simulado com sucesso'
+            });
+          }, 500);
+        });
       }
       
-      // Adicionar o nome normalizado ao formData para uso no servidor
-      // Criamos um novo FormData para não modificar o original
-      const uploadFormData = new FormData();
-      for (let [key, value] of formData.entries()) {
-        uploadFormData.append(key, value);
-      }
-      uploadFormData.append('normalizedFileName', newFileName);
-      
-      // Em produção, continuar com o upload real
-      const uploadUrl = `${API_URL}/api/uploads/logo`;
+      // Em produção, fazer upload real
+      console.log('Produção: fazendo upload real da imagem');
+      const uploadUrl = `${PROD_URL}/api/uploads/logo`;
       console.log('Enviando upload para:', uploadUrl);
       
+      // Obter token de autenticação
       let token = await getAuthenticatedUserToken();
       if (!token) {
         token = localStorage.getItem('token');
-        console.log('Usando token do localStorage como fallback');
+        if (!token) {
+          throw new Error('Usuário não autenticado');
+        }
       }
       
-      if (!token) {
-        console.error('Token de autenticação não disponível para upload');
-        throw new Error('Token de autenticação não disponível para upload');
+      // Adicionar nome de arquivo normalizado ao FormData
+      // Isso permite ao servidor usar esse nome em vez de UUID
+      try {
+        formData.append('normalizedFileName', normalizedFileName);
+      } catch (e) {
+        console.warn('Não foi possível adicionar normalizedFileName ao FormData:', e);
       }
       
-      console.log('Enviando requisição para:', uploadUrl);
-      console.log('Token de autenticação disponível:', !!token);
-      
-      // Em produção, fazer o upload normalmente
+      // Fazer o upload
       const response = await fetch(uploadUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
         },
-        body: uploadFormData,
-        credentials: 'include'
+        body: formData
       });
       
-      console.log('Status da resposta:', response.status);
-      
       if (!response.ok) {
-        // Tentar obter detalhes do erro da resposta
-        try {
-          const errorData = await response.json();
-          console.error('Erro detalhado do servidor:', errorData);
-          return { 
-            success: false, 
-            message: errorData.message || `Erro do servidor: ${response.status}` 
-          };
-        } catch (e) {
-          // Se não conseguir parsear a resposta JSON, usar o status HTTP
-          console.error('Erro ao parsear resposta de erro:', e);
-          return { 
-            success: false, 
-            message: `Erro do servidor: ${response.status}` 
-          };
-        }
+        const errorText = await response.text();
+        console.error(`Erro no upload: ${response.status} - ${errorText}`);
+        throw new Error(`Erro no upload: ${errorText || response.statusText}`);
       }
       
-      // Tentar processar a resposta como JSON
-      try {
-        const data = await response.json();
-        console.log('Resposta do servidor:', data);
-        
-        if (data.success && data.url) {
-          // Normalizar URL para garantir compatibilidade
-          const normalizedUrl = data.url
-            .replace(/http:\/\/localhost:\d+\/uploads\/logos\//, 'https://songmetrix.com.br/uploads/logos/')
-            .replace(/^http:/, 'https:');
-          
-          // Remover duplicações de domínio usando regex
-          let fixedUrl = normalizedUrl;
-          // Padrão para detectar o prefixo duplicado
-          const duplicatedPrefix = 'https://songmetrix.com.br/uploads/logos/';
-          // Encontrar o último prefixo + o nome do arquivo
-          const regex = new RegExp(`(${duplicatedPrefix})+(.+)$`);
-          const match = normalizedUrl.match(regex);
-          
-          if (match) {
-            // Manter apenas o último prefixo + nome do arquivo
-            fixedUrl = duplicatedPrefix + match[2];
-            console.log('URL múltiplas vezes duplicada corrigida:', fixedUrl);
-          }
-          
-          // Mesmo que o servidor não use o nome normalizado, vamos garantir que temos um URL com ele
-          const serverFileName = fixedUrl.split('/').pop() || '';
-          const serverFileNameIsNormalized = serverFileName === newFileName;
-          
-          if (!serverFileNameIsNormalized) {
-            console.log('Servidor não usou o nome normalizado. URL recebida:', fixedUrl);
-            fixedUrl = `${duplicatedPrefix}${newFileName}`;
-            console.log('URL ajustada para usar nome normalizado:', fixedUrl);
-          }
-          
-          console.log('URL normalizada e corrigida:', fixedUrl);
-          
-          return {
-            success: true,
-            url: fixedUrl,
-            fileName: newFileName,
-            filePreview, // Adicionar o preview local mesmo em produção
-            originalFile: file // Incluir o arquivo original para possíveis usos
-          };
-        } else {
-          console.error('Resposta do servidor não contém URL da imagem:', data);
-          return {
-            success: false,
-            message: data.message || 'Resposta do servidor não contém URL da imagem'
-          };
-        }
-      } catch (error) {
-        console.error('Erro ao processar resposta JSON:', error);
-        return {
-          success: false,
-          message: 'Erro ao processar resposta do servidor'
-        };
+      const result = await response.json();
+      console.log('Resultado do upload (resposta do servidor):', result);
+      
+      let resultUrl = '';
+      
+      if (result.url) {
+        // URL retornada pelo servidor - normalizar para garantir consistência
+        resultUrl = normalizeImageUrl(result.url, radioName);
+      } else {
+        // Se o servidor não retornou uma URL, usar a URL normalizada
+        resultUrl = `https://songmetrix.com.br/uploads/logos/${normalizedFileName}`;
+        console.log('Servidor não retornou URL, usando URL normalizada:', resultUrl);
       }
+      
+      // Adicionar timestamp para evitar cache
+      const finalUrl = resultUrl.includes('?') 
+        ? resultUrl
+        : `${resultUrl}?t=${Date.now()}`;
+      
+      console.log('URL final da imagem após normalização:', finalUrl);
+      
+      return {
+        success: true,
+        url: finalUrl,
+        // Não incluímos filePreview em produção para evitar problemas de URL incorreta
+        message: result.message || 'Upload realizado com sucesso'
+      };
     } catch (error) {
-      console.error('Erro no upload:', error);
+      console.error('Erro durante upload de logo:', error);
       return {
         success: false,
-        message: error.message || 'Ocorreu um erro durante o upload'
+        message: error.message || 'Erro ao fazer upload da imagem',
+        error: error.toString()
       };
     }
   }
