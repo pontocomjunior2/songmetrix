@@ -482,6 +482,7 @@ export default function StreamsManager() {
     const triedUrlsRef = useRef<Set<string>>(new Set());
     const attemptCountRef = useRef(0);
     const maxAttempts = 3; // Limitar o número máximo de tentativas
+    const previousSrcRef = useRef<string | null>(null);
     
     // Debug info para rastrear problemas
     const debugMode = true;
@@ -503,12 +504,27 @@ export default function StreamsManager() {
       const fileName = url.split('/').pop() || '';
       if (!fileName) return [];
       
-      // Lista base de alternativas
-      const alternatives = [
+      // Criar uma lista base de alternativas
+      const alternatives = [];
+      
+      // Tentar com diferentes variações do domínio e caminhos
+      alternatives.push(
         `https://www.songmetrix.com.br/uploads/logos/${fileName}`,
         `https://songmetrix.com.br/uploads/logos/${fileName}`,
+        // Adicionar timestamp para forçar recarregamento
         `https://songmetrix.com.br/uploads/logos/${fileName}?t=${Date.now()}`
-      ];
+      );
+      
+      // Se a URL original contém parâmetros de query, tentar uma versão sem eles
+      if (fileName.includes('?')) {
+        const cleanFileName = fileName.split('?')[0];
+        alternatives.push(`https://songmetrix.com.br/uploads/logos/${cleanFileName}`);
+      }
+      
+      // Para uploads recentes, tentar uma URL com apenas o UUID
+      if (fileName.includes('-') && fileName.length > 30) {
+        alternatives.push(`https://songmetrix.com.br/uploads/logos/${fileName}`);
+      }
       
       // Adicionar versão normalizada do nome da rádio
       if (alt.includes('Logo ')) {
@@ -524,10 +540,18 @@ export default function StreamsManager() {
         const fileExtension = fileName.split('.').pop() || 'png';
         const normalizedFileName = `${normalizedRadioName}.${fileExtension}`;
         
+        // Adicionar URL com nome normalizado no início da lista para ter prioridade
         alternatives.unshift(`https://songmetrix.com.br/uploads/logos/${normalizedFileName}`);
+        
+        // Também adicionar versão com timestamp
+        alternatives.unshift(`https://songmetrix.com.br/uploads/logos/${normalizedFileName}?t=${Date.now()}`);
       }
       
-      return alternatives;
+      // Adicionar URL estática de fallback no final como último recurso
+      alternatives.push('https://songmetrix.com.br/uploads/logos/no-image.png');
+      
+      // Remover duplicatas
+      return [...new Set(alternatives)];
     }, [alt]);
     
     // Função para limpar e preparar URLs
@@ -571,6 +595,14 @@ export default function StreamsManager() {
         cleanUrl = `${duplicatedPrefix}${cleanUrl}`;
         logDebug('Nome de arquivo convertido para URL completa:', cleanUrl);
       }
+      
+      // Verificar se há UUID na URL (formato: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+      if (cleanUrl.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)) {
+        logDebug('Detectado UUID na URL. Esta URL pode ser menos confiável que URLs normalizadas.');
+      }
+      
+      // Garantir https (não http)
+      cleanUrl = cleanUrl.replace('http://', 'https://');
       
       return cleanUrl;
     }, [logDebug]);
@@ -629,10 +661,20 @@ export default function StreamsManager() {
     useEffect(() => {
       if (!isMounted.current) return;
       
-      // Log para depuração
-      logDebug(`Props src atualizada: ${src}`);
+      // Se a src for igual à anterior, não fazer nada para evitar renderizações duplas
+      if (src === previousSrcRef.current && imgSrc) {
+        return;
+      }
       
-      // Resetar estado e refs quando a fonte muda
+      // Atualizar a referência da src anterior
+      previousSrcRef.current = src;
+      
+      // Log para depuração - só se houver uma URL (evitar logs desnecessários)
+      if (src) {
+        logDebug(`Props src atualizada: ${src}`);
+      }
+      
+      // Resetar estado e refs quando a fonte muda significativamente
       setError(false);
       triedUrlsRef.current = new Set();
       attemptCountRef.current = 0;
@@ -641,7 +683,10 @@ export default function StreamsManager() {
       const preparedUrl = prepareImageUrl(src);
       
       if (!preparedUrl) {
-        logDebug('URL inválida ou nula');
+        // Não logar quando src é vazia ou nula por design (carregamento inicial)
+        if (src) {
+          logDebug('URL inválida ou nula');
+        }
         setError(true);
         return;
       }
@@ -653,7 +698,7 @@ export default function StreamsManager() {
       logDebug('URL preparada:', preparedUrl);
       setImgSrc(preparedUrl);
       
-    }, [src, prepareImageUrl, logDebug]);
+    }, [src, prepareImageUrl, logDebug, imgSrc]);
     
     // Exibir fallback se houver erro ou sem URL
     if (error || !imgSrc) {
@@ -696,6 +741,79 @@ export default function StreamsManager() {
       }
     }
   }
+
+  // Função para preparar URL da imagem após upload
+  const prepareUploadedImageUrl = useCallback((url: string, radioName: string): string => {
+    // Normalizar URL para garantir compatibilidade entre ambientes
+    let normalizedUrl = url;
+    
+    // Verificar se a URL contém localhost (independente do ambiente)
+    if (normalizedUrl.includes('localhost')) {
+      console.log('URL do servidor com localhost:', normalizedUrl);
+      
+      // Extrair o nome do arquivo da URL
+      const fileName = normalizedUrl.split('/').pop() || '';
+      
+      // Construir URL com domínio de produção
+      normalizedUrl = `https://songmetrix.com.br/uploads/logos/${fileName}`;
+      console.log('URL normalizada para produção:', normalizedUrl);
+    }
+    
+    // Garantir que a URL não está duplicada
+    if (normalizedUrl.includes('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/')) {
+      normalizedUrl = normalizedUrl.replace('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/', 'https://songmetrix.com.br/uploads/logos/');
+    }
+    
+    // Normalizar nome do arquivo para corresponder ao nome da rádio para facilitar cache/identificação
+    if (radioName) {
+      const currentFileName = normalizedUrl.split('/').pop() || '';
+      const fileExtension = currentFileName.split('.').pop() || 'png';
+      
+      // Criar nome de arquivo normalizado baseado no nome da rádio
+      const normalizedRadioName = radioName
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '') // Remover acentos
+        .replace(/[^\w\s-]/g, '') // Remover caracteres especiais
+        .replace(/\s+/g, '_') // Substituir espaços por underscores
+        .toLowerCase(); // Converter para minúsculas
+      
+      // Substituir o nome do arquivo na URL
+      const normalizedFileName = `${normalizedRadioName}.${fileExtension}`;
+      const basePath = normalizedUrl.substring(0, normalizedUrl.lastIndexOf('/') + 1);
+      normalizedUrl = `${basePath}${normalizedFileName}`;
+      
+      console.log(`Nome do arquivo normalizado: ${normalizedFileName}`);
+    }
+    
+    console.log('URL final normalizada:', normalizedUrl);
+    return normalizedUrl;
+  }, []);
+
+  // Função para pré-carregar uma única imagem
+  const preloadSingleImage = useCallback((url: string): Promise<boolean> => {
+    if (!url) return Promise.resolve(false);
+    
+    return new Promise((resolve) => {
+      const img = new Image();
+      
+      img.onload = () => {
+        console.log('Imagem pré-carregada com sucesso:', url);
+        resolve(true);
+      };
+      
+      img.onerror = () => {
+        console.log('Erro ao pré-carregar imagem:', url);
+        resolve(false);
+      };
+      
+      // Adicionar timestamp para evitar cache
+      const urlWithTimestamp = url.includes('?') 
+        ? `${url}&t=${Date.now()}` 
+        : `${url}?t=${Date.now()}`;
+      
+      img.src = urlWithTimestamp;
+    });
+  }, []);
 
   return (
     <div className={cn("container mx-auto p-4")}>
@@ -1000,39 +1118,59 @@ export default function StreamsManager() {
                               console.log('Resultado do upload:', uploadResult);
                               
                               if (uploadResult.success && uploadResult.url) {
-                                // Normalizar URL para garantir compatibilidade entre ambientes
-                                let normalizedUrl = uploadResult.url;
+                                // Normalizar URL com função dedicada
+                                const normalizedUrl = prepareUploadedImageUrl(uploadResult.url, formData.name);
                                 
-                                // Verificar se a URL contém localhost (independente do ambiente)
-                                if (normalizedUrl.includes('localhost')) {
-                                  console.log('URL do servidor com localhost:', normalizedUrl);
+                                // Verificar se estamos em desenvolvimento e se temos uma URL de preview
+                                const isDevMode = window.location.hostname === 'localhost';
+                                
+                                // Determinar qual URL usar para preview
+                                let previewUrl;
+                                if (isDevMode && uploadResult.filePreview) {
+                                  // Em modo de desenvolvimento, usar o preview de blob local
+                                  previewUrl = uploadResult.filePreview;
+                                  console.log('Usando URL de preview local (blob):', previewUrl);
+                                } else {
+                                  // Em produção, usar a URL normalizada com timestamp para evitar cache
+                                  const timestamp = Date.now();
+                                  previewUrl = normalizedUrl.includes('?') 
+                                    ? `${normalizedUrl}&t=${timestamp}`
+                                    : `${normalizedUrl}?t=${timestamp}`;
+                                  console.log('Usando URL normalizada com timestamp para preview:', previewUrl);
                                   
-                                  // Extrair o nome do arquivo da URL
-                                  const fileName = normalizedUrl.split('/').pop() || '';
-                                  
-                                  // Construir URL com domínio de produção
-                                  normalizedUrl = `https://songmetrix.com.br/uploads/logos/${fileName}`;
-                                  console.log('URL normalizada para produção:', normalizedUrl);
+                                  // Tentar pré-carregar a imagem
+                                  preloadSingleImage(previewUrl)
+                                    .then(success => {
+                                      console.log('Pré-carregamento da imagem:', success ? 'sucesso' : 'falha');
+                                      
+                                      // Se falhar no pré-carregamento, tentar alternativas
+                                      if (!success) {
+                                        // Tentar uma URL alternativa sem o nome normalizado
+                                        const fileName = uploadResult.url.split('/').pop() || '';
+                                        const fallbackUrl = `https://songmetrix.com.br/uploads/logos/${fileName}?t=${Date.now()}`;
+                                        console.log('Tentando URL alternativa:', fallbackUrl);
+                                        
+                                        // Verificar se essa alternativa funciona
+                                        preloadSingleImage(fallbackUrl).then(altSuccess => {
+                                          if (altSuccess) {
+                                            console.log('URL alternativa funcionou, atualizando preview');
+                                            setLogoPreview(fallbackUrl);
+                                            // Não alteramos o formData.logo_url, mantemos a normalizada
+                                          }
+                                        });
+                                      }
+                                    });
                                 }
                                 
-                                // Garantir que a URL não está duplicada
-                                if (normalizedUrl.includes('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/')) {
-                                  normalizedUrl = normalizedUrl.replace('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/', 'https://songmetrix.com.br/uploads/logos/');
-                                }
-                                
-                                console.log('URL final após normalização:', normalizedUrl);
-                                
-                                // Atualizar a URL no estado
-                                setFormData(prevState => {
-                                  const updatedData = { ...prevState, logo_url: normalizedUrl };
-                                  console.log('Estado do formData atualizado:', updatedData);
-                                  return updatedData;
-                                });
-                                
-                                // Atualizar preview diretamente com a imagem real ou o preview local
-                                const previewUrl = uploadResult.filePreview || normalizedUrl;
+                                // Atualizar a preview e o formData de maneira síncrona
                                 setLogoPreview(previewUrl);
-                                console.log('Preview da imagem atualizado:', previewUrl);
+                                setFormData(prevState => ({
+                                  ...prevState, 
+                                  logo_url: normalizedUrl
+                                }));
+                                
+                                console.log('URL da imagem definida no formData:', normalizedUrl);
+                                console.log('URL para preview definida:', previewUrl);
                                 
                                 // Atualizar toast para sucesso
                                 toast.update(loadingToastId, { 
@@ -1041,31 +1179,6 @@ export default function StreamsManager() {
                                   isLoading: false,
                                   autoClose: 3000
                                 });
-                                
-                                // Forçar atualização do componente ImageWithFallback
-                                setTimeout(() => {
-                                  console.log('Forçando atualização do componente...');
-                                  
-                                  // Primeiro, limpar o preview
-                                  setLogoPreview(null);
-                                  
-                                  // Aguardar um pouco para garantir que o DOM foi atualizado
-                                  setTimeout(() => {
-                                    console.log('Restaurando preview após limpeza:', previewUrl);
-                                    
-                                    // Definir novamente o preview
-                                    setLogoPreview(previewUrl);
-                                    
-                                    // Garantir que o formData está com a URL correta
-                                    setFormData(prevState => {
-                                      if (prevState.logo_url !== normalizedUrl) {
-                                        console.log('Corrigindo URL do logo no formData:', normalizedUrl);
-                                        return { ...prevState, logo_url: normalizedUrl };
-                                      }
-                                      return prevState;
-                                    });
-                                  }, 50);
-                                }, 500);
                               } else {
                                 // Atualizar toast para erro
                                 toast.update(loadingToastId, { 
@@ -1212,11 +1325,23 @@ export default function StreamsManager() {
                             // Garantir que todos os campos existam e sejam strings
                             const completedStream = prepareStreamForEditing(streamToEdit);
                             
+                            // Normalizar a URL da logo para evitar problemas de carregamento em produção
+                            if (streamToEdit.logo_url) {
+                              const normalizedLogoUrl = prepareUploadedImageUrl(
+                                streamToEdit.logo_url,
+                                streamToEdit.name
+                              );
+                              completedStream.logo_url = normalizedLogoUrl;
+                              console.log('URL da logo normalizada para edição:', normalizedLogoUrl);
+                            }
+                            
                             setEditingStream(streamToEdit);
                             setFormData(completedStream);
                             
                             // Definir o preview da logo, mesmo em ambiente de desenvolvimento
-                            setLogoPreview(streamToEdit.logo_url || null);
+                            const logoUrl = completedStream.logo_url || null;
+                            setLogoPreview(logoUrl);
+                            console.log('Preview da logo definido para edição:', logoUrl);
                             
                             // Abrir o diálogo de edição
                             setDialogOpen(true);

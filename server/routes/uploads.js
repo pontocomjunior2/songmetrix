@@ -10,7 +10,18 @@ const router = express.Router();
 
 // Configure CORS for image uploads
 router.use(cors({
-  origin: process.env.NODE_ENV === 'development' ? 'http://localhost:5173' : process.env.VITE_APP_URL,
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if(!origin) return callback(null, true);
+    
+    // Allow localhost and production URL
+    const allowedOrigins = ['http://localhost:5173', 'https://songmetrix.com.br'];
+    if(allowedOrigins.indexOf(origin) !== -1 || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   exposedHeaders: ['Content-Type', 'Content-Disposition']
 }));
@@ -21,6 +32,18 @@ router.use('/logos', (req, res, next) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   next();
 });
+
+// Função para normalizar o nome da rádio para uso no nome do arquivo
+const normalizeRadioName = (radioName) => {
+  if (!radioName) return '';
+  
+  return radioName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remover acentos
+    .replace(/[^\w\s-]/g, '') // Remover caracteres especiais
+    .replace(/\s+/g, '_') // Substituir espaços por underscores
+    .toLowerCase(); // Converter para minúsculas
+};
 
 // Configurar o armazenamento para o multer
 const storage = multer.diskStorage({
@@ -35,14 +58,36 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
+    // Tentar usar o nome normalizado recebido do cliente
+    if (req.body && req.body.normalizedFileName) {
+      console.log('Usando nome normalizado fornecido pelo cliente:', req.body.normalizedFileName);
+      cb(null, req.body.normalizedFileName);
+      return;
+    }
+    
+    // Se temos o nome da rádio, normalizar e usar como nome do arquivo
+    if (req.body && req.body.radioName) {
+      const radioName = req.body.radioName;
+      const normalizedName = normalizeRadioName(radioName);
+      if (normalizedName) {
+        const fileExtension = path.extname(file.originalname) || '.png';
+        const fileName = `${normalizedName}${fileExtension}`;
+        console.log('Nome normalizado gerado para a rádio:', fileName);
+        cb(null, fileName);
+        return;
+      }
+    }
+    
     // Usar o nome de arquivo personalizado se fornecido
     if (req.body && req.body.fileName) {
       cb(null, req.body.fileName);
-    } else {
-      // Gerar um nome de arquivo único usando UUID
-      const uniqueFilename = `${uuidv4()}${path.extname(file.originalname)}`;
-      cb(null, uniqueFilename);
+      return;
     }
+    
+    // Gerar um nome de arquivo único usando UUID como último recurso
+    const uniqueFilename = `${uuidv4()}${path.extname(file.originalname)}`;
+    console.log('Usando UUID como nome de arquivo:', uniqueFilename);
+    cb(null, uniqueFilename);
   }
 });
 
@@ -72,6 +117,10 @@ const upload = multer({
  * @access Private (Admin)
  */
 router.post('/logo', upload.single('logo'), async (req, res) => {
+  // Configurar CORS para esta rota específica
+  res.header('Access-Control-Allow-Origin', 'http://localhost:5173');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   try {
     // Verificar se o usuário está autenticado
     const authResult = await verifyAuth(req);
@@ -90,17 +139,72 @@ router.post('/logo', upload.single('logo'), async (req, res) => {
     // Obter informações da rádio, se disponíveis
     const radioId = req.body.radioId || '';
     const radioName = req.body.radioName || '';
-    console.log('Informações da rádio:', { radioId, radioName, fileName: file.filename });
+    const normalizedFileName = req.body.normalizedFileName || '';
+    
+    console.log('Informações da rádio:', { 
+      radioId, 
+      radioName, 
+      fileName: file.filename,
+      normalizedFileName
+    });
+
+    // Verificar se o arquivo foi salvo com o nome normalizado ou com UUID
+    const isNormalizedName = file.filename.includes('_');
+    const isUuidName = file.filename.includes('-');
+    
+    // Se o arquivo foi salvo com UUID mas temos o nome normalizado, renomear
+    if (isUuidName && normalizedFileName && normalizedFileName !== file.filename) {
+      try {
+        const oldPath = file.path;
+        const newPath = path.join(path.dirname(oldPath), normalizedFileName);
+        
+        console.log('Renomeando arquivo:', {
+          de: oldPath,
+          para: newPath,
+          nomeAntigo: file.filename,
+          nomeNovo: normalizedFileName
+        });
+        
+        // Verificar se o arquivo existe antes de tentar renomear
+        if (fs.existsSync(oldPath)) {
+          // Remover arquivo antigo se já existir
+          if (fs.existsSync(newPath)) {
+            fs.unlinkSync(newPath);
+            console.log('Arquivo antigo removido:', newPath);
+          }
+          
+          // Renomear o arquivo
+          fs.renameSync(oldPath, newPath);
+          console.log('Arquivo renomeado com sucesso');
+          
+          // Atualizar o nome do arquivo
+          file.filename = normalizedFileName;
+          file.path = newPath;
+        } else {
+          console.warn('Arquivo original não encontrado:', oldPath);
+        }
+      } catch (renameError) {
+        console.error('Erro ao renomear arquivo:', renameError);
+        // Continuar com o nome original em caso de erro
+      }
+    }
 
     // Construir a URL do arquivo
+    // Sempre usar a URL de produção para garantir compatibilidade entre ambientes
     const baseUrl = process.env.NODE_ENV === 'production' 
       ? 'https://songmetrix.com.br' 
-      : `http://localhost:${process.env.PORT || 3001}`;
+      : req.protocol + '://' + req.get('host');
     
-    const fileUrl = `${baseUrl}/uploads/logos/${file.filename}`;
+    // Forçar URL de produção para evitar problemas de compatibilidade
+    const prodUrl = 'https://songmetrix.com.br';
+    
+    // Usar URL de produção para o cliente, mas manter URL local nos logs
+    const fileUrl = `${prodUrl}/uploads/logos/${file.filename}`;
+    const localUrl = `${baseUrl}/uploads/logos/${file.filename}`;
     
     console.log('Arquivo salvo com sucesso:', file.path);
-    console.log('URL do arquivo:', fileUrl);
+    console.log('URL local do arquivo:', localUrl);
+    console.log('URL de produção do arquivo:', fileUrl);
 
     // Retornar a URL do arquivo
     return res.json({ 
@@ -108,7 +212,8 @@ router.post('/logo', upload.single('logo'), async (req, res) => {
       url: fileUrl,
       fileName: file.filename,
       radioId,
-      radioName
+      radioName,
+      normalized: isNormalizedName || normalizedFileName === file.filename
     });
   } catch (error) {
     console.error('Erro ao fazer upload de logo:', error);
