@@ -1,15 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { Star, Radio, Loader2 } from 'lucide-react';
+import { Star, Radio, Loader2, ArrowUpDown, Search } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase-client';
 import { RadioStatus } from '../../types/components';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useFavoriteRadios } from '../../hooks/useFavoriteRadios'; // Importando o hook
+import { UserStatus } from '../../types/auth';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../ui/table';
+import { Input } from '../ui/input';
+import { Button } from '../ui/button';
 
 export default function Radios() {
-  const { currentUser } = useAuth();
+  const { currentUser, userStatus } = useAuth();
   const { refresh } = useFavoriteRadios(); // Adicionando a chamada ao hook
+  const isAdmin = userStatus === UserStatus.ADMIN;
   const [radios, setRadios] = useState<RadioStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,6 +111,11 @@ export default function Radios() {
     }
   };
 
+  // Estados para o novo design de tabela
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortColumn, setSortColumn] = useState<'name' | 'status' | 'lastUpdate'>('name');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -118,70 +135,161 @@ export default function Radios() {
     );
   }
 
+  // Função para ordenar as rádios
+  const sortedRadios = [...radios].sort((a, b) => {
+    if (sortColumn === 'name') {
+      return sortDirection === 'asc' 
+        ? a.name.localeCompare(b.name)
+        : b.name.localeCompare(a.name);
+    } else if (sortColumn === 'status') {
+      return sortDirection === 'asc'
+        ? a.status.localeCompare(b.status)
+        : b.status.localeCompare(a.status);
+    } else {
+      const dateA = new Date(a.lastUpdate).getTime();
+      const dateB = new Date(b.lastUpdate).getTime();
+      return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+    }
+  });
+
+  // Função para filtrar as rádios pelo termo de busca
+  const filteredRadios = sortedRadios.filter(radio => 
+    radio.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Função para alternar a direção da ordenação
+  const toggleSort = (column: 'name' | 'status' | 'lastUpdate') => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
   return (
-    <div className="space-y-6 p-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {radios.map((radio) => {
-          const { full: fullDate, relative: relativeDate } = formatLastUpdate(radio.lastUpdate);
-          
-          return (
-            <div
-              key={radio.name}
-              className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 space-y-4"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <Radio className="w-6 h-6 text-gray-600 dark:text-gray-400" />
-                  <div>
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
-                      {radio.name}
-                    </h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      Última atualização: {relativeDate}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => toggleFavorite(radio.name, radio.isFavorite)}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-                >
-                  <Star
-                    className={`w-5 h-5 ${
-                      radio.isFavorite
-                        ? 'text-yellow-400 fill-yellow-400'
-                        : 'text-gray-400 dark:text-gray-500'
-                    }`}
-                  />
-                </button>
-              </div>
+    <div className="space-y-4 p-6">
+      <div className="flex flex-col sm:flex-row justify-between gap-4 mb-6">
+        <h2 className="text-2xl font-bold tracking-tight">Rádios Monitoradas</h2>
+        <div className="relative w-full sm:w-64">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar rádio..."
+            className="pl-8"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+      </div>
 
-              <div className="flex items-center gap-2">
-                <div
-                  className={`w-3 h-3 rounded-full ${
-                    radio.status === 'ONLINE'
-                      ? 'bg-green-500'
-                      : 'bg-red-500'
-                  }`}
-                />
-                <span
-                  className={`text-sm font-medium ${
-                    radio.status === 'ONLINE'
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-red-600 dark:text-red-400'
-                  }`}
+      <div className="rounded-md border bg-white dark:bg-gray-800 shadow-sm">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[50px]"></TableHead>
+              <TableHead>
+                <Button 
+                  variant="ghost" 
+                  onClick={() => toggleSort('name')}
+                  className="flex items-center gap-1 font-medium"
                 >
-                  {radio.status}
-                </span>
-              </div>
-
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                <p title={fullDate}>
-                  Última transmissão: {fullDate}
-                </p>
-              </div>
-            </div>
-          );
-        })}
+                  Nome
+                  <ArrowUpDown className="h-4 w-4" />
+                </Button>
+              </TableHead>
+              <TableHead>
+                <Button 
+                  variant="ghost" 
+                  onClick={() => toggleSort('status')}
+                  className="flex items-center gap-1 font-medium"
+                >
+                  Status
+                  <ArrowUpDown className="h-4 w-4" />
+                </Button>
+              </TableHead>
+              {isAdmin && (
+                <TableHead>
+                  <Button 
+                    variant="ghost" 
+                    onClick={() => toggleSort('lastUpdate')}
+                    className="flex items-center gap-1 font-medium"
+                  >
+                    Última Transmissão
+                    <ArrowUpDown className="h-4 w-4" />
+                  </Button>
+                </TableHead>
+              )}
+              <TableHead className="text-right">Favorito</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredRadios.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={isAdmin ? 5 : 4} className="h-24 text-center">
+                  Nenhuma rádio encontrada.
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredRadios.map((radio) => {
+                const { full: fullDate, relative: relativeDate } = formatLastUpdate(radio.lastUpdate);
+                return (
+                  <TableRow key={radio.name}>
+                    <TableCell>
+                      <Radio className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-medium">{radio.name}</div>
+                      <div className="text-sm text-muted-foreground">
+                        Atualizado {relativeDate}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div
+                          className={`w-2.5 h-2.5 rounded-full ${
+                            radio.status === 'ONLINE'
+                              ? 'bg-green-500'
+                              : 'bg-red-500'
+                          }`}
+                        />
+                        <span
+                          className={`text-sm font-medium ${
+                            radio.status === 'ONLINE'
+                              ? 'text-green-600 dark:text-green-400'
+                              : 'text-red-600 dark:text-red-400'
+                          }`}
+                        >
+                          {radio.status}
+                        </span>
+                      </div>
+                    </TableCell>
+                    {isAdmin && (
+                      <TableCell>
+                        <span title={fullDate} className="text-sm">
+                          {fullDate}
+                        </span>
+                      </TableCell>
+                    )}
+                    <TableCell className="text-right">
+                      <button
+                        onClick={() => toggleFavorite(radio.name, radio.isFavorite)}
+                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+                      >
+                        <Star
+                          className={`w-5 h-5 ${
+                            radio.isFavorite
+                              ? 'text-yellow-400 fill-yellow-400'
+                              : 'text-gray-400 dark:text-gray-500'
+                          }`}
+                        />
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
       </div>
     </div>
   );
