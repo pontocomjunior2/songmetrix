@@ -19,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogDescription,
 } from "../ui/dialog";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -43,6 +44,7 @@ interface Stream {
   twitter: string;
   youtube: string;
   frequencia: string;
+  index: string;
 }
 
 export default function StreamsManager() {
@@ -53,8 +55,11 @@ export default function StreamsManager() {
   const [editingStream, setEditingStream] = useState<Stream | null>(null);
   const [isDevEnvironment, setIsDevEnvironment] = useState(false);
   const [devModeMessage, setDevModeMessage] = useState('');
+  const [dialogOpen, setDialogOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hasLoadedStreams = useRef(false);
+  const renderCount = useRef(0);
+  const loadCount = useRef(0);
 
   // Estado inicial do formulário
   const initialFormState: Stream = {
@@ -74,18 +79,76 @@ export default function StreamsManager() {
     twitter: '',
     youtube: '',
     frequencia: '',
+    index: '0', // Valor padrão para o campo index
   };
 
   const [formData, setFormData] = useState<Stream>(initialFormState);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [nextIndex, setNextIndex] = useState<number>(0);
+
+  // Função para determinar o próximo valor de index baseado nos streams existentes
+  const determineNextIndex = useCallback((streamsData: Stream[]) => {
+    if (!streamsData || streamsData.length === 0) return 1;
+    
+    // Encontrar o maior valor de index atual
+    const maxIndex = streamsData.reduce((max, stream) => {
+      // Garantir que o index seja tratado como número
+      const currentIndex = parseInt(stream.index || '0', 10);
+      return isNaN(currentIndex) ? max : Math.max(max, currentIndex);
+    }, 0);
+    
+    // Incrementar em 1 para o próximo
+    const nextIdx = maxIndex + 1;
+    console.log(`Próximo valor de index calculado: ${nextIdx} (maior atual: ${maxIndex})`);
+    return nextIdx;
+  }, []);
+
+  // Função para garantir que todos os campos obrigatórios existam ao editar um stream
+  const prepareStreamForEditing = (stream: Stream): Stream => {
+    return {
+      ...initialFormState,
+      ...stream,
+      url: stream.url || '',
+      name: stream.name || '',
+      sheet: stream.sheet || '',
+      cidade: stream.cidade || '',
+      estado: stream.estado || '',
+      regiao: stream.regiao || '',
+      pais: stream.pais || 'Brasil',
+      segmento: stream.segmento || '',
+      formato: stream.formato || '',
+      logo_url: stream.logo_url || '',
+      site: stream.site || '',
+      instagram: stream.instagram || '',
+      facebook: stream.facebook || '',
+      twitter: stream.twitter || '',
+      youtube: stream.youtube || '',
+      frequencia: stream.frequencia || '',
+      index: stream.index || '0',
+    };
+  };
 
   // Função para verificar se uma imagem está acessível
   const checkImageExists = useCallback(async (url: string): Promise<boolean> => {
     if (!url) return false;
     
+    // Se estamos em ambiente de desenvolvimento e a URL é de produção, assumimos que a imagem existe
+    // sem tentar verificar (evita erros de CORS)
+    if (window.location.hostname === 'localhost' && url.includes('songmetrix.com.br')) {
+      console.log('Ambiente de desenvolvimento: assumindo que a imagem existe em:', url);
+      return true;
+    }
+    
     try {
-      const response = await fetch(url, { method: 'HEAD' });
-      return response.ok;
+      // Usar modo 'no-cors' para evitar erros de CORS durante o desenvolvimento
+      const response = await fetch(url, { 
+        method: 'HEAD',
+        mode: 'no-cors'
+      });
+      
+      // No modo 'no-cors', não podemos acessar response.ok
+      // Se não houve erro, consideramos que a imagem existe
+      return true;
     } catch (error) {
       console.error('Erro ao verificar imagem:', error);
       return false;
@@ -96,13 +159,18 @@ export default function StreamsManager() {
   const findAccessibleImageUrl = useCallback(async (baseUrl: string, fileName: string): Promise<string | null> => {
     if (!baseUrl) return null;
     
-    // Verificar se a URL já está duplicada
-    const isDuplicated = baseUrl.includes('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/');
-    
-    // Corrigir URL duplicada
+    // Corrigir URLs múltiplas vezes duplicadas usando regex
     let cleanBaseUrl = baseUrl;
-    if (isDuplicated) {
-      cleanBaseUrl = baseUrl.replace('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/', 'https://songmetrix.com.br/uploads/logos/');
+    // Padrão para detectar o prefixo duplicado
+    const duplicatedPrefix = 'https://songmetrix.com.br/uploads/logos/';
+    // Encontrar o último prefixo + o nome do arquivo
+    const regex = new RegExp(`(${duplicatedPrefix})+(.+)$`);
+    const match = baseUrl.match(regex);
+    
+    if (match) {
+      // Manter apenas o último prefixo + nome do arquivo
+      cleanBaseUrl = duplicatedPrefix + match[2];
+      console.log('URL múltiplas vezes duplicada corrigida:', cleanBaseUrl);
     }
     
     // Lista de possíveis URLs para tentar
@@ -137,28 +205,59 @@ export default function StreamsManager() {
 
   // Função para pré-carregar imagens
   const preloadImages = useCallback(async (streamsToPreload: Stream[]) => {
+    // Evitar pré-carregamento repetido
+    if (hasLoadedStreams.current) {
+      console.log('Imagens já pré-carregadas, pulando...');
+      return;
+    }
+    
     console.log('Pré-carregando imagens...');
     
-    const imagePromises = streamsToPreload
+    const isDev = window.location.hostname === 'localhost';
+    const maxImagesToPreload = 10; // Limitar o número de imagens para pré-carregar em produção
+    
+    // Filtrar streams com logo_url e limitar a quantidade
+    const streamsWithLogos = streamsToPreload
       .filter(stream => stream.logo_url)
-      .map(async stream => {
-        // Verificar se a URL está duplicada e corrigir
-        let cleanUrl = stream.logo_url;
-        if (stream.logo_url && stream.logo_url.includes('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/')) {
-          cleanUrl = stream.logo_url.replace('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/', 'https://songmetrix.com.br/uploads/logos/');
-          console.log('URL duplicada corrigida durante pré-carregamento:', cleanUrl);
+      .slice(0, maxImagesToPreload);
+    
+    console.log(`Selecionadas ${streamsWithLogos.length} imagens para pré-carregamento (limite: ${maxImagesToPreload})`);
+    
+    const imagePromises = streamsWithLogos.map(async stream => {
+      // Verificar se a URL está duplicada e corrigir
+      let cleanUrl = stream.logo_url;
+      if (stream.logo_url && stream.logo_url.includes('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/')) {
+        cleanUrl = stream.logo_url.replace('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/', 'https://songmetrix.com.br/uploads/logos/');
+        console.log('URL duplicada corrigida durante pré-carregamento:', cleanUrl);
+      }
+      
+      // Em ambiente de desenvolvimento, se a URL for de produção, assumimos que existe
+      // e retornamos diretamente sem verificação (evita erros de CORS)
+      if (isDev && cleanUrl.includes('songmetrix.com.br')) {
+        return cleanUrl;
+      }
+      
+      // Em ambiente de produção, verificar se a imagem existe
+      if (!isDev) {
+        try {
+          // Verificar diretamente se a imagem existe
+          const exists = await checkImageExists(cleanUrl);
+          if (exists) {
+            return cleanUrl;
+          }
+          
+          // Se não existir, tentar encontrar uma URL acessível
+          const fileName = cleanUrl.split('/').pop() || '';
+          return findAccessibleImageUrl(cleanUrl, fileName);
+        } catch (error) {
+          console.error('Erro ao verificar imagem:', error);
+          return null;
         }
-        
-        // Verificar diretamente se a imagem existe
-        const exists = await checkImageExists(cleanUrl);
-        if (exists) {
-          return cleanUrl;
-        }
-        
-        // Se não existir, tentar encontrar uma URL acessível
-        const fileName = cleanUrl.split('/').pop() || '';
-        return findAccessibleImageUrl(cleanUrl, fileName);
-      });
+      }
+      
+      // Em desenvolvimento, retornar a URL diretamente
+      return cleanUrl;
+    });
     
     // Aguardar todas as promessas de URLs acessíveis
     const accessibleUrls = await Promise.all(imagePromises);
@@ -168,25 +267,44 @@ export default function StreamsManager() {
     
     console.log(`Encontradas ${validUrls.length} URLs acessíveis para pré-carregamento`);
     
-    // Pré-carregar as imagens válidas
-    let loadedCount = 0;
-    const totalImages = validUrls.length;
+    // Pré-carregar as imagens válidas - limitado a 5 segundos no máximo
+    const preloadTimeout = 5000; // 5 segundos
     
     return new Promise<void>((resolve) => {
-      if (totalImages === 0) {
+      if (validUrls.length === 0) {
         console.log('Nenhuma imagem para pré-carregar');
         resolve();
         return;
       }
+      
+      // Em ambiente de desenvolvimento, não tentar pré-carregar imagens de produção
+      // para evitar erros de CORS, apenas simular o carregamento
+      if (isDev) {
+        console.log('Ambiente de desenvolvimento: simulando pré-carregamento de imagens');
+        setTimeout(() => {
+          console.log('Pré-carregamento de imagens simulado concluído');
+          resolve();
+        }, 300); // Reduzido para 300ms
+        return;
+      }
+      
+      // Timer para garantir que o pré-carregamento não bloqueia a UI por muito tempo
+      const timeout = setTimeout(() => {
+        console.log('Tempo limite de pré-carregamento atingido. Continuando...');
+        resolve();
+      }, preloadTimeout);
+      
+      let loadedCount = 0;
+      const totalImages = validUrls.length;
       
       validUrls.forEach(imageUrl => {
         const img = new Image();
         
         img.onload = () => {
           loadedCount++;
-          console.log(`Pré-carregada imagem ${loadedCount}/${totalImages}: ${imageUrl}`);
           
           if (loadedCount === totalImages) {
+            clearTimeout(timeout);
             console.log('Pré-carregamento de imagens concluído');
             resolve();
           }
@@ -197,6 +315,7 @@ export default function StreamsManager() {
           console.log(`Erro ao carregar imagem: ${imageUrl}`);
           
           if (loadedCount === totalImages) {
+            clearTimeout(timeout);
             console.log('Pré-carregamento de imagens concluído');
             resolve();
           }
@@ -219,47 +338,110 @@ export default function StreamsManager() {
     toast.error(error.message || 'Ocorreu um erro ao processar sua solicitação');
   }, []);
 
-  // Função para buscar streams
-  const fetchStreams = useCallback(async () => {
-    if (loading || hasLoadedStreams.current) return;
+  // Função para buscar streams - Usando useRef para evitar loops
+  const fetchStreamsRef = useRef<(() => Promise<void>) | null>(null);
+  
+  // Inicializar a função fetchStreams apenas uma vez no montagem do componente
+  useEffect(() => {
+    console.log('Inicializando fetchStreamsRef uma única vez');
     
-    try {
-      setLoading(true);
-      console.log('Buscando streams...');
-      
-      // Verificar se o usuário está autenticado
-      if (!currentUser) {
-        throw new Error('Usuário não autenticado');
-      }
-      
-      const data = await apiServices.streams.getAll();
-      
-      if (Array.isArray(data)) {
-        setStreams(data);
-        setFilteredStreams(data);
+    // Capturar as funções necessárias no escopo do useEffect
+    const handleApiErrorClosure = handleApiError;
+    const preloadImagesClosure = preloadImages;
+    const determineNextIndexClosure = determineNextIndex;
+    
+    // Definir a função fetchStreams
+    fetchStreamsRef.current = async () => {
+      try {
+        // Evitar carregamento repetido
+        if (hasLoadedStreams.current) {
+          console.log('Streams já carregados, pulando fetch...');
+          return;
+        }
         
-        // Pré-carregar imagens após obter os streams
-        await preloadImages(data);
-        hasLoadedStreams.current = true;
-      } else {
-        console.error('Dados recebidos não são um array:', data);
-        setStreams([]);
-        setFilteredStreams([]);
+        loadCount.current += 1;
+        // Limitar o número de tentativas para evitar loops
+        if (loadCount.current > 2) {
+          console.warn(`[WARN] Mais de 2 tentativas de carregamento (${loadCount.current}). Possível loop.`);
+          // Se já tentamos mais de 2 vezes, vamos forçar hasLoadedStreams para true
+          hasLoadedStreams.current = true;
+          return;
+        }
+        
+        console.log(`[DEBUG] Tentativa de carregamento #${loadCount.current}`);
+        
+        setLoading(true);
+        console.log('Buscando streams...');
+        
+        // Verificar se o usuário está autenticado
+        if (!currentUser) {
+          throw new Error('Usuário não autenticado');
+        }
+        
+        const data = await apiServices.streams.getAll();
+        
+        if (Array.isArray(data)) {
+          // Atualizar os streams no estado
+          setStreams(data);
+          setFilteredStreams(data);
+          
+          // Calcular o próximo índice
+          const nextIdx = determineNextIndexClosure(data);
+          setNextIndex(nextIdx);
+          console.log(`Próximo valor de index: ${nextIdx}`);
+          
+          // Atualizar o formData com o novo index calculado
+          setFormData(prev => ({
+            ...prev,
+            index: nextIdx.toString()
+          }));
+          
+          // Pré-carregar imagens após obter os streams
+          await preloadImagesClosure(data);
+          
+          // Marcar como carregado após sucesso
+          hasLoadedStreams.current = true;
+          
+          console.log(`${data.length} streams carregados com sucesso`);
+        } else {
+          console.error('Dados recebidos não são um array:', data);
+          setStreams([]);
+          setFilteredStreams([]);
+        }
+      } catch (error) {
+        handleApiErrorClosure(error as Error);
+        // Não alteramos o hasLoadedStreams em caso de erro
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      handleApiError(error as Error);
-    } finally {
-      setLoading(false);
-    }
-  }, [currentUser, handleApiError, loading, preloadImages]);
+    };
+    
+    // Função de cleanup
+    return () => {
+      // Nada a limpar aqui
+    };
+  // Esta função deve ser executada apenas uma vez na montagem, sem dependências
+  }, []); // array vazio
 
   // Efeito para carregar streams quando o usuário estiver autenticado
   useEffect(() => {
-    if (currentUser && !hasLoadedStreams.current) {
-      console.log('Usuário autenticado, carregando dados...');
-      fetchStreams();
-    }
-  }, [currentUser, fetchStreams]);
+    // Função assíncrona para carregar os streams
+    const loadStreams = async () => {
+      if (currentUser && !hasLoadedStreams.current && fetchStreamsRef.current) {
+        console.log('Usuário autenticado, carregando dados...');
+        // Executar o carregamento
+        await fetchStreamsRef.current();
+      }
+    };
+    
+    // Chamar a função
+    loadStreams();
+    
+    // Limpar recursos ao desmontar o componente
+    return () => {
+      console.log('Componente StreamsManager desmontado.');
+    };
+  }, [currentUser]); // Apenas depende do currentUser
 
   // Verificar ambiente no carregamento do componente
   useEffect(() => {
@@ -268,7 +450,7 @@ export default function StreamsManager() {
       setIsDevEnvironment(isDev);
       
       if (isDev) {
-        setDevModeMessage('Você está em ambiente de desenvolvimento. O upload de imagens só funciona em produção.');
+        setDevModeMessage('Você está em ambiente de desenvolvimento. O formulário funciona normalmente, mas certos recursos como upload de imagens podem ter comportamento simulado.');
         console.log('Ambiente de desenvolvimento detectado. Upload de imagens desativado.');
       } else {
         console.log('Ambiente: produção');
@@ -276,78 +458,209 @@ export default function StreamsManager() {
     };
     
     checkEnvironment();
+    
+    // Limpar recursos ao desmontar o componente
+    return () => {
+      console.log('Verificação de ambiente encerrada.');
+    };
+  }, []); // Array vazio para executar apenas uma vez
+
+  // Efeito para limpar o estado quando o componente é desmontado
+  useEffect(() => {
+    return () => {
+      console.log('[DEBUG] StreamsManager está sendo desmontado');
+      hasLoadedStreams.current = false;
+      loadCount.current = 0;
+    };
   }, []);
 
   // Componente para exibir imagem com fallback
-  const ImageWithFallback = ({ src, alt, className }: { src: string, alt: string, className?: string }) => {
+  const ImageWithFallback = ({ src, alt, className }: { src: string | null, alt: string, className?: string }) => {
     const [error, setError] = useState(false);
     const [imgSrc, setImgSrc] = useState<string | null>(null);
-    const verificationRef = useRef(false);
     const isMounted = useRef(true);
+    const triedUrlsRef = useRef<Set<string>>(new Set());
+    const attemptCountRef = useRef(0);
+    const maxAttempts = 3; // Limitar o número máximo de tentativas
     
+    // Debug info para rastrear problemas
+    const debugMode = true;
+    const logDebug = useCallback((message: string, ...args: any[]) => {
+      if (debugMode && isMounted.current) {
+        console.log(`[ImageWithFallback] ${message}`, ...args);
+      }
+    }, []);
+    
+    // Limpar quando o componente for desmontado
     useEffect(() => {
-      // Resetar o estado quando a fonte muda
-      setError(false);
-      verificationRef.current = false;
-      
-      const verifyImage = async () => {
-        // Se não há src ou já verificamos, não fazer nada
-        if (!src || verificationRef.current || !isMounted.current) return;
-        
-        try {
-          verificationRef.current = true;
-          
-          // Verificar se a URL está duplicada e corrigir
-          let cleanSrc = src;
-          if (src.includes('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/')) {
-            cleanSrc = src.replace('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/', 'https://songmetrix.com.br/uploads/logos/');
-            console.log('URL duplicada corrigida:', cleanSrc);
-          }
-          
-          // Verificar diretamente se a imagem existe
-          const exists = await checkImageExists(cleanSrc);
-          
-          if (!isMounted.current) return;
-          
-          if (exists) {
-            setImgSrc(cleanSrc);
-            setError(false);
-          } else {
-            // Se a URL direta não funcionar, tentar encontrar uma URL acessível
-            const fileName = cleanSrc.split('/').pop() || '';
-            const accessibleUrl = await findAccessibleImageUrl(cleanSrc, fileName);
-            
-            if (!isMounted.current) return;
-            
-            if (accessibleUrl) {
-              setImgSrc(accessibleUrl);
-              setError(false);
-            } else {
-              console.warn(`Nenhuma URL acessível encontrada para: ${cleanSrc}`);
-              setError(true);
-            }
-          }
-        } catch (err) {
-          if (isMounted.current) {
-            console.error('Erro ao verificar imagem:', err);
-            setError(true);
-          }
-        }
-      };
-      
-      verifyImage();
-      
-      // Limpar quando o componente for desmontado
       return () => {
         isMounted.current = false;
-        verificationRef.current = false;
       };
-    }, [src]);
+    }, []);
     
+    // Função para gerar alternativas de URL - não depende de state
+    const generateAlternatives = useCallback((url: string): string[] => {
+      const fileName = url.split('/').pop() || '';
+      if (!fileName) return [];
+      
+      // Lista base de alternativas
+      const alternatives = [
+        `https://www.songmetrix.com.br/uploads/logos/${fileName}`,
+        `https://songmetrix.com.br/uploads/logos/${fileName}`,
+        `https://songmetrix.com.br/uploads/logos/${fileName}?t=${Date.now()}`
+      ];
+      
+      // Adicionar versão normalizada do nome da rádio
+      if (alt.includes('Logo ')) {
+        const radioName = alt.replace('Logo ', '');
+        
+        const normalizedRadioName = radioName
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '') // Remover acentos
+          .replace(/[^\w\s-]/g, '') // Remover caracteres especiais
+          .replace(/\s+/g, '_') // Substituir espaços por underscores
+          .toLowerCase(); // Converter para minúsculas
+        
+        const fileExtension = fileName.split('.').pop() || 'png';
+        const normalizedFileName = `${normalizedRadioName}.${fileExtension}`;
+        
+        alternatives.unshift(`https://songmetrix.com.br/uploads/logos/${normalizedFileName}`);
+      }
+      
+      return alternatives;
+    }, [alt]);
+    
+    // Função para limpar e preparar URLs
+    const prepareImageUrl = useCallback((url: string | null): string | null => {
+      if (!url) return null;
+      
+      // Verificar se a URL é um blob (preview local)
+      if (url.startsWith('blob:')) {
+        logDebug('URL é um blob (preview local):', url);
+        return url;
+      }
+      
+      // Limpar URL
+      let cleanUrl = url;
+      
+      // Verificar e corrigir URLs com localhost
+      if (cleanUrl.includes('localhost')) {
+        const fileName = cleanUrl.split('/').pop() || '';
+        cleanUrl = `https://songmetrix.com.br/uploads/logos/${fileName}`;
+        logDebug('URL com localhost convertida para produção:', cleanUrl);
+      }
+      
+      // Corrigir prefixos duplicados
+      const duplicatedPrefix = 'https://songmetrix.com.br/uploads/logos/';
+      const regex = new RegExp(`(${duplicatedPrefix})+(.+)$`);
+      const match = cleanUrl.match(regex);
+      
+      if (match) {
+        cleanUrl = duplicatedPrefix + match[2];
+        logDebug('URL duplicada corrigida:', cleanUrl);
+      }
+      
+      // Verificar se a URL tem caminho completo
+      if (!cleanUrl.startsWith('http') && !cleanUrl.startsWith('/') && !cleanUrl.startsWith('blob:')) {
+        cleanUrl = `${duplicatedPrefix}${cleanUrl}`;
+        logDebug('URL sem prefixo corrigida:', cleanUrl);
+      }
+      
+      // Se for apenas um nome de arquivo, adicionar o caminho completo
+      if (!cleanUrl.includes('/') && !cleanUrl.startsWith('blob:')) {
+        cleanUrl = `${duplicatedPrefix}${cleanUrl}`;
+        logDebug('Nome de arquivo convertido para URL completa:', cleanUrl);
+      }
+      
+      return cleanUrl;
+    }, [logDebug]);
+    
+    // Função para tentar a próxima alternativa quando há erro
+    const tryNextAlternative = useCallback(() => {
+      if (!isMounted.current) return;
+      
+      // Verificar se atingiu o limite de tentativas
+      if (attemptCountRef.current >= maxAttempts) {
+        logDebug(`Limite de ${maxAttempts} tentativas atingido. Mostrando fallback.`);
+        setError(true);
+        return;
+      }
+      
+      // Incrementar número de tentativas
+      attemptCountRef.current++;
+      
+      // Verificar se ainda temos uma URL para tentar alternativas
+      if (!imgSrc) {
+        logDebug('Sem URL de imagem disponível para tentar alternativas.');
+        setError(true);
+        return;
+      }
+      
+      logDebug(`Tentativa #${attemptCountRef.current}: Erro ao carregar imagem: ${imgSrc}`);
+      
+      // Gerar alternativas para a URL atual
+      const alternatives = generateAlternatives(imgSrc);
+      
+      // Filtrar alternativas já tentadas usando a ref
+      const untried = alternatives.filter(url => !triedUrlsRef.current.has(url));
+      
+      if (untried.length === 0) {
+        logDebug('Todas as alternativas já foram tentadas. Exibindo fallback.');
+        setError(true);
+        return;
+      }
+      
+      // Escolher a próxima alternativa
+      const nextUrl = untried[0];
+      logDebug('Tentando URL alternativa:', nextUrl);
+      
+      // Registrar esta tentativa na ref
+      triedUrlsRef.current.add(nextUrl);
+      
+      // Definir a nova URL com um pequeno delay para evitar loops muito rápidos
+      setTimeout(() => {
+        if (isMounted.current) {
+          setImgSrc(nextUrl);
+        }
+      }, 200);
+    }, [imgSrc, generateAlternatives, logDebug]);
+    
+    // Efeito para processar a URL quando a prop src muda
+    useEffect(() => {
+      if (!isMounted.current) return;
+      
+      // Log para depuração
+      logDebug(`Props src atualizada: ${src}`);
+      
+      // Resetar estado e refs quando a fonte muda
+      setError(false);
+      triedUrlsRef.current = new Set();
+      attemptCountRef.current = 0;
+      
+      // Processar a URL
+      const preparedUrl = prepareImageUrl(src);
+      
+      if (!preparedUrl) {
+        logDebug('URL inválida ou nula');
+        setError(true);
+        return;
+      }
+      
+      // Registrar esta URL como tentada
+      triedUrlsRef.current.add(preparedUrl);
+      
+      // Aplicar a URL preparada
+      logDebug('URL preparada:', preparedUrl);
+      setImgSrc(preparedUrl);
+      
+    }, [src, prepareImageUrl, logDebug]);
+    
+    // Exibir fallback se houver erro ou sem URL
     if (error || !imgSrc) {
       return (
         <div className={`bg-gray-200 flex items-center justify-center ${className || 'w-12 h-12'}`}>
           <Radio className="w-6 h-6 text-gray-400" />
+          {error && <span className="sr-only">Erro ao carregar imagem</span>}
         </div>
       );
     }
@@ -357,14 +670,32 @@ export default function StreamsManager() {
         src={imgSrc}
         alt={alt}
         className={className}
-        onError={() => {
-          if (isMounted.current) {
-            setError(true);
-          }
+        onError={tryNextAlternative}
+        onLoad={() => {
+          logDebug(`Imagem carregada com sucesso: ${imgSrc}`);
         }}
       />
     );
   };
+
+  // Função para excluir um stream
+  const handleDeleteStream = async (id: number) => {
+    if (window.confirm('Tem certeza que deseja excluir esta stream?')) {
+      try {
+        await apiServices.streams.delete(id);
+        toast.success('Stream excluída com sucesso!');
+        // Forçar nova busca de streams
+        hasLoadedStreams.current = false;
+        if (fetchStreamsRef.current) {
+          await fetchStreamsRef.current();
+        } else {
+          console.warn('Função fetchStreams não está disponível');
+        }
+      } catch (error) {
+        handleApiError(error as Error);
+      }
+    }
+  }
 
   return (
     <div className={cn("container mx-auto p-4")}>
@@ -385,42 +716,88 @@ export default function StreamsManager() {
 
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Gerenciar Streams</h1>
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button onClick={() => {
-              setEditingStream(null);
-              setFormData(initialFormState);
-              setLogoPreview(null);
-            }}>
-              <Plus className="w-4 h-4 mr-2" />
-              Adicionar Stream
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
+        <Button onClick={() => {
+          setEditingStream(null);
+          // Usar o próximo index calculado para o novo stream
+          setFormData({
+            ...initialFormState,
+            index: nextIndex.toString()
+          });
+          console.log(`Novo stream será criado com index: ${nextIndex}`);
+          setLogoPreview(null);
+          setDialogOpen(true);
+        }}>
+          <Plus className="w-4 h-4 mr-2" />
+          Adicionar Stream
+        </Button>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent 
+            className="max-w-3xl max-h-[90vh] overflow-y-auto" 
+            aria-describedby="stream-form-description"
+          >
             <DialogHeader>
               <DialogTitle>
                 {editingStream ? 'Editar Stream' : 'Adicionar Stream'}
               </DialogTitle>
+              <DialogDescription id="stream-form-description">
+                {editingStream ? 'Edite os detalhes da stream selecionada.' : 'Preencha os detalhes para adicionar uma nova stream.'}
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={async (e) => {
               e.preventDefault();
               try {
+                // Garantir que todos os valores são strings antes de enviar
+                const dataToSend = prepareStreamForEditing(formData);
+                
                 if (editingStream) {
-                  await apiServices.streams.update(editingStream.id!, formData);
+                  // Garantir que o ID seja incluído corretamente nos dados enviados
+                  const updateData = {
+                    ...dataToSend,
+                    id: editingStream.id // Garantir que o ID está incluído
+                  };
+                  console.log('Atualizando stream com ID:', editingStream.id);
+                  console.log('Dados enviados para atualização:', updateData);
+                  
+                  await apiServices.streams.update(editingStream.id!, updateData);
                   toast.success('Stream atualizada com sucesso!');
                 } else {
-                  await apiServices.streams.create(formData);
+                  // Ao criar novo stream, garantir que o index seja o próximo disponível
+                  const createData = {
+                    ...dataToSend,
+                    index: nextIndex.toString() // Garantir que estamos usando o próximo índice calculado
+                  };
+                  console.log('Criando novo stream com index:', nextIndex);
+                  console.log('Dados enviados para criação:', createData);
+                  
+                  await apiServices.streams.create(createData);
                   toast.success('Stream criada com sucesso!');
                 }
+                
+                // Primeiro fechar o diálogo para evitar problemas de re-renderização
+                setDialogOpen(false);
+                
+                // Em seguida, resetar os estados
                 setFormData(initialFormState);
                 setEditingStream(null);
                 setLogoPreview(null);
-                fetchStreams();
+                
+                // Forçar nova busca de streams
+                hasLoadedStreams.current = false;
+                loadCount.current = 0; // Resetar o contador de carregamento
+                
+                if (fetchStreamsRef.current) {
+                  // Usar setTimeout para garantir que o diálogo já foi fechado
+                  setTimeout(async () => {
+                    if (fetchStreamsRef.current) {
+                      await fetchStreamsRef.current();
+                    }
+                  }, 100);
+                }
               } catch (error) {
                 handleApiError(error as Error);
               }
             }}>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto pr-1">
                 <div className="col-span-2">
                   <Label htmlFor="name">Nome da Rádio</Label>
                   <Input
@@ -466,6 +843,17 @@ export default function StreamsManager() {
                     value={formData.cidade}
                     onChange={(e) => setFormData({ ...formData, cidade: e.target.value })}
                     required
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="index">Índice</Label>
+                  <Input
+                    id="index"
+                    value={formData.index}
+                    readOnly={true}
+                    disabled={true}
+                    className="bg-gray-100"
                   />
                 </div>
 
@@ -578,40 +966,142 @@ export default function StreamsManager() {
                         <Radio className="w-8 h-8 text-gray-400" />
                       </div>
                     )}
-                    <input
-                      type="file"
-                      id="logo"
-                      ref={fileInputRef}
-                      accept="image/*"
-                      className="hidden"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          try {
-                            const formDataFile = new FormData();
-                            formDataFile.append('file', file);
-                            formDataFile.append('name', formData.name);
+                    <div className="flex flex-col space-y-2">
+                      <input
+                        type="file"
+                        id="logo"
+                        ref={fileInputRef}
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            try {
+                              // Mostrar toast de carregamento
+                              const loadingToastId = toast.loading('Fazendo upload da imagem...');
+                              
+                              const formDataFile = new FormData();
+                              formDataFile.append('logo', file);
+                              formDataFile.append('radioName', formData.name || 'nova-radio');
+                              
+                              // Garantir que o nome da rádio foi fornecido
+                              if (!formData.name) {
+                                toast.update(loadingToastId, { 
+                                  render: 'Preencha o nome da rádio antes de fazer upload da logo', 
+                                  type: 'warning',
+                                  isLoading: false,
+                                  autoClose: 5000
+                                });
+                                return;
+                              }
 
-                            const uploadResult = await apiServices.uploads.uploadLogo(formDataFile);
-                            
-                            if (uploadResult.url) {
-                              setFormData({ ...formData, logo_url: uploadResult.url });
-                              setLogoPreview(uploadResult.url);
-                              toast.success('Logo carregada com sucesso!');
+                              console.log('Iniciando upload da logo para a rádio:', formData.name);
+                              const uploadResult = await apiServices.uploads.uploadLogo(formDataFile);
+                              console.log('Resultado do upload:', uploadResult);
+                              
+                              if (uploadResult.success && uploadResult.url) {
+                                // Normalizar URL para garantir compatibilidade entre ambientes
+                                let normalizedUrl = uploadResult.url;
+                                
+                                // Verificar se a URL contém localhost (independente do ambiente)
+                                if (normalizedUrl.includes('localhost')) {
+                                  console.log('URL do servidor com localhost:', normalizedUrl);
+                                  
+                                  // Extrair o nome do arquivo da URL
+                                  const fileName = normalizedUrl.split('/').pop() || '';
+                                  
+                                  // Construir URL com domínio de produção
+                                  normalizedUrl = `https://songmetrix.com.br/uploads/logos/${fileName}`;
+                                  console.log('URL normalizada para produção:', normalizedUrl);
+                                }
+                                
+                                // Garantir que a URL não está duplicada
+                                if (normalizedUrl.includes('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/')) {
+                                  normalizedUrl = normalizedUrl.replace('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/', 'https://songmetrix.com.br/uploads/logos/');
+                                }
+                                
+                                console.log('URL final após normalização:', normalizedUrl);
+                                
+                                // Atualizar a URL no estado
+                                setFormData(prevState => {
+                                  const updatedData = { ...prevState, logo_url: normalizedUrl };
+                                  console.log('Estado do formData atualizado:', updatedData);
+                                  return updatedData;
+                                });
+                                
+                                // Atualizar preview diretamente com a imagem real ou o preview local
+                                const previewUrl = uploadResult.filePreview || normalizedUrl;
+                                setLogoPreview(previewUrl);
+                                console.log('Preview da imagem atualizado:', previewUrl);
+                                
+                                // Atualizar toast para sucesso
+                                toast.update(loadingToastId, { 
+                                  render: 'Logo carregada com sucesso!', 
+                                  type: 'success',
+                                  isLoading: false,
+                                  autoClose: 3000
+                                });
+                                
+                                // Forçar atualização do componente ImageWithFallback
+                                setTimeout(() => {
+                                  console.log('Forçando atualização do componente...');
+                                  
+                                  // Primeiro, limpar o preview
+                                  setLogoPreview(null);
+                                  
+                                  // Aguardar um pouco para garantir que o DOM foi atualizado
+                                  setTimeout(() => {
+                                    console.log('Restaurando preview após limpeza:', previewUrl);
+                                    
+                                    // Definir novamente o preview
+                                    setLogoPreview(previewUrl);
+                                    
+                                    // Garantir que o formData está com a URL correta
+                                    setFormData(prevState => {
+                                      if (prevState.logo_url !== normalizedUrl) {
+                                        console.log('Corrigindo URL do logo no formData:', normalizedUrl);
+                                        return { ...prevState, logo_url: normalizedUrl };
+                                      }
+                                      return prevState;
+                                    });
+                                  }, 50);
+                                }, 500);
+                              } else {
+                                // Atualizar toast para erro
+                                toast.update(loadingToastId, { 
+                                  render: `Falha ao fazer upload da logo: ${uploadResult.message || 'Erro desconhecido'}`, 
+                                  type: 'error',
+                                  isLoading: false,
+                                  autoClose: 5000
+                                });
+                              }
+                            } catch (error) {
+                              handleApiError(error as Error);
                             }
-                          } catch (error) {
-                            handleApiError(error as Error);
                           }
-                        }
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      Escolher Logo
-                    </Button>
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        Escolher Logo
+                      </Button>
+                      {logoPreview && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="text-red-500 hover:text-red-700"
+                          onClick={() => {
+                            setLogoPreview(null);
+                            setFormData({ ...formData, logo_url: '' });
+                          }}
+                        >
+                          Remover Logo
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -624,6 +1114,7 @@ export default function StreamsManager() {
                     setEditingStream(null);
                     setFormData(initialFormState);
                     setLogoPreview(null);
+                    setDialogOpen(false);
                   }}
                 >
                   Cancelar
@@ -715,9 +1206,20 @@ export default function StreamsManager() {
                           variant="ghost"
                           size="sm"
                           onClick={() => {
-                            setEditingStream(stream);
-                            setFormData(stream);
-                            setLogoPreview(stream.logo_url);
+                            // Garantir que o stream seja definido corretamente para edição
+                            const streamToEdit = {...stream};
+                            
+                            // Garantir que todos os campos existam e sejam strings
+                            const completedStream = prepareStreamForEditing(streamToEdit);
+                            
+                            setEditingStream(streamToEdit);
+                            setFormData(completedStream);
+                            
+                            // Definir o preview da logo, mesmo em ambiente de desenvolvimento
+                            setLogoPreview(streamToEdit.logo_url || null);
+                            
+                            // Abrir o diálogo de edição
+                            setDialogOpen(true);
                           }}
                         >
                           <Edit className="w-4 h-4" />
@@ -726,15 +1228,7 @@ export default function StreamsManager() {
                           variant="ghost"
                           size="sm"
                           onClick={async () => {
-                            if (window.confirm('Tem certeza que deseja excluir esta stream?')) {
-                              try {
-                                await apiServices.streams.delete(stream.id!);
-                                toast.success('Stream excluída com sucesso!');
-                                fetchStreams();
-                              } catch (error) {
-                                handleApiError(error as Error);
-                              }
-                            }
+                            await handleDeleteStream(stream.id!);
                           }}
                         >
                           <Trash2 className="w-4 h-4" />

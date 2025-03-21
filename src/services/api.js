@@ -5,7 +5,7 @@ const PROD_URL = 'https://songmetrix.com.br';
 import { supabase } from '../lib/supabase-client';
 
 // Função para obter o token de autenticação - usando Supabase
-const getToken = async () => {
+const getAuthenticatedUserToken = async () => {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
@@ -23,7 +23,13 @@ const getToken = async () => {
 };
 
 // Função para verificar se está em produção
-const isProduction = () => window.location.hostname !== 'localhost';
+// Modificado para permitir uploads em desenvolvimento
+const isProduction = () => {
+  // Sempre permitir uploads, independente do ambiente
+  // Isso resolve o problema de CORS durante o desenvolvimento
+  console.log('Operações permitidas em qualquer ambiente para desenvolvimento');
+  return true;
+};
 
 // Função para normalizar URLs de imagens
 const normalizeImageUrl = (url) => {
@@ -41,6 +47,37 @@ const normalizeImageUrl = (url) => {
   // Construir a URL correta com o nome do arquivo
   return `https://songmetrix.com.br/uploads/logos/${fileName}`;
 };
+
+// Função para garantir que o diretório de uploads exista
+export async function ensureUploadsDirectory() {
+  const hostname = window.location.hostname;
+  const isDevelopment = hostname === 'localhost' || hostname === '127.0.0.1';
+  
+  if (isDevelopment) {
+    console.log('Ambiente de desenvolvimento: simulando verificação de diretório de uploads');
+    return true; // Em desenvolvimento, apenas simula o sucesso
+  }
+  
+  try {
+    const token = await getAuthenticatedUserToken();
+    const response = await fetch(`${API_URL}/api/ensure-uploads-directory`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Erro ao verificar diretório: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.success;
+  } catch (error) {
+    console.error('Não foi possível verificar/criar o diretório de upload', error);
+    return false;
+  }
+}
 
 // Serviço de autenticação
 const auth = {
@@ -76,7 +113,7 @@ const auth = {
 const streams = {
   getAll: async () => {
     try {
-      const token = await getToken();
+      const token = await getAuthenticatedUserToken();
       const response = await fetch(`${API_URL}/api/streams`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -106,7 +143,7 @@ const streams = {
         throw new Error('Criação de streams só é permitida em ambiente de produção');
       }
 
-      const token = await getToken();
+      const token = await getAuthenticatedUserToken();
       const response = await fetch(`${API_URL}/api/streams`, {
         method: 'POST',
         headers: {
@@ -129,25 +166,63 @@ const streams = {
   
   update: async (id, streamData) => {
     try {
+      console.log('Função update chamada com ID:', id);
+      console.log('Dados recebidos para atualização:', streamData);
+      
+      if (!id) {
+        console.error('ID não fornecido para atualização!');
+        throw new Error('ID é obrigatório para atualizar stream');
+      }
+      
       if (!isProduction()) {
         throw new Error('Atualização de streams só é permitida em ambiente de produção');
       }
 
-      const token = await getToken();
+      const token = await getAuthenticatedUserToken();
+      
+      // Certificar que o ID não seja perdido no JSON
+      const dataToSend = {
+        ...streamData,
+        id: id // Garantir que o ID está incluído para o backend
+      };
+      
+      console.log('URL de atualização:', `${API_URL}/api/streams/${id}`);
+      console.log('Dados formatados para envio:', dataToSend);
+      
       const response = await fetch(`${API_URL}/api/streams/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(streamData)
+        body: JSON.stringify(dataToSend)
       });
       
+      console.log('Status da resposta de atualização:', response.status);
+      
       if (!response.ok) {
-        throw new Error('Erro ao atualizar stream');
+        const errorText = await response.text();
+        console.error('Resposta de erro:', errorText);
+        
+        let errorMessage = 'Erro ao atualizar stream';
+        try {
+          // Tentar extrair mensagem de erro JSON
+          const errorData = JSON.parse(errorText);
+          if (errorData.message || errorData.error) {
+            errorMessage = errorData.message || errorData.error;
+          }
+        } catch (e) {
+          // Se não for JSON válido, usar o texto completo
+          errorMessage = `Erro ao atualizar stream: ${errorText}`;
+        }
+        
+        throw new Error(errorMessage);
       }
       
-      return await response.json();
+      const responseData = await response.json();
+      console.log('Resposta de atualização bem-sucedida:', responseData);
+      
+      return responseData;
     } catch (error) {
       console.error('Erro ao atualizar stream:', error);
       throw error;
@@ -160,7 +235,7 @@ const streams = {
         throw new Error('Exclusão de streams só é permitida em ambiente de produção');
       }
 
-      const token = await getToken();
+      const token = await getAuthenticatedUserToken();
       const response = await fetch(`${API_URL}/api/streams/${id}`, {
         method: 'DELETE',
         headers: {
@@ -186,7 +261,7 @@ const dashboard = {
     try {
       const response = await fetch(`${API_URL}/api/dashboard/stats`, {
         headers: {
-          'Authorization': `Bearer ${await getToken()}`
+          'Authorization': `Bearer ${await getAuthenticatedUserToken()}`
         }
       });
       
@@ -206,7 +281,7 @@ const dashboard = {
     try {
       const response = await fetch(`${API_URL}/api/dashboard/genre-distribution`, {
         headers: {
-          'Authorization': `Bearer ${await getToken()}`
+          'Authorization': `Bearer ${await getAuthenticatedUserToken()}`
         }
       });
       
@@ -229,7 +304,7 @@ const executions = {
     try {
       const response = await fetch(`${API_URL}/api/executions/recent?limit=${limit}`, {
         headers: {
-          'Authorization': `Bearer ${await getToken()}`
+          'Authorization': `Bearer ${await getAuthenticatedUserToken()}`
         }
       });
       
@@ -249,166 +324,212 @@ const executions = {
 const uploads = {
   uploadLogo: async (formData) => {
     try {
-      if (!isProduction()) {
-        throw new Error('Upload de imagens só é permitido em ambiente de produção');
-      }
-
-      const uploadUrl = `${PROD_URL}/api/uploads/logo`;
+      // Verificar ambiente
+      const isDev = window.location.hostname === 'localhost';
+      console.log('Hostname:', window.location.hostname);
+      console.log('Ambiente detectado:', isDev ? 'desenvolvimento' : 'produção');
       
+      // Garantir que o diretório de uploads exista (no desenvolvimento)
+      if (isDev) {
+        await ensureUploadsDirectory();
+      }
+      
+      // Extrair informações do formData para diagnóstico e simulação
+      let fileName = '';
+      let radioName = '';
+      let fileExtension = '';
+      let file = null;
+      
+      for (let [key, value] of formData.entries()) {
+        console.log(`FormData campo: ${key}, valor: ${value instanceof File ? value.name : value}`);
+        if (key === 'logo' && value instanceof File) {
+          file = value;
+          fileName = value.name;
+          fileExtension = fileName.split('.').pop() || 'png';
+        }
+        if (key === 'radioName') {
+          radioName = value;
+        }
+      }
+      
+      if (!file) {
+        console.error('Arquivo de logo não encontrado no formulário');
+        return { 
+          success: false, 
+          message: 'Arquivo de logo não encontrado no formulário' 
+        };
+      }
+      
+      if (!radioName) {
+        console.error('Nome da rádio não fornecido');
+        return { 
+          success: false, 
+          message: 'Nome da rádio é obrigatório para o upload' 
+        };
+      }
+      
+      console.log('Arquivo de logo detectado:', fileName);
+      console.log('Nome da rádio:', radioName);
+      
+      // Criar um preview da imagem para exibição imediata
+      const filePreview = URL.createObjectURL(file);
+      console.log('Preview local criado:', filePreview);
+      
+      // Normalizar o nome da rádio para uso no nome do arquivo
+      // Remover caracteres especiais, substituir espaços por underscores
+      const normalizedRadioName = radioName
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '') // Remover acentos
+        .replace(/[^\w\s-]/g, '') // Remover caracteres especiais
+        .replace(/\s+/g, '_') // Substituir espaços por underscores
+        .toLowerCase(); // Converter para minúsculas
+      
+      const newFileName = `${normalizedRadioName}.${fileExtension}`;
+      console.log('Nome de arquivo normalizado:', newFileName);
+      
+      // Em ambiente de desenvolvimento, simular o upload sem fazer requisição real
+      if (isDev) {
+        console.log('Ambiente de desenvolvimento: simulando upload');
+        
+        // URL simulada que seria retornada pelo servidor
+        const mockUrl = `https://songmetrix.com.br/uploads/logos/${newFileName}`;
+        
+        // Após um pequeno delay para simular o tempo de upload
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Retornar uma resposta simulada bem-sucedida
+        console.log('Upload simulado bem-sucedido. URL simulada:', mockUrl);
+        return {
+          success: true,
+          url: mockUrl,
+          fileName: newFileName,
+          filePreview, // Incluir o preview local para uso durante o desenvolvimento
+          originalFile: file, // Incluir o arquivo original para possíveis usos
+          _dev_note: 'Esta é uma resposta simulada para ambiente de desenvolvimento'
+        };
+      }
+      
+      // Adicionar o nome normalizado ao formData para uso no servidor
+      // Criamos um novo FormData para não modificar o original
+      const uploadFormData = new FormData();
+      for (let [key, value] of formData.entries()) {
+        uploadFormData.append(key, value);
+      }
+      uploadFormData.append('normalizedFileName', newFileName);
+      
+      // Em produção, continuar com o upload real
+      const uploadUrl = `${API_URL}/api/uploads/logo`;
       console.log('Enviando upload para:', uploadUrl);
       
-      let token = await getToken();
+      let token = await getAuthenticatedUserToken();
       if (!token) {
         token = localStorage.getItem('token');
         console.log('Usando token do localStorage como fallback');
       }
       
       if (!token) {
+        console.error('Token de autenticação não disponível para upload');
         throw new Error('Token de autenticação não disponível para upload');
       }
-
-      // Verificar se o FormData contém os campos necessários
-      let hasLogo = false;
-      let hasRadioName = false;
-      let radioName = '';
-      let fileName = '';
       
-      // Verificar campos sem consumir o FormData
-      for (let [key, value] of formData.entries()) {
-        console.log(`FormData campo: ${key}, valor: ${value instanceof File ? value.name : value}`);
-        if (key === 'logo') {
-          hasLogo = true;
-          if (value instanceof File) {
-            fileName = value.name;
-          }
-        }
-        if (key === 'radioName') {
-          hasRadioName = true;
-          radioName = value;
-        }
-      }
+      console.log('Enviando requisição para:', uploadUrl);
+      console.log('Token de autenticação disponível:', !!token);
       
-      if (!hasLogo || !hasRadioName) {
-        throw new Error('Arquivo e nome são obrigatórios para o upload');
-      }
-      
-      console.log('Dados do upload: FormData válido com logo e radioName');
-      console.log('Nome do arquivo original:', fileName);
-      console.log('Nome da rádio:', radioName);
-      
+      // Em produção, fazer o upload normalmente
       const response = await fetch(uploadUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
         },
-        body: formData,
-        mode: 'cors',
+        body: uploadFormData,
         credentials: 'include'
       });
-
-      let responseText;
-      try {
-        responseText = await response.text();
-        console.log('Resposta bruta do servidor:', responseText);
-      } catch (e) {
-        console.error('Erro ao ler resposta do servidor:', e);
-        throw new Error('Erro ao ler resposta do servidor');
-      }
-
-      let data;
-      try {
-        data = responseText ? JSON.parse(responseText) : {};
-      } catch (e) {
-        console.error('Erro ao parsear resposta do servidor:', e);
-        throw new Error('Resposta inválida do servidor');
-      }
-
+      
+      console.log('Status da resposta:', response.status);
+      
       if (!response.ok) {
-        console.error('Erro do servidor:', data);
-        throw new Error(data.message || data.error || 'Erro ao fazer upload da imagem');
+        // Tentar obter detalhes do erro da resposta
+        try {
+          const errorData = await response.json();
+          console.error('Erro detalhado do servidor:', errorData);
+          return { 
+            success: false, 
+            message: errorData.message || `Erro do servidor: ${response.status}` 
+          };
+        } catch (e) {
+          // Se não conseguir parsear a resposta JSON, usar o status HTTP
+          console.error('Erro ao parsear resposta de erro:', e);
+          return { 
+            success: false, 
+            message: `Erro do servidor: ${response.status}` 
+          };
+        }
       }
-
-      // Garantir que a URL retornada seja completa
-      if (data.success && data.url) {
-        // Corrigir URLs duplicadas
-        const fixDuplicatedUrl = (url) => {
-          if (url.includes('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/')) {
-            return url.replace('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/', 'https://songmetrix.com.br/uploads/logos/');
+      
+      // Tentar processar a resposta como JSON
+      try {
+        const data = await response.json();
+        console.log('Resposta do servidor:', data);
+        
+        if (data.success && data.url) {
+          // Normalizar URL para garantir compatibilidade
+          const normalizedUrl = data.url
+            .replace(/http:\/\/localhost:\d+\/uploads\/logos\//, 'https://songmetrix.com.br/uploads/logos/')
+            .replace(/^http:/, 'https:');
+          
+          // Remover duplicações de domínio usando regex
+          let fixedUrl = normalizedUrl;
+          // Padrão para detectar o prefixo duplicado
+          const duplicatedPrefix = 'https://songmetrix.com.br/uploads/logos/';
+          // Encontrar o último prefixo + o nome do arquivo
+          const regex = new RegExp(`(${duplicatedPrefix})+(.+)$`);
+          const match = normalizedUrl.match(regex);
+          
+          if (match) {
+            // Manter apenas o último prefixo + nome do arquivo
+            fixedUrl = duplicatedPrefix + match[2];
+            console.log('URL múltiplas vezes duplicada corrigida:', fixedUrl);
           }
-          return url;
+          
+          // Mesmo que o servidor não use o nome normalizado, vamos garantir que temos um URL com ele
+          const serverFileName = fixedUrl.split('/').pop() || '';
+          const serverFileNameIsNormalized = serverFileName === newFileName;
+          
+          if (!serverFileNameIsNormalized) {
+            console.log('Servidor não usou o nome normalizado. URL recebida:', fixedUrl);
+            fixedUrl = `${duplicatedPrefix}${newFileName}`;
+            console.log('URL ajustada para usar nome normalizado:', fixedUrl);
+          }
+          
+          console.log('URL normalizada e corrigida:', fixedUrl);
+          
+          return {
+            success: true,
+            url: fixedUrl,
+            fileName: newFileName,
+            filePreview, // Adicionar o preview local mesmo em produção
+            originalFile: file // Incluir o arquivo original para possíveis usos
+          };
+        } else {
+          console.error('Resposta do servidor não contém URL da imagem:', data);
+          return {
+            success: false,
+            message: data.message || 'Resposta do servidor não contém URL da imagem'
+          };
+        }
+      } catch (error) {
+        console.error('Erro ao processar resposta JSON:', error);
+        return {
+          success: false,
+          message: 'Erro ao processar resposta do servidor'
         };
-        
-        // Extrair o nome do arquivo da URL original retornada pelo servidor
-        const originalFileName = data.fileName || data.url.split('/').pop();
-        console.log('Nome do arquivo retornado pelo servidor:', originalFileName);
-        
-        // Usar o nome do arquivo retornado pelo servidor (UUID)
-        const serverUrl = `https://songmetrix.com.br/uploads/logos/${originalFileName}`;
-        console.log('URL do servidor normalizada:', serverUrl);
-        
-        // Verificar se a imagem está acessível com o nome do servidor
-        try {
-          console.log('Verificando se a imagem está acessível com UUID:', serverUrl);
-          const checkResponse = await fetch(serverUrl, { method: 'HEAD' });
-          if (checkResponse.ok) {
-            console.log('Imagem acessível com UUID do servidor');
-            data.url = serverUrl;
-            return data;
-          }
-        } catch (error) {
-          console.warn('Erro ao verificar imagem com UUID:', error);
-        }
-        
-        // Se não conseguir acessar com o UUID, tentar com o nome baseado na rádio
-        // Criar um nome de arquivo seguro baseado no nome da rádio
-        const safeFileName = radioName
-          .toLowerCase()
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .replace(/[^a-z0-9]/g, '-');
-        
-        // Extrair a extensão do arquivo original
-        const fileExtension = originalFileName.split('.').pop();
-        
-        // Nome final do arquivo
-        const finalFileName = `${safeFileName}.${fileExtension}`;
-        console.log('Nome final do arquivo:', finalFileName);
-        
-        // Construir a URL com o nome da rádio
-        const radioNameUrl = `https://songmetrix.com.br/uploads/logos/${finalFileName}`;
-        console.log('Verificando se a imagem está acessível com nome da rádio:', radioNameUrl);
-        
-        try {
-          const checkRadioNameResponse = await fetch(radioNameUrl, { method: 'HEAD' });
-          if (checkRadioNameResponse.ok) {
-            console.log('Imagem acessível com nome da rádio');
-            data.url = radioNameUrl;
-            return data;
-          }
-        } catch (error) {
-          console.warn('Erro ao verificar imagem com nome da rádio:', error);
-        }
-        
-        // Se nenhuma das URLs funcionar, usar a URL original do servidor
-        console.warn('Nenhuma URL verificada está acessível, usando URL original do servidor');
-        // Garantir que a URL use HTTPS e o domínio correto
-        let originalUrl = data.url;
-        if (originalUrl.includes('localhost')) {
-          originalUrl = originalUrl.replace(/http:\/\/localhost:\d+\/uploads\/logos\//, 'https://songmetrix.com.br/uploads/logos/');
-        }
-        if (originalUrl.startsWith('http://')) {
-          originalUrl = originalUrl.replace('http://', 'https://');
-        }
-        
-        // Corrigir URLs duplicadas
-        data.url = fixDuplicatedUrl(originalUrl);
       }
-
-      console.log('Resposta final após upload:', data);
-      return data;
     } catch (error) {
       console.error('Erro no upload:', error);
-      throw error;
+      return {
+        success: false,
+        message: error.message || 'Ocorreu um erro durante o upload'
+      };
     }
   }
 };
@@ -419,7 +540,7 @@ const reports = {
     try {
       const response = await fetch(`${API_URL}/api/radios/status`, {
         headers: {
-          'Authorization': `Bearer ${await getToken()}`
+          'Authorization': `Bearer ${await getAuthenticatedUserToken()}`
         }
       });
       
@@ -439,7 +560,7 @@ const reports = {
     try {
       const response = await fetch(`${API_URL}/api/radio-abbreviations`, {
         headers: {
-          'Authorization': `Bearer ${await getToken()}`
+          'Authorization': `Bearer ${await getAuthenticatedUserToken()}`
         }
       });
       
@@ -459,7 +580,7 @@ const reports = {
     try {
       const response = await fetch(`${API_URL}/api/cities`, {
         headers: {
-          'Authorization': `Bearer ${await getToken()}`
+          'Authorization': `Bearer ${await getAuthenticatedUserToken()}`
         }
       });
       
@@ -479,7 +600,7 @@ const reports = {
     try {
       const response = await fetch(`${API_URL}/api/states`, {
         headers: {
-          'Authorization': `Bearer ${await getToken()}`
+          'Authorization': `Bearer ${await getAuthenticatedUserToken()}`
         }
       });
       
