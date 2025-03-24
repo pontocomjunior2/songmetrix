@@ -571,7 +571,7 @@ const reports = {
     try {
       const response = await fetch(`${API_URL}/api/validate-location?city=${city}&state=${state}`, {
         headers: {
-          'Authorization': `Bearer ${await getToken()}`
+          'Authorization': `Bearer ${await getAuthenticatedUserToken()}`
         }
       });
       
@@ -595,7 +595,7 @@ const reports = {
     try {
       const response = await fetch(`${API_URL}/api/radios/by-location?${params}`, {
         headers: {
-          'Authorization': `Bearer ${await getToken()}`
+          'Authorization': `Bearer ${await getAuthenticatedUserToken()}`
         }
       });
       
@@ -630,7 +630,7 @@ const reports = {
       const url = `${API_URL}/api/report?${queryParams}`;
       console.log('URL da requisição:', url);
       
-      const token = await getToken();
+      const token = await getAuthenticatedUserToken();
       console.log('Token obtido:', token ? 'Token válido' : 'Token inválido ou ausente');
       
       const response = await fetch(url, {

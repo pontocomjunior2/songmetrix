@@ -141,7 +141,7 @@ export default function Radios() {
       return sortDirection === 'asc' 
         ? a.name.localeCompare(b.name)
         : b.name.localeCompare(a.name);
-    } else if (sortColumn === 'status') {
+    } else if (sortColumn === 'status' && isAdmin) {
       return sortDirection === 'asc'
         ? a.status.localeCompare(b.status)
         : b.status.localeCompare(a.status);
@@ -197,16 +197,18 @@ export default function Radios() {
                   <ArrowUpDown className="h-4 w-4" />
                 </Button>
               </TableHead>
-              <TableHead>
-                <Button 
-                  variant="ghost" 
-                  onClick={() => toggleSort('status')}
-                  className="flex items-center gap-1 font-medium"
-                >
-                  Status
-                  <ArrowUpDown className="h-4 w-4" />
-                </Button>
-              </TableHead>
+              {isAdmin && (
+                <TableHead>
+                  <Button 
+                    variant="ghost" 
+                    onClick={() => toggleSort('status')}
+                    className="flex items-center gap-1 font-medium"
+                  >
+                    Status
+                    <ArrowUpDown className="h-4 w-4" />
+                  </Button>
+                </TableHead>
+              )}
               {isAdmin && (
                 <TableHead>
                   <Button 
@@ -225,7 +227,7 @@ export default function Radios() {
           <TableBody>
             {filteredRadios.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={isAdmin ? 5 : 4} className="h-24 text-center">
+                <TableCell colSpan={isAdmin ? 5 : 3} className="h-24 text-center">
                   Nenhuma rádio encontrada.
                 </TableCell>
               </TableRow>
@@ -239,30 +241,34 @@ export default function Radios() {
                     </TableCell>
                     <TableCell>
                       <div className="font-medium">{radio.name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        Atualizado {relativeDate}
-                      </div>
+                      {isAdmin && (
+                        <div className="text-sm text-muted-foreground">
+                          Atualizado {relativeDate}
+                        </div>
+                      )}
                     </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={`w-2.5 h-2.5 rounded-full ${
-                            radio.status === 'ONLINE'
-                              ? 'bg-green-500'
-                              : 'bg-red-500'
-                          }`}
-                        />
-                        <span
-                          className={`text-sm font-medium ${
-                            radio.status === 'ONLINE'
-                              ? 'text-green-600 dark:text-green-400'
-                              : 'text-red-600 dark:text-red-400'
-                          }`}
-                        >
-                          {radio.status}
-                        </span>
-                      </div>
-                    </TableCell>
+                    {isAdmin && (
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div
+                            className={`w-2.5 h-2.5 rounded-full ${
+                              radio.status === 'ONLINE'
+                                ? 'bg-green-500'
+                                : 'bg-red-500'
+                            }`}
+                          />
+                          <span
+                            className={`text-sm font-medium ${
+                              radio.status === 'ONLINE'
+                                ? 'text-green-600 dark:text-green-400'
+                                : 'text-red-600 dark:text-red-400'
+                            }`}
+                          >
+                            {radio.status}
+                          </span>
+                        </div>
+                      </TableCell>
+                    )}
                     {isAdmin && (
                       <TableCell>
                         <span title={fullDate} className="text-sm">
