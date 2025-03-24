@@ -127,24 +127,15 @@ function EmailTemplates() {
       // Verificar se o template já foi usado em emails (email_logs)
       const { data: logsData, error: logsError } = await supabase
         .from('email_logs')
-        .select('id, created_at')
+        .select('id')
         .eq('template_id', id);
 
       if (logsError) throw logsError;
 
       if (logsData && logsData.length > 0) {
-        // Ordenar logs por data
-        const sortedLogs = [...logsData].sort((a, b) => 
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-        
-        // Obter data do uso mais recente
-        const lastUsed = new Date(sortedLogs[0].created_at).toLocaleDateString('pt-BR');
-        
         // Perguntar se o usuário deseja inativar o template em vez de excluí-lo
         if (window.confirm(
-          `Este template foi usado em ${logsData.length} email(s) enviado(s) e não pode ser excluído diretamente.\n` +
-          `Último uso: ${lastUsed}\n\n` +
+          `Este template foi usado em ${logsData.length} email(s) enviado(s) e não pode ser excluído diretamente.\n\n` +
           'Deseja marcar o template como inativo em vez de excluí-lo?'
         )) {
           const { error: updateError } = await supabase
@@ -174,23 +165,13 @@ function EmailTemplates() {
           // Buscar informações sobre os logs para mostrar informações mais detalhadas
           const { data: conflictLogsData, error: conflictLogsError } = await supabase
             .from('email_logs')
-            .select('id, created_at')
+            .select('id')
             .eq('template_id', id);
             
           let messageDetail = '';
           if (!conflictLogsError && conflictLogsData) {
             const count = conflictLogsData.length;
-            let lastUsed = 'desconhecida';
-            
-            if (count > 0) {
-              // Ordenar logs por data
-              const sortedLogs = [...conflictLogsData].sort((a, b) => 
-                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-              );
-              lastUsed = new Date(sortedLogs[0].created_at).toLocaleDateString('pt-BR');
-            }
-            
-            messageDetail = `Este template foi usado em ${count} email(s) enviado(s).\nÚltimo uso: ${lastUsed}\n\n`;
+            messageDetail = `Este template foi usado em ${count} email(s) enviado(s).\n\n`;
           }
           
           if (window.confirm(
