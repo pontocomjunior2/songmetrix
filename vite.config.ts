@@ -14,10 +14,14 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     server: {
+      port: 5173,
       proxy: {
         '/api': {
           target: isProduction ? env.VITE_API_BASE_URL || 'https://songmetrix.com.br' : 'http://localhost:3001',
           changeOrigin: true,
+          secure: false,
+          ws: true,
+          rewrite: (path) => path.replace(/^\/api/, '/api')
         },
       },
     },

@@ -8,6 +8,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
+import emailService from './server/email-service.js';
+import { createClient } from '@supabase/supabase-js';
 
 // Obter o diretório atual em ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -15,6 +17,19 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Configurar cliente Supabase para verificação de autenticação
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (supabaseUrl && supabaseServiceKey) {
+  const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  });
+}
 
 // Definir diretório de uploads
 const uploadsDir = path.join(__dirname, 'public', 'uploads', 'logos');
@@ -50,6 +65,57 @@ app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
+
+// Middleware para verificar autenticação de admin
+const isAdmin = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Token de autenticação não fornecido' 
+      });
+    }
+    
+    const token = authHeader.split(' ')[1];
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    
+    // Verificar token
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Token inválido ou expirado' 
+      });
+    }
+    
+    // Verificar se é admin
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('status')
+      .eq('id', user.id)
+      .single();
+      
+    if (userError || !userData || userData.status !== 'ADMIN') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Acesso restrito a administradores' 
+      });
+    }
+    
+    // Definir usuário autenticado para uso nas rotas
+    req.user = user;
+    req.isAdmin = true;
+    next();
+  } catch (error) {
+    console.error('Erro ao verificar autenticação:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Erro ao verificar autenticação', 
+      error: error.message 
+    });
+  }
+};
 
 // Rota para criar diretório de uploads
 app.post('/api/ensure-uploads-directory', (req, res) => {
@@ -183,6 +249,191 @@ app.put('/api/streams/:id', (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Erro ao atualizar stream em ambiente de desenvolvimento',
+      error: error.message
+    });
+  }
+});
+
+// Rotas de email
+// Rota para enviar email de boas-vindas manualmente
+app.post('/api/email/send-welcome', isAdmin, async (req, res) => {
+  try {
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'ID do usuário não fornecido' 
+      });
+    }
+    
+    console.log(`[EMAIL] Iniciando envio de email de boas-vindas para o usuário ${userId}`);
+    
+    const result = await emailService.sendWelcomeEmail(userId);
+    
+    console.log(`[EMAIL] Resultado do envio: ${JSON.stringify(result)}`);
+    
+    if (result.success) {
+      res.status(200).json({
+        success: true,
+        message: 'Email de boas-vindas enviado com sucesso'
+      });
+    } else {
+      console.error(`[EMAIL] Erro no processamento: ${result.error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Erro ao enviar email de boas-vindas',
+        error: result.error
+      });
+    }
+  } catch (error) {
+    console.error('[EMAIL] Erro na rota de envio de email:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao processar solicitação',
+      error: error.message
+    });
+  }
+});
+
+// Rota para enviar email de teste
+app.post('/api/email/send-test', isAdmin, async (req, res) => {
+  try {
+    const { email, templateId } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email de destinatário não fornecido' 
+      });
+    }
+    
+    console.log(`[EMAIL-TEST] Iniciando envio de email de teste para ${email}`);
+    
+    // Se templateId for fornecido, usa o template especificado
+    // Caso contrário, busca o template welcome_email
+    let template;
+    if (templateId) {
+      console.log(`[EMAIL-TEST] Buscando template específico ID: ${templateId}`);
+      const { data, error } = await supabase
+        .from('email_templates')
+        .select('*')
+        .eq('id', templateId)
+        .single();
+        
+      if (error) {
+        console.error(`[EMAIL-TEST] Erro ao buscar template: ${error.message}`);
+        throw error;
+      }
+      
+      template = data;
+    } else {
+      console.log(`[EMAIL-TEST] Buscando template padrão 'welcome_email'`);
+      const { data, error } = await supabase
+        .from('email_templates')
+        .select('*')
+        .eq('name', 'welcome_email')
+        .eq('active', true)
+        .single();
+        
+      if (error) {
+        console.error(`[EMAIL-TEST] Erro ao buscar template padrão: ${error.message}`);
+        throw error;
+      }
+      
+      template = data;
+    }
+    
+    if (!template) {
+      console.error('[EMAIL-TEST] Nenhum template encontrado');
+      return res.status(404).json({
+        success: false,
+        message: 'Template de email não encontrado'
+      });
+    }
+    
+    console.log(`[EMAIL-TEST] Template encontrado: "${template.name}"`);
+    
+    // Processar o template com dados de teste
+    const htmlContent = emailService.processTemplate(template.body, { 
+      name: 'Usuário Teste',
+      email: email,
+      date: new Date().toLocaleDateString('pt-BR')
+    });
+    
+    console.log('[EMAIL-TEST] Template processado. Iniciando envio...');
+    
+    // Verificar configurações SMTP
+    console.log(`[EMAIL-TEST] Configurações SMTP:
+      Host: ${process.env.SMTP_HOST || 'Não definido'}
+      Porta: ${process.env.SMTP_PORT || 'Não definida'}
+      Seguro: ${process.env.SMTP_SECURE || 'Não definido'}
+      Usuário: ${process.env.SMTP_USER ? '******' : 'Não definido'}
+      Senha: ${process.env.SMTP_PASSWORD ? '******' : 'Não definida'}
+      De: ${process.env.SMTP_FROM || 'Não definido'}
+    `);
+    
+    // Enviar email de teste
+    const result = await emailService.sendEmail(
+      email,
+      `[TESTE] ${template.subject}`,
+      htmlContent
+    );
+    
+    console.log(`[EMAIL-TEST] Resultado do envio: ${JSON.stringify(result)}`);
+    
+    // Registrar no log, mas não no banco de dados
+    if (result.success) {
+      res.status(200).json({
+        success: true,
+        message: 'Email de teste enviado com sucesso',
+        details: result
+      });
+    } else {
+      console.error(`[EMAIL-TEST] Erro no envio: ${result.error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Erro ao enviar email de teste',
+        error: result.error,
+        details: result
+      });
+    }
+  } catch (error) {
+    console.error('[EMAIL-TEST] Erro na rota de teste de email:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao processar solicitação',
+      error: error.message
+    });
+  }
+});
+
+// Rota para processar emails programados (pode ser chamada por um cron job)
+app.post('/api/email/process-scheduled', isAdmin, async (req, res) => {
+  try {
+    console.log('[EMAIL-SCHEDULED] Iniciando processamento de emails programados');
+    const result = await emailService.processScheduledEmails();
+    
+    console.log(`[EMAIL-SCHEDULED] Resultado do processamento: ${JSON.stringify(result)}`);
+    
+    if (result.success) {
+      res.status(200).json({
+        success: true,
+        message: `Processamento concluído. ${result.count} emails enviados.`
+      });
+    } else {
+      console.error(`[EMAIL-SCHEDULED] Erro no processamento: ${result.error}`);
+      res.status(500).json({
+        success: false,
+        message: 'Erro ao processar emails agendados',
+        error: result.error
+      });
+    }
+  } catch (error) {
+    console.error('[EMAIL-SCHEDULED] Erro na rota de processamento de emails:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao processar solicitação',
       error: error.message
     });
   }
