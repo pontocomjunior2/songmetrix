@@ -224,21 +224,21 @@ export default function StreamsManager() {
     console.log(`Selecionadas ${streamsWithLogos.length} imagens para pré-carregamento (limite: ${maxImagesToPreload})`);
     
     const imagePromises = streamsWithLogos.map(async stream => {
-      // Verificar se a URL está duplicada e corrigir
-      let cleanUrl = stream.logo_url;
-      if (stream.logo_url && stream.logo_url.includes('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/')) {
-        cleanUrl = stream.logo_url.replace('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/', 'https://songmetrix.com.br/uploads/logos/');
-        console.log('URL duplicada corrigida durante pré-carregamento:', cleanUrl);
-      }
-      
-      // Em ambiente de desenvolvimento, se a URL for de produção, assumimos que existe
-      // e retornamos diretamente sem verificação (evita erros de CORS)
-      if (isDev && cleanUrl.includes('songmetrix.com.br')) {
-        return cleanUrl;
-      }
-      
-      // Em ambiente de produção, verificar se a imagem existe
-      if (!isDev) {
+        // Verificar se a URL está duplicada e corrigir
+        let cleanUrl = stream.logo_url;
+        if (stream.logo_url && stream.logo_url.includes('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/')) {
+          cleanUrl = stream.logo_url.replace('https://songmetrix.com.br/uploads/logos/https://songmetrix.com.br/uploads/logos/', 'https://songmetrix.com.br/uploads/logos/');
+          console.log('URL duplicada corrigida durante pré-carregamento:', cleanUrl);
+        }
+        
+        // Em ambiente de desenvolvimento, se a URL for de produção, assumimos que existe
+        // e retornamos diretamente sem verificação (evita erros de CORS)
+        if (isDev && cleanUrl.includes('songmetrix.com.br')) {
+          return cleanUrl;
+        }
+        
+        // Em ambiente de produção, verificar se a imagem existe
+        if (!isDev) {
         try {
           // Verificar diretamente se a imagem existe
           const exists = await checkImageExists(cleanUrl);
@@ -253,11 +253,11 @@ export default function StreamsManager() {
           console.error('Erro ao verificar imagem:', error);
           return null;
         }
-      }
-      
-      // Em desenvolvimento, retornar a URL diretamente
-      return cleanUrl;
-    });
+        }
+        
+        // Em desenvolvimento, retornar a URL diretamente
+        return cleanUrl;
+      });
     
     // Aguardar todas as promessas de URLs acessíveis
     const accessibleUrls = await Promise.all(imagePromises);
@@ -370,20 +370,20 @@ export default function StreamsManager() {
         
         console.log(`[DEBUG] Tentativa de carregamento #${loadCount.current}`);
         
-        setLoading(true);
-        console.log('Buscando streams...');
-        
-        // Verificar se o usuário está autenticado
-        if (!currentUser) {
-          throw new Error('Usuário não autenticado');
-        }
-        
-        const data = await apiServices.streams.getAll();
-        
-        if (Array.isArray(data)) {
+      setLoading(true);
+      console.log('Buscando streams...');
+      
+      // Verificar se o usuário está autenticado
+      if (!currentUser) {
+        throw new Error('Usuário não autenticado');
+      }
+      
+      const data = await apiServices.streams.getAll();
+      
+      if (Array.isArray(data)) {
           // Atualizar os streams no estado
-          setStreams(data);
-          setFilteredStreams(data);
+        setStreams(data);
+        setFilteredStreams(data);
           
           // Calcular o próximo índice
           const nextIdx = determineNextIndexClosure(data);
@@ -395,25 +395,25 @@ export default function StreamsManager() {
             ...prev,
             index: nextIdx.toString()
           }));
-          
-          // Pré-carregar imagens após obter os streams
+        
+        // Pré-carregar imagens após obter os streams
           await preloadImagesClosure(data);
           
           // Marcar como carregado após sucesso
-          hasLoadedStreams.current = true;
+        hasLoadedStreams.current = true;
           
           console.log(`${data.length} streams carregados com sucesso`);
-        } else {
-          console.error('Dados recebidos não são um array:', data);
-          setStreams([]);
-          setFilteredStreams([]);
-        }
-      } catch (error) {
+      } else {
+        console.error('Dados recebidos não são um array:', data);
+        setStreams([]);
+        setFilteredStreams([]);
+      }
+    } catch (error) {
         handleApiErrorClosure(error as Error);
         // Não alteramos o hasLoadedStreams em caso de erro
-      } finally {
-        setLoading(false);
-      }
+    } finally {
+      setLoading(false);
+    }
     };
     
     // Função de cleanup
@@ -428,7 +428,7 @@ export default function StreamsManager() {
     // Função assíncrona para carregar os streams
     const loadStreams = async () => {
       if (currentUser && !hasLoadedStreams.current && fetchStreamsRef.current) {
-        console.log('Usuário autenticado, carregando dados...');
+      console.log('Usuário autenticado, carregando dados...');
         // Executar o carregamento
         await fetchStreamsRef.current();
       }
@@ -615,7 +615,7 @@ export default function StreamsManager() {
       if (attemptCountRef.current >= maxAttempts) {
         logDebug(`Limite de ${maxAttempts} tentativas atingido. Mostrando fallback.`);
         setError(true);
-        return;
+            return;
       }
       
       // Incrementar número de tentativas
@@ -625,9 +625,9 @@ export default function StreamsManager() {
       if (!imgSrc) {
         logDebug('Sem URL de imagem disponível para tentar alternativas.');
         setError(true);
-        return;
-      }
-      
+            return;
+          }
+          
       logDebug(`Tentativa #${attemptCountRef.current}: Erro ao carregar imagem: ${imgSrc}`);
       
       // Gerar alternativas para a URL atual
@@ -659,8 +659,8 @@ export default function StreamsManager() {
     
     // Efeito para processar a URL quando a prop src muda
     useEffect(() => {
-      if (!isMounted.current) return;
-      
+              if (!isMounted.current) return;
+              
       // Se a src for igual à anterior, não fazer nada para evitar renderizações duplas
       if (src === previousSrcRef.current && imgSrc) {
         return;
@@ -675,7 +675,7 @@ export default function StreamsManager() {
       }
       
       // Resetar estado e refs quando a fonte muda significativamente
-      setError(false);
+            setError(false);
       triedUrlsRef.current = new Set();
       attemptCountRef.current = 0;
       
@@ -687,7 +687,7 @@ export default function StreamsManager() {
         if (src) {
           logDebug('URL inválida ou nula');
         }
-        setError(true);
+            setError(true);
         return;
       }
       
@@ -1085,21 +1085,21 @@ export default function StreamsManager() {
                       </div>
                     )}
                     <div className="flex flex-col space-y-2">
-                      <input
-                        type="file"
-                        id="logo"
-                        ref={fileInputRef}
-                        accept="image/*"
-                        className="hidden"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            try {
+                    <input
+                      type="file"
+                      id="logo"
+                      ref={fileInputRef}
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          try {
                               // Mostrar toast de carregamento
                               const loadingToastId = toast.loading('Fazendo upload da imagem...');
                               
-                              const formDataFile = new FormData();
-                              formDataFile.append('logo', file);
+                            const formDataFile = new FormData();
+                            formDataFile.append('logo', file);
                               formDataFile.append('radioName', formData.name || 'nova-radio');
                               
                               // Garantir que o nome da rádio foi fornecido
@@ -1114,7 +1114,7 @@ export default function StreamsManager() {
                               }
 
                               console.log('Iniciando upload da logo para a rádio:', formData.name);
-                              const uploadResult = await apiServices.uploads.uploadLogo(formDataFile);
+                            const uploadResult = await apiServices.uploads.uploadLogo(formDataFile);
                               console.log('Resultado do upload:', uploadResult);
                               
                               if (uploadResult.success && uploadResult.url) {
@@ -1187,20 +1187,20 @@ export default function StreamsManager() {
                                   isLoading: false,
                                   autoClose: 5000
                                 });
-                              }
-                            } catch (error) {
-                              handleApiError(error as Error);
                             }
+                          } catch (error) {
+                            handleApiError(error as Error);
                           }
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        Escolher Logo
-                      </Button>
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      Escolher Logo
+                    </Button>
                       {logoPreview && (
                         <Button
                           type="button"
