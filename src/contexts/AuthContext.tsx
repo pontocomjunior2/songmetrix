@@ -264,23 +264,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       // Chamar a API para enviar o email de boas-vindas
-      const response = await fetch('/api/email/send-welcome', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({ userId: currentUser.id })
-      });
+      try {
+        const response = await fetch('/api/email/send-welcome', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({ userId: currentUser.id })
+        });
 
-      const result = await response.json();
+        if (!response.ok) {
+          console.error(`Erro na API: ${response.status} ${response.statusText}`);
+          return false;
+        }
 
-      if (response.ok && result.success) {
-        hasWelcomeEmailBeenSent.current = true;
-        toast.success('Email de boas-vindas enviado com sucesso!');
-        return true;
-      } else {
-        console.error('Erro ao enviar email de boas-vindas:', result.message);
+        const result = await response.json();
+
+        if (result.success) {
+          hasWelcomeEmailBeenSent.current = true;
+          toast.success('Email de boas-vindas enviado com sucesso!');
+          return true;
+        } else {
+          console.error('Erro ao enviar email de boas-vindas:', result.message);
+          return false;
+        }
+      } catch (error) {
+        console.error('Erro ao enviar email de boas-vindas:', error);
         return false;
       }
     } catch (error) {

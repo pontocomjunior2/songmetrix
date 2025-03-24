@@ -124,17 +124,101 @@ function EmailTemplates() {
         return;
       }
 
+      // Verificar se o template já foi usado em emails (email_logs)
+      const { data: logsData, error: logsError } = await supabase
+        .from('email_logs')
+        .select('id, created_at')
+        .eq('template_id', id);
+
+      if (logsError) throw logsError;
+
+      if (logsData && logsData.length > 0) {
+        // Ordenar logs por data
+        const sortedLogs = [...logsData].sort((a, b) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        
+        // Obter data do uso mais recente
+        const lastUsed = new Date(sortedLogs[0].created_at).toLocaleDateString('pt-BR');
+        
+        // Perguntar se o usuário deseja inativar o template em vez de excluí-lo
+        if (window.confirm(
+          `Este template foi usado em ${logsData.length} email(s) enviado(s) e não pode ser excluído diretamente.\n` +
+          `Último uso: ${lastUsed}\n\n` +
+          'Deseja marcar o template como inativo em vez de excluí-lo?'
+        )) {
+          const { error: updateError } = await supabase
+            .from('email_templates')
+            .update({ 
+              active: false, 
+              updated_at: new Date().toISOString() 
+            })
+            .eq('id', id);
+
+          if (updateError) throw updateError;
+          fetchTemplates();
+          toast.success('Template desativado com sucesso');
+        }
+        return;
+      }
+
+      // Se chegou aqui, então pode excluir o template
       const { error } = await supabase
         .from('email_templates')
         .delete()
         .eq('id', id);
 
-      if (error) throw error;
+      if (error) {
+        // Tratar erro específico de violação de chave estrangeira
+        if (error.code === '23503' && error.details?.includes('email_logs')) {
+          // Buscar informações sobre os logs para mostrar informações mais detalhadas
+          const { data: conflictLogsData, error: conflictLogsError } = await supabase
+            .from('email_logs')
+            .select('id, created_at')
+            .eq('template_id', id);
+            
+          let messageDetail = '';
+          if (!conflictLogsError && conflictLogsData) {
+            const count = conflictLogsData.length;
+            let lastUsed = 'desconhecida';
+            
+            if (count > 0) {
+              // Ordenar logs por data
+              const sortedLogs = [...conflictLogsData].sort((a, b) => 
+                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+              );
+              lastUsed = new Date(sortedLogs[0].created_at).toLocaleDateString('pt-BR');
+            }
+            
+            messageDetail = `Este template foi usado em ${count} email(s) enviado(s).\nÚltimo uso: ${lastUsed}\n\n`;
+          }
+          
+          if (window.confirm(
+            `${messageDetail}Este template já foi usado em emails enviados e não pode ser excluído.\n` +
+            'Deseja marcar o template como inativo em vez de excluí-lo?'
+          )) {
+            const { error: updateError } = await supabase
+              .from('email_templates')
+              .update({ 
+                active: false, 
+                updated_at: new Date().toISOString() 
+              })
+              .eq('id', id);
+  
+            if (updateError) throw updateError;
+            fetchTemplates();
+            toast.success('Template desativado com sucesso');
+          }
+          return;
+        }
+        throw error;
+      }
+
       fetchTemplates();
       toast.success('Template excluído com sucesso');
     } catch (error) {
       console.error('Erro ao excluir template:', error);
-      toast.error('Não foi possível excluir o template');
+      toast.error('Não foi possível excluir o template: ' + (error as any)?.message || 'Erro desconhecido');
     }
   };
 

@@ -8,7 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
-import emailService from './server/email-service.js';
+import emailService from './server/smtp-email-service.js';
 import { createClient } from '@supabase/supabase-js';
 
 // Obter o diretório atual em ESM
@@ -22,8 +22,9 @@ const PORT = process.env.PORT || 3001;
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+let supabase;
 if (supabaseUrl && supabaseServiceKey) {
-  const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+  supabase = createClient(supabaseUrl, supabaseServiceKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false
@@ -63,11 +64,15 @@ app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
 // Middleware para logging de requisições
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  console.log(`[REQUEST] Headers: ${JSON.stringify(req.headers)}`);
+  if (req.body && Object.keys(req.body).length > 0) {
+    console.log(`[REQUEST] Body: ${JSON.stringify(req.body)}`);
+  }
   next();
 });
 
-// Middleware para verificar autenticação de admin
-const isAdmin = async (req, res, next) => {
+// Middleware para verificar autenticação básica (não admin)
+const isAuthenticated = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -89,23 +94,8 @@ const isAdmin = async (req, res, next) => {
       });
     }
     
-    // Verificar se é admin
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('status')
-      .eq('id', user.id)
-      .single();
-      
-    if (userError || !userData || userData.status !== 'ADMIN') {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Acesso restrito a administradores' 
-      });
-    }
-    
     // Definir usuário autenticado para uso nas rotas
     req.user = user;
-    req.isAdmin = true;
     next();
   } catch (error) {
     console.error('Erro ao verificar autenticação:', error);
@@ -116,6 +106,42 @@ const isAdmin = async (req, res, next) => {
     });
   }
 };
+
+// IMPORTANTE: Mover o proxy para o início das rotas
+// Definir o proxy apenas para rotas não explicitamente definidas
+// Proxy para API em produção quando necessário
+const apiProxyTarget = process.env.API_PROXY_TARGET || 'https://songmetrix.com.br';
+
+// DESABILITAR o proxy geral para permitir que as rotas locais funcionem
+// app.use('/api', createProxyMiddleware({
+//   target: apiProxyTarget,
+//   changeOrigin: true,
+//   pathRewrite: {
+//     '^/api': '/api'
+//   },
+//   onProxyReq: (proxyReq, req, res) => {
+//     console.log(`Proxy request to: ${apiProxyTarget}${proxyReq.path}`);
+//   },
+//   onError: (err, req, res) => {
+//     console.error('Proxy error:', err);
+//     res.writeHead(500, {
+//       'Content-Type': 'application/json'
+//     });
+//     res.end(JSON.stringify({
+//       error: 'Proxy error',
+//       message: err.message
+//     }));
+//   }
+// }));
+
+// Rota de teste para verificar conexão
+app.get('/api/test-connection', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'API conectada com sucesso',
+    timestamp: new Date().toISOString()
+  });
+});
 
 // Rota para criar diretório de uploads
 app.post('/api/ensure-uploads-directory', (req, res) => {
@@ -256,7 +282,7 @@ app.put('/api/streams/:id', (req, res) => {
 
 // Rotas de email
 // Rota para enviar email de boas-vindas manualmente
-app.post('/api/email/send-welcome', isAdmin, async (req, res) => {
+app.post('/api/email/send-welcome', isAuthenticated, async (req, res) => {
   try {
     const { userId } = req.body;
     
@@ -264,6 +290,14 @@ app.post('/api/email/send-welcome', isAdmin, async (req, res) => {
       return res.status(400).json({ 
         success: false, 
         message: 'ID do usuário não fornecido' 
+      });
+    }
+    
+    // Garantir que o usuário só pode solicitar seu próprio email de boas-vindas
+    if (userId !== req.user.id && !req.isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Usuário não autorizado a enviar email para outro usuário'
       });
     }
     
@@ -297,9 +331,13 @@ app.post('/api/email/send-welcome', isAdmin, async (req, res) => {
 });
 
 // Rota para enviar email de teste
-app.post('/api/email/send-test', isAdmin, async (req, res) => {
+app.post('/api/email/send-test', isAuthenticated, async (req, res) => {
+  console.log('[EMAIL-TEST] Requisição recebida para /api/email/send-test');
+  
   try {
     const { email, templateId } = req.body;
+    
+    console.log(`[EMAIL-TEST] Dados da requisição: email=${email}, templateId=${templateId}`);
     
     if (!email) {
       return res.status(400).json({ 
@@ -309,6 +347,30 @@ app.post('/api/email/send-test', isAdmin, async (req, res) => {
     }
     
     console.log(`[EMAIL-TEST] Iniciando envio de email de teste para ${email}`);
+    
+    // Verificar se o usuário é admin para permitir template personalizado
+    let isAdmin = false;
+    try {
+      if (supabase) {
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('status')
+          .eq('id', req.user.id)
+          .single();
+          
+        isAdmin = !userError && userData && userData.status === 'ADMIN';
+      }
+    } catch (error) {
+      console.error('Erro ao verificar status de admin:', error);
+    }
+    
+    // Se não for admin, só pode enviar para o próprio email
+    if (!isAdmin && email !== req.user.email) {
+      return res.status(403).json({
+        success: false,
+        message: 'Apenas administradores podem enviar emails para outros destinatários'
+      });
+    }
     
     // Se templateId for fornecido, usa o template especificado
     // Caso contrário, busca o template welcome_email
@@ -409,7 +471,7 @@ app.post('/api/email/send-test', isAdmin, async (req, res) => {
 });
 
 // Rota para processar emails programados (pode ser chamada por um cron job)
-app.post('/api/email/process-scheduled', isAdmin, async (req, res) => {
+app.post('/api/email/process-scheduled', isAuthenticated, async (req, res) => {
   try {
     console.log('[EMAIL-SCHEDULED] Iniciando processamento de emails programados');
     const result = await emailService.processScheduledEmails();
@@ -439,31 +501,13 @@ app.post('/api/email/process-scheduled', isAdmin, async (req, res) => {
   }
 });
 
-// Proxy para API em produção quando necessário
-const apiProxyTarget = process.env.API_PROXY_TARGET || 'https://songmetrix.com.br';
-app.use('/api', createProxyMiddleware({
-  target: apiProxyTarget,
-  changeOrigin: true,
-  pathRewrite: {
-    '^/api': '/api'
-  },
-  onProxyReq: (proxyReq, req, res) => {
-    console.log(`Proxy request to: ${apiProxyTarget}${proxyReq.path}`);
-  },
-  onError: (err, req, res) => {
-    console.error('Proxy error:', err);
-    res.writeHead(500, {
-      'Content-Type': 'application/json'
-    });
-    res.end(JSON.stringify({
-      error: 'Proxy error',
-      message: err.message
-    }));
-  }
-}));
-
 // Iniciar servidor
 app.listen(PORT, () => {
   console.log(`Servidor de desenvolvimento rodando na porta ${PORT}`);
   console.log(`Diretório de uploads: ${uploadsDir}`);
+  console.log(`Rotas API disponíveis em http://localhost:${PORT}/api/`);
+  console.log('- /api/test-connection (GET)');
+  console.log('- /api/email/send-test (POST)');
+  console.log('- /api/email/send-welcome (POST)');
+  console.log('- /api/email/process-scheduled (POST)');
 }); 
