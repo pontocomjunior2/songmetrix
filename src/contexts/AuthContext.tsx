@@ -3,6 +3,7 @@ import { User, AuthError } from '@supabase/supabase-js';
 import { PostgrestError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase-client';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'react-toastify';
 
 // Custom error type that includes both Auth and Postgrest errors
 class CustomAuthError extends AuthError {
@@ -43,6 +44,7 @@ export interface AuthContextType {
     message?: string
   }>;
   updateFavoriteRadios: (radios: string[]) => Promise<void>;
+  sendWelcomeEmail: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -56,6 +58,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const isRefreshing = useRef(false);
   const isInitialized = useRef(false);
   const isMounted = useRef(true);
+  const hasWelcomeEmailBeenSent = useRef(false);
   const navigate = useNavigate();
 
   // Desmontar o componente
@@ -229,6 +232,63 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  // Função para enviar email de boas-vindas
+  const sendWelcomeEmail = async (): Promise<boolean> => {
+    try {
+      if (!currentUser || hasWelcomeEmailBeenSent.current) {
+        return false;
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        return false;
+      }
+
+      // Verificar se este usuário já recebeu um email de boas-vindas
+      const { data: existingLogs, error: logsError } = await supabase
+        .from('email_logs')
+        .select('id')
+        .eq('user_id', currentUser.id)
+        .eq('status', 'SUCCESS')
+        .limit(1);
+
+      if (logsError) {
+        console.error('Erro ao verificar logs de email:', logsError);
+        return false;
+      }
+
+      // Se já recebeu email de boas-vindas, não enviar novamente
+      if (existingLogs && existingLogs.length > 0) {
+        hasWelcomeEmailBeenSent.current = true;
+        return false;
+      }
+
+      // Chamar a API para enviar o email de boas-vindas
+      const response = await fetch('/api/email/send-welcome', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ userId: currentUser.id })
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        hasWelcomeEmailBeenSent.current = true;
+        toast.success('Email de boas-vindas enviado com sucesso!');
+        return true;
+      } else {
+        console.error('Erro ao enviar email de boas-vindas:', result.message);
+        return false;
+      }
+    } catch (error) {
+      console.error('Erro ao enviar email de boas-vindas:', error);
+      return false;
+    }
+  };
+
   // Verificar sessão inicial e configurar listener para mudanças de autenticação
   useEffect(() => {
     // Evitar inicialização repetida
@@ -253,19 +313,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           return;
         }
         
-        // Verificar sessão no Supabase
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session) {
-          if (isMounted.current) {
-            setCurrentUser(null);
-            setUserStatus(null);
-            setLoading(false);
-          }
-          return;
-        }
-        
-        // Obter dados do usuário
+        // Obter sessão atual com detalhes completos
         const { data: { user } } = await supabase.auth.getUser();
         
         if (!user) {
@@ -277,87 +325,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           return;
         }
         
-        // Obter status do usuário do banco de dados
-        const { data: dbUser, error: dbError } = await supabase
-          .from('users')
-          .select('status, created_at')
-          .eq('id', user.id)
-          .single();
-          
-        if (dbError || !dbUser) {
-          if (isMounted.current) {
-            setCurrentUser(null);
-            setUserStatus(null);
-            setLoading(false);
-          }
-          return;
-        }
+        // Atualizar usuário e status
+        await refreshUserStatus();
         
-        // Verificar status permitidos
-        if (dbUser.status === 'ADMIN' || dbUser.status === 'ATIVO' || dbUser.status === 'TRIAL') {
-          if (isMounted.current) {
-            setCurrentUser(user);
-            setUserStatus(dbUser.status as UserStatusType);
-            
-            // Calcular dias restantes para TRIAL
-            if (dbUser.status === 'TRIAL') {
-              const createdAt = new Date(dbUser.created_at);
-              const now = new Date();
-              const diffTime = Math.abs(now.getTime() - createdAt.getTime());
-              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-              const daysRemaining = Math.max(0, 7 - diffDays);
-              
-              if (isMounted.current) setTrialDaysRemaining(daysRemaining);
-              
-              if (daysRemaining <= 0) {
-                // Atualizar status no banco
-                await supabase
-                  .from('users')
-                  .update({ status: 'INATIVO' })
-                  .eq('id', user.id);
-                
-                if (isMounted.current) {
-                  setCurrentUser(null);
-                  setUserStatus(null);
-                  setLoading(false);
-                }
-                
-                navigate('/plans', { 
-                  state: { 
-                    trialExpired: true,
-                    message: 'Seu período de avaliação gratuito expirou. Escolha um plano para continuar.'
-                  },
-                  replace: true
-                });
-                return;
-              }
-            } else {
-              if (isMounted.current) setTrialDaysRemaining(null);
-            }
-            
-            setLoading(false);
-          }
-        } else {
-          // Status não permitido
-          await supabase.auth.signOut();
-          
-          if (isMounted.current) {
-            setCurrentUser(null);
-            setUserStatus(null);
-            setLoading(false);
-          }
-          
-          navigate('/login', {
-            state: {
-              error: 'Usuário inativo. Entre em contato com o administrador.'
-            },
-            replace: true
-          });
+        // Enviar email de boas-vindas na primeira autenticação
+        // após confirmação de email
+        const emailConfirmed = user.email_confirmed_at !== null;
+        const isFirstAccess = !hasWelcomeEmailBeenSent.current;
+        
+        if (emailConfirmed && isFirstAccess) {
+          sendWelcomeEmail();
         }
       } catch (error) {
         if (isMounted.current) {
-          setCurrentUser(null);
-          setUserStatus(null);
           setLoading(false);
         }
       }
@@ -711,7 +691,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     updateUserStatus,
     refreshUserStatus,
     signUp,
-    updateFavoriteRadios
+    updateFavoriteRadios,
+    sendWelcomeEmail
   };
 
   return (
