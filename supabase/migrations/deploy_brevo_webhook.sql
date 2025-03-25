@@ -22,25 +22,56 @@ DROP FUNCTION IF EXISTS sync_user_to_brevo();
 -- Criar função que será acionada pelo trigger
 CREATE OR REPLACE FUNCTION sync_user_to_brevo()
 RETURNS TRIGGER AS $$
+DECLARE
+    response_id BIGINT;
+    response_status INT;
+    response_content TEXT;
 BEGIN
-    -- Chamar a função Edge para sincronizar com o Brevo
-    PERFORM net.http_post(
-        url := 'https://aylxcqaddelwxfukerhr.supabase.co/functions/v1/user-webhook',
-        headers := '{"Content-Type": "application/json", "Authorization": "Bearer anon"}',
-        body := json_build_object(
-            'type', TG_OP,
-            'table', TG_TABLE_NAME,
-            'schema', TG_TABLE_SCHEMA,
-            'record', row_to_json(NEW)
-        )::text
-    );
+    -- Logar a operação que está acontecendo
+    RAISE NOTICE 'Sincronizando usuário com Brevo: % (operação: %)', NEW.email, TG_OP;
+    
+    -- Se for uma atualização, verificar se houve mudança de status
+    IF TG_OP = 'UPDATE' AND OLD.status IS DISTINCT FROM NEW.status THEN
+        RAISE NOTICE 'Detectada mudança de status: % -> %', OLD.status, NEW.status;
+    END IF;
+    
+    -- Incluir o OLD record para poder detectar mudanças de status
+    SELECT
+        id, status, content
+    INTO 
+        response_id, response_status, response_content
+    FROM
+        net.http_post(
+            url := 'https://aylxcqaddelwxfukerhr.supabase.co/functions/v1/user-webhook',
+            headers := jsonb_build_object(
+                'Content-Type', 'application/json',
+                'Authorization', 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF5bHhjcWFkZGVsd3hmdWtlcmhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDAwMTc2NTksImV4cCI6MjA1NTU5MzY1OX0.YqQAdHMeGMmPAfKFtZPTovJ8szJi_iiUwkEnnLk1Cg8'
+            ),
+            body := jsonb_build_object(
+                'type', TG_OP,
+                'table', TG_TABLE_NAME,
+                'schema', TG_TABLE_SCHEMA,
+                'record', row_to_json(NEW),
+                'old_record', CASE WHEN TG_OP = 'UPDATE' THEN row_to_json(OLD) ELSE NULL END
+            )
+        );
+    
+    -- Logar o resultado da chamada HTTP
+    RAISE NOTICE 'Chamada para função Edge completada: status=%, id=%, content=%', 
+        response_status, response_id, substr(response_content, 1, 100);
+    
+    -- Verificar se a resposta foi bem-sucedida
+    IF response_status < 200 OR response_status >= 300 THEN
+        RAISE WARNING 'Erro ao chamar função Edge: status=%, conteúdo=%', 
+            response_status, substr(response_content, 1, 100);
+    END IF;
     
     -- Sempre retornar a linha sendo inserida/atualizada
     RETURN NEW;
 EXCEPTION
     WHEN OTHERS THEN
         -- Logar o erro, mas permitir que a operação continue
-        RAISE WARNING 'Erro ao sincronizar usuário com Brevo: %', SQLERRM;
+        RAISE WARNING 'Erro ao sincronizar usuário com Brevo: % / %', SQLERRM, SQLSTATE;
         RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -58,10 +89,17 @@ COMMENT ON FUNCTION sync_user_to_brevo() IS 'Função que envia dados de usuári
 -- Verificar se o trigger foi criado corretamente
 SELECT * FROM pg_trigger WHERE tgname = 'trigger_sync_user_to_brevo';
 
--- Testar com uma atualização de um usuário existente com status TRIAL (opcional, descomente para testar)
--- UPDATE users SET updated_at = NOW() WHERE status = 'TRIAL' LIMIT 1;
+-- Testar imediatamente com uma atualização para forçar a mudança entre listas:
+-- Quando estiver pronto para testar, descomente UMA das linhas abaixo:
+
+-- 1. Testar mudança de ATIVO para TRIAL:
+-- UPDATE users SET status = 'TRIAL' WHERE status = 'ATIVO' LIMIT 1;
+
+-- 2. Testar mudança de TRIAL para ATIVO:
+-- UPDATE users SET status = 'ATIVO' WHERE status = 'TRIAL' LIMIT 1;
 
 -- Instruções para testar manualmente:
 -- 1. Execute este script no Supabase Studio SQL Editor
 -- 2. Verifique nos logs da função Edge user-webhook se ela está sendo chamada
--- 3. Crie um novo usuário ou atualize um existente para verificar a integração 
+-- 3. Observe que agora enviamos tanto o registro novo quanto o antigo para a função Edge,
+--    permitindo que ela detecte mudanças de status e mova o usuário entre listas corretamente 

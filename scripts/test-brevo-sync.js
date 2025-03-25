@@ -55,44 +55,106 @@ async function createOrUpdateContact({ email, fullName, status }) {
     // Instanciar API de contatos
     const contactsApi = new SibApiV3Sdk.ContactsApi();
     
-    // Preparar atributos do contato
-    const attributes = {};
-    
-    if (fullName) {
-      // Dividir nome completo em primeiro nome e sobrenome
-      const nameParts = fullName.split(' ');
-      attributes.FNAME = nameParts[0] || '';
-      attributes.LNAME = nameParts.slice(1).join(' ') || '';
-      attributes.NOME = fullName;
+    // Verificar primeiro se o contato já existe
+    try {
+      const existingContact = await contactsApi.getContactInfo(email);
+      console.log(`✅ Contato já existe no Brevo: ${email}`);
+      
+      // Preparar atributos do contato
+      const attributes = {};
+      
+      if (fullName) {
+        // Dividir nome completo em primeiro nome e sobrenome
+        const nameParts = fullName.split(' ');
+        attributes.FNAME = nameParts[0] || '';
+        attributes.LNAME = nameParts.slice(1).join(' ') || '';
+        attributes.NOME = fullName;
+      }
+      
+      if (status) {
+        attributes.STATUS = status;
+      }
+      
+      // Atualizar os atributos do contato existente
+      await contactsApi.updateContact(email, { attributes });
+      console.log('✅ Atributos do contato atualizados com sucesso');
+      
+      // Gerenciar listas
+      if (status && statusListIds[status]) {
+        // Primeiro remover de todas as listas de status
+        for (const listId of Object.values(statusListIds)) {
+          try {
+            const removeContactFromList = new SibApiV3Sdk.RemoveContactFromList();
+            removeContactFromList.emails = [email];
+            await contactsApi.removeContactFromList(listId, removeContactFromList);
+            console.log(`✅ Contato removido da lista ${listId}`);
+          } catch (error) {
+            // Ignorar erros ao remover (pode não estar na lista)
+            console.log(`⚠️ Nota: ${error.message} (lista ${listId})`);
+          }
+        }
+        
+        // Adicionar à lista correta para o status
+        const targetListId = statusListIds[status];
+        const addContactToList = new SibApiV3Sdk.AddContactToList();
+        addContactToList.emails = [email];
+        
+        await contactsApi.addContactToList(targetListId, addContactToList);
+        console.log(`✅ Contato adicionado à lista ${targetListId} para status ${status}`);
+      }
+      
+      return { 
+        success: true, 
+        id: existingContact.id,
+        email,
+        status
+      };
+    } catch (error) {
+      // Contato não existe, criar novo
+      if (error.status === 404) {
+        console.log(`✅ Contato não existe, criando novo para: ${email}`);
+        
+        // Preparar atributos do contato
+        const attributes = {};
+        
+        if (fullName) {
+          // Dividir nome completo em primeiro nome e sobrenome
+          const nameParts = fullName.split(' ');
+          attributes.FNAME = nameParts[0] || '';
+          attributes.LNAME = nameParts.slice(1).join(' ') || '';
+          attributes.NOME = fullName;
+        }
+        
+        if (status) {
+          attributes.STATUS = status;
+        }
+        
+        // Definir parâmetros para criar contato
+        const createContactParams = new SibApiV3Sdk.CreateContact();
+        createContactParams.email = email;
+        createContactParams.attributes = attributes;
+        createContactParams.updateEnabled = true;
+        
+        // Adicionar à lista correta com base no status
+        if (status && statusListIds[status]) {
+          createContactParams.listIds = [statusListIds[status]];
+          console.log(`📋 Adicionando à lista ${statusListIds[status]} para status ${status}`);
+        }
+        
+        // Enviar requisição para criar contato
+        const result = await contactsApi.createContact(createContactParams);
+        console.log(`✅ Novo contato criado com sucesso: ${email}`);
+        
+        return { 
+          success: true, 
+          email,
+          status
+        };
+      } else {
+        // Outro tipo de erro na verificação do contato
+        throw error;
+      }
     }
-    
-    if (status) {
-      attributes.STATUS = status;
-    }
-    
-    // Definir parâmetros para criar/atualizar contato
-    const createContactParams = new SibApiV3Sdk.CreateContact();
-    createContactParams.email = email;
-    createContactParams.attributes = attributes;
-    
-    // Adicionar à lista correta com base no status
-    if (status && statusListIds[status]) {
-      createContactParams.listIds = [statusListIds[status]];
-      console.log(`📋 Adicionando à lista ${statusListIds[status]} para status ${status}`);
-    }
-    
-    createContactParams.updateEnabled = true; // Atualizar se já existir
-    
-    // Enviar requisição para criar/atualizar contato
-    const result = await contactsApi.createContact(createContactParams);
-    
-    console.log(`✅ Contato criado/atualizado com sucesso: ${email}`);
-    
-    return { 
-      success: true, 
-      id: result.id,
-      email
-    };
   } catch (error) {
     console.error(`❌ Erro ao criar/atualizar contato: ${error.message}`);
     return { 
