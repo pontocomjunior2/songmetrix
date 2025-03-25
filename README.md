@@ -166,6 +166,43 @@ Os seguintes comandos estão disponíveis para gerenciar a sincronização de me
 
 Para mais detalhes sobre a implementação da sincronização de metadados, consulte a documentação em [docs/user_metadata_sync_solution.md](docs/user_metadata_sync_solution.md).
 
+## Adição da coluna de último acesso (last_sign_in_at)
+
+Para adicionar a coluna de último acesso à tabela de usuários, execute o seguinte:
+
+1. Acesse o console do Supabase para seu projeto
+2. Vá até a seção "SQL Editor"
+3. Crie um novo query
+4. Cole o conteúdo do arquivo `supabase/migrations/update_users_add_last_sign_in.sql`
+5. Execute o script
+
+Ou, se preferir, execute via CLI do Supabase:
+
+```bash
+supabase db push
+```
+
+### Atualização de dados de último acesso para usuários existentes
+
+Após adicionar a coluna, você pode preencher os dados de último acesso para usuários existentes com o seguinte procedimento:
+
+1. Acesse o console do Supabase para seu projeto
+2. Vá até a seção "SQL Editor"
+3. Crie um novo query
+4. Cole o conteúdo do arquivo `supabase/migrations/update_users_last_sign_in_data.sql`
+5. Execute o script
+
+Alternativamente, você pode usar o botão "Atualizar Último Acesso" disponível na interface de administração de usuários, que executa essa atualização automaticamente sem necessidade de acesso ao console do Supabase.
+
+Para habilitar este botão, você precisa:
+
+1. Criar a função `update_users_last_sign_in` no banco de dados executando o script `supabase/migrations/create_update_last_sign_in_function.sql`
+2. Garantir que o API endpoint `/api/users/update-last-sign-in` esteja configurado corretamente
+
+Este script preencherá o campo `last_sign_in_at` para todos os usuários existentes com base no valor do campo `updated_at` como uma estimativa do último acesso.
+
+Essa alteração permite rastrear o último acesso de cada usuário e exibir essa informação na tela de administração.
+
 ---
 
 <p align="center">

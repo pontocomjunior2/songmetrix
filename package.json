@@ -70,6 +70,7 @@
     "react-router-dom": "^6.29.0",
     "react-select": "^5.10.0",
     "react-toastify": "^11.0.3",
+    "react-tooltip": "^5.28.0",
     "recharts": "^2.15.1",
     "sib-api-v3-sdk": "^8.5.0",
     "stripe": "^17.6.0",

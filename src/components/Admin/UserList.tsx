@@ -5,10 +5,10 @@ import Loading from '../Common/Loading';
 import { ErrorAlert } from '../Common/Alert';
 import UserAvatar from '../Common/UserAvatar';
 import { toast as reactToast } from 'react-toastify'; // Importing toast for notifications
-import { Trash2, Clock, RefreshCw, MailCheck, Database } from 'lucide-react';
+import { Trash2, Clock, RefreshCw, MailCheck, Database, Calendar } from 'lucide-react';
 import { supabase } from '../../lib/supabase-client';
 import { FaEdit } from 'react-icons/fa';
-import { Progress } from '../../components/ui/progress';
+import { Tooltip } from 'react-tooltip';
 
 type UserStatusType = 'ADMIN' | 'ATIVO' | 'INATIVO' | 'TRIAL';
 
@@ -29,6 +29,7 @@ interface User {
   photoURL?: string;
   full_name?: string;
   whatsapp?: string;
+  last_sign_in_at?: string;
 }
 
 interface SyncProgress {
@@ -52,6 +53,7 @@ export default function UserList() {
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [syncResults, setSyncResults] = useState<any | null>(null);
+  const [updatingLastLogin, setUpdatingLastLogin] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const { updateUserStatus, currentUser, userStatus } = useAuth();
 
@@ -94,7 +96,7 @@ export default function UserList() {
       // Buscar usuários da tabela users
       const { data: usersData, error: fetchError } = await supabase
         .from('users')
-        .select('id, email, status, created_at, updated_at, full_name, whatsapp')
+        .select('id, email, status, created_at, updated_at, full_name, whatsapp, last_sign_in_at')
         .order('created_at', { ascending: false });
       
       if (fetchError) {
@@ -409,15 +411,74 @@ export default function UserList() {
     }
   };
 
+  const handleUpdateLastSignIn = async () => {
+    try {
+      setUpdatingLastLogin(true);
+      setError(null);
+      
+      // Obter a sessão
+      const session = await supabase.auth.getSession();
+      if (!session.data.session) {
+        throw new Error('Sessão não encontrada');
+      }
+      
+      // Chamar API para atualizar dados de último acesso
+      const response = await fetch('/api/users/update-last-sign-in', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.data.session.access_token}`
+        }
+      });
+      
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Erro ao atualizar dados de último acesso');
+      }
+      
+      reactToast.success(`Dados de último acesso atualizados com sucesso. ${result.count || 'Vários'} usuários atualizados.`);
+      
+      // Recarregar a lista para exibir os novos dados
+      await loadUsers();
+    } catch (error: any) {
+      console.error('Erro ao atualizar dados de último acesso:', error);
+      setError(`Erro ao atualizar dados de último acesso: ${error.message}`);
+      reactToast.error(`Erro ao atualizar dados de último acesso: ${error.message}`);
+    } finally {
+      setUpdatingLastLogin(false);
+    }
+  };
+
   const formatDate = (dateString: string | undefined) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    if (!dateString) return 'Não disponível';
+    
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      return 'Data inválida';
+    }
+  };
+  
+  // Função para renderizar informações do usuário em um tooltip
+  const renderUserInfoTooltip = (user: User) => {
+    return (
+      <div className="p-2 max-w-xs">
+        <div className="mb-2">
+          <span className="font-semibold">Criado em:</span> {formatDate(user.created_at)}
+        </div>
+        <div>
+          <span className="font-semibold">Atualizado em:</span> {formatDate(user.updated_at)}
+        </div>
+      </div>
+    );
   };
   
   if (loading) {
@@ -471,6 +532,29 @@ export default function UserList() {
                 </>
               )}
             </button>
+            
+            <button
+              onClick={handleUpdateLastSignIn}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                updatingLastLogin 
+                  ? 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900 dark:text-orange-300 dark:hover:bg-orange-800' 
+                  : 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300 dark:hover:bg-green-800'
+              }`}
+              disabled={updatingLastLogin}
+              title="Atualizar dados de último acesso para todos os usuários"
+            >
+              {updatingLastLogin ? (
+                <>
+                  <Calendar className="w-5 h-5 animate-pulse" />
+                  <span>Atualizando...</span>
+                </>
+              ) : (
+                <>
+                  <Calendar className="w-5 h-5" />
+                  <span>Atualizar Último Acesso</span>
+                </>
+              )}
+            </button>
           </div>
           
           <div className="text-sm text-gray-600 dark:text-gray-400">
@@ -485,7 +569,12 @@ export default function UserList() {
               <span>Sincronizando usuários com Brevo...</span>
               <span>{syncProgress.percentage}% ({syncProgress.processed}/{syncProgress.total})</span>
             </div>
-            <Progress value={syncProgress.percentage} className="h-2" />
+            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className="h-2 bg-blue-500 rounded-full"
+                style={{ width: `${syncProgress.percentage}%` }}
+              ></div>
+            </div>
             <div className="flex justify-between mt-2 text-xs text-gray-500">
               <span>{syncProgress.success} sucessos</span>
               <span>{syncProgress.failed} falhas</span>
@@ -519,103 +608,101 @@ export default function UserList() {
           <ErrorAlert message={error} onClose={() => setError('')} />
         )}
         
-        {/* Tabela responsiva */}
-        <div className="overflow-x-auto rounded-lg shadow">
-          <table className="min-w-full bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-            <thead className="bg-gray-50 dark:bg-gray-700">
+        {/* Renderizar a tabela de usuários */}
+        <div className="mt-6 relative overflow-x-auto shadow-md sm:rounded-lg">
+          <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+            <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
               <tr>
-                <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Usuário
-                </th>
-                <th className="hidden md:table-cell px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Nome Completo
-                </th>
-                <th className="hidden lg:table-cell px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  WhatsApp
-                </th>
-                <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="hidden sm:table-cell px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Data de Criação
-                </th>
-                <th className="hidden md:table-cell px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Atualização
-                </th>
-                <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  Ações
-                </th>
+                <th scope="col" className="px-6 py-3">Usuário</th>
+                <th scope="col" className="px-6 py-3">Status</th>
+                <th scope="col" className="px-6 py-3">Último Acesso</th>
+                <th scope="col" className="px-6 py-3">WhatsApp</th>
+                <th scope="col" className="px-6 py-3">Ações</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {filteredUsers.map((user) => (
-                <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
-                  <td className="px-2 sm:px-4 py-2 whitespace-nowrap">
+            <tbody>
+              {filteredUsers.map(user => (
+                <tr 
+                  key={user.id} 
+                  className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
+                >
+                  <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
                     <div className="flex items-center">
-                      <UserAvatar
-                        email={user.email || ''}
+                      <UserAvatar 
+                        email={user.email || ''} 
                         photoURL={user.photoURL}
-                        size="sm"
-                        className="mr-2 flex-shrink-0 block"
+                        size="sm" 
                       />
-                      <div className="text-xs sm:text-sm text-gray-900 dark:text-gray-100 overflow-hidden text-ellipsis max-w-[120px] sm:max-w-[200px]">
-                        {user.email}
+                      <div className="ml-2">
+                        <div 
+                          className="flex items-center"
+                          data-tooltip-id={`user-info-${user.id}`}
+                        >
+                          <span className="font-medium">
+                            {user.full_name || user.email || 'Usuário'}
+                          </span>
+                          <span className="ml-1 text-gray-500 cursor-help">
+                            <RefreshCw size={16} />
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">{user.email}</div>
+                        <Tooltip 
+                          id={`user-info-${user.id}`}
+                          place="right"
+                          className="z-50 max-w-xs bg-gray-800 text-white p-2 rounded shadow-lg"
+                        >
+                          {renderUserInfoTooltip(user)}
+                        </Tooltip>
                       </div>
                     </div>
                   </td>
-                  <td className="hidden md:table-cell px-2 sm:px-4 py-2 whitespace-nowrap">
-                    <div className="text-xs sm:text-sm text-gray-900 dark:text-gray-100 overflow-hidden text-ellipsis max-w-[150px] lg:max-w-none">
-                      {user.full_name ? user.full_name : <span className="text-gray-400 dark:text-gray-500">N/A</span>}
-                    </div>
-                  </td>
-                  <td className="hidden lg:table-cell px-2 sm:px-4 py-2 whitespace-nowrap">
-                    <div className="text-xs sm:text-sm text-gray-900 dark:text-gray-100">
-                      {user.whatsapp ? user.whatsapp : <span className="text-gray-400 dark:text-gray-500">N/A</span>}
-                    </div>
-                  </td>
-                  <td className="px-2 sm:px-4 py-2 whitespace-nowrap">
-                    <span className={`px-2 py-1 inline-flex text-xs leading-4 font-semibold rounded-full 
-                      ${user.status === USER_STATUS.ATIVO ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' : 
-                        user.status === USER_STATUS.ADMIN ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300' : 
-                        user.status === USER_STATUS.TRIAL ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300' :
-                        'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'}`}>
-                      {user.status}
-                    </span>
-                  </td>
-                  <td className="hidden sm:table-cell px-2 sm:px-4 py-2 whitespace-nowrap">
-                    <div className="text-xs sm:text-sm text-gray-900 dark:text-gray-100">
-                      {formatDate(user.created_at)}
-                    </div>
-                  </td>
-                  <td className="hidden md:table-cell px-2 sm:px-4 py-2 whitespace-nowrap">
-                    <div className="text-xs sm:text-sm text-gray-900 dark:text-gray-100">
-                      {formatDate(user.updated_at)}
-                    </div>
-                  </td>
-                  <td className="px-2 sm:px-4 py-2 whitespace-nowrap">
-                    <div className="flex items-center gap-1 sm:gap-2">
+                  <td className="px-6 py-4">
+                    {/* Status do usuário */}
+                    {editingUser === user.id ? (
                       <select
-                        value={user.status}
-                        onChange={(e) => handleStatusChange(user.id, e.target.value as UserStatusType)}
-                        disabled={updatingUserId === user.id}
-                        className={`block w-full py-1 sm:py-2 px-1 sm:px-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-md shadow-sm 
-                          focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-xs sm:text-sm
-                          ${updatingUserId === user.id ? 'opacity-50' : ''}`}
+                        value={newStatus}
+                        onChange={(e) => setNewStatus(e.target.value as UserStatusType)}
+                        className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        disabled={loading}
                       >
-                        <option value={USER_STATUS.INATIVO}>Inativo</option>
-                        <option value={USER_STATUS.ATIVO}>Ativo</option>
                         <option value={USER_STATUS.ADMIN}>Admin</option>
+                        <option value={USER_STATUS.ATIVO}>Ativo</option>
+                        <option value={USER_STATUS.INATIVO}>Inativo</option>
                         <option value={USER_STATUS.TRIAL}>Trial</option>
                       </select>
-                      
-                      {user.status === USER_STATUS.TRIAL && (
+                    ) : (
+                      <span className={`px-2 py-1 rounded text-white font-medium ${
+                        user.status === USER_STATUS.ADMIN 
+                          ? 'bg-purple-600' 
+                          : user.status === USER_STATUS.ATIVO 
+                          ? 'bg-green-600' 
+                          : user.status === USER_STATUS.INATIVO 
+                          ? 'bg-red-600'
+                          : 'bg-blue-600'
+                      }`}>
+                        {user.status}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
+                    {user.last_sign_in_at 
+                      ? formatDate(user.last_sign_in_at)
+                      : <span className="text-gray-400">Nunca acessou</span>
+                    }
+                  </td>
+                  <td className="px-6 py-4">
+                    {user.whatsapp || <span className="text-gray-400">Não informado</span>}
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-1 sm:gap-2">
+                      {editingUser === user.id && (
                         <button
-                          onClick={() => handleSimulateTrialEnd(user.id)}
+                          onClick={() => handleStatusChange(user.id, newStatus)}
                           disabled={updatingUserId === user.id}
-                          className="p-1 sm:p-2 text-orange-600 dark:text-orange-400 hover:text-orange-800 dark:hover:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-900/30 rounded-md"
-                          title="Simular fim do período de teste"
+                          className="p-1 sm:p-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md"
+                          title="Salvar status"
                         >
-                          <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
+                          <FaEdit className="w-4 h-4 sm:w-5 sm:h-5" />
                         </button>
                       )}
                       

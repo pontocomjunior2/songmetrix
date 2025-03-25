@@ -489,6 +489,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setCurrentUser(user);
         setUserStatus(dbUser.status as UserStatusType);
         
+        // Registrar último acesso
+        const { error: loginUpdateError } = await supabase
+          .from('users')
+          .update({ last_sign_in_at: new Date().toISOString() })
+          .eq('id', user.id);
+          
+        if (loginUpdateError) {
+          console.error('Erro ao registrar último acesso:', loginUpdateError);
+        } else {
+          console.log('Último acesso registrado para o usuário:', user.id);
+        }
+        
         // Se o usuário não tem primeiro login registrado
         if (!dbUser.first_login_at) {
           // Registrar o primeiro login
