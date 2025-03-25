@@ -20,7 +20,9 @@
     "email:send-scheduled": "node scripts/send-scheduled-emails.js",
     "email:send-welcome": "node scripts/send-welcome-email.js",
     "email:migration": "node scripts/apply-migration.js",
-    "email:process-hour": "node scripts/send-scheduled-emails.js"
+    "email:process-hour": "node scripts/send-scheduled-emails.js",
+    "start:email-scheduler": "node scripts/schedule-emails.js",
+    "process-scheduled-emails": "node scripts/send-scheduled-emails.js"
   },
   "dependencies": {
     "@chakra-ui/react": "^3.8.1",
