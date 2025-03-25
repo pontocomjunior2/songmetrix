@@ -65,7 +65,9 @@ const UserAvatar: React.FC<UserAvatarProps> = ({
       items-center
       justify-center
       text-white
-      font-semibold
+      font-bold
+      select-none
+      ring-1 ring-opacity-10 ring-black
       ${className}
     `}>
       {firstLetter}
