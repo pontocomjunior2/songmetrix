@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS public.email_sequences (
   days_after_signup INTEGER NOT NULL,
   name VARCHAR NOT NULL,
   active BOOLEAN DEFAULT TRUE,
+  send_type VARCHAR NOT NULL DEFAULT 'DAYS_AFTER_SIGNUP',
+  send_hour INTEGER DEFAULT 8,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   created_by UUID REFERENCES auth.users(id)
@@ -17,6 +19,8 @@ COMMENT ON COLUMN public.email_sequences.template_id IS 'ID do template de email
 COMMENT ON COLUMN public.email_sequences.days_after_signup IS 'Dias após o cadastro para enviar o email';
 COMMENT ON COLUMN public.email_sequences.name IS 'Nome da sequência para fácil identificação';
 COMMENT ON COLUMN public.email_sequences.active IS 'Indica se a sequência está ativa';
+COMMENT ON COLUMN public.email_sequences.send_type IS 'Tipo de envio: DAYS_AFTER_SIGNUP ou AFTER_FIRST_LOGIN';
+COMMENT ON COLUMN public.email_sequences.send_hour IS 'Hora do dia para enviar o email (0-23)';
 COMMENT ON COLUMN public.email_sequences.created_at IS 'Data de criação da sequência';
 COMMENT ON COLUMN public.email_sequences.updated_at IS 'Data da última atualização da sequência';
 COMMENT ON COLUMN public.email_sequences.created_by IS 'ID do usuário que criou a sequência';
