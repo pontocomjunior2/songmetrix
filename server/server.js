@@ -2272,7 +2272,19 @@ app.post('/api/users/remove', authenticateUser, async (req, res) => {
 
     console.log(`Removendo usuário ${userId}`);
 
-    // Remover da tabela users
+    // Remover o usuário do Auth primeiro
+    const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(userId);
+    
+    if (deleteAuthError) {
+      console.error(`Erro ao remover usuário ${userId} do Auth:`, deleteAuthError);
+      return res.status(500).json({ 
+        error: 'Erro ao remover usuário do Auth', 
+        details: deleteAuthError
+      });
+    }
+
+    // Depois remover da tabela users - isso deve acontecer automaticamente via CASCADE,
+    // mas vamos garantir que os registros sejam removidos
     const { error: deleteDbError } = await supabaseAdmin
       .from('users')
       .delete()
@@ -2280,19 +2292,7 @@ app.post('/api/users/remove', authenticateUser, async (req, res) => {
       
     if (deleteDbError) {
       console.error(`Erro ao remover usuário ${userId} do banco:`, deleteDbError);
-      return res.status(500).json({ error: 'Erro ao remover usuário do banco de dados', details: deleteDbError });
-    }
-
-    // Remover o usuário do Auth
-    const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(userId);
-    
-    if (deleteAuthError) {
-      console.error(`Erro ao remover usuário ${userId} do Auth:`, deleteAuthError);
-      return res.status(500).json({ 
-        error: 'Erro ao remover usuário do Auth', 
-        details: deleteAuthError,
-        note: 'O usuário foi removido do banco de dados, mas não do Auth'
-      });
+      console.log('Este erro pode ser ignorado se o CASCADE do Auth já removeu o registro');
     }
 
     console.log(`Usuário ${userId} removido com sucesso`);

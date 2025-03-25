@@ -243,20 +243,27 @@ app.post('/api/email/process-scheduled', isAuthenticated, async (req, res) => {
 
 // Rota para processar email de primeiro login
 app.post('/api/email/process-first-login', isAuthenticated, async (req, res) => {
+  console.log('[EMAIL-FIRST-LOGIN] =========== INÍCIO DO PROCESSAMENTO ===========');
   console.log('[EMAIL-FIRST-LOGIN] Requisição recebida para processar email de primeiro login');
+  console.log('[EMAIL-FIRST-LOGIN] Headers:', JSON.stringify(req.headers));
+  console.log('[EMAIL-FIRST-LOGIN] Body:', JSON.stringify(req.body));
   
   try {
     const { userId } = req.body;
     
     if (!userId) {
+      console.error('[EMAIL-FIRST-LOGIN] ID do usuário não fornecido na requisição');
       return res.status(400).json({
         success: false,
         message: 'ID do usuário não fornecido'
       });
     }
     
+    console.log(`[EMAIL-FIRST-LOGIN] Processando para usuário ID: ${userId}`);
+    
     // Verificar se há um serviço de email configurado
     if (!emailService) {
+      console.error('[EMAIL-FIRST-LOGIN] Serviço de email não configurado');
       return res.status(500).json({
         success: false,
         message: 'Serviço de email não configurado'
@@ -264,8 +271,11 @@ app.post('/api/email/process-first-login', isAuthenticated, async (req, res) => 
     }
     
     // Processar email de primeiro login
+    console.log('[EMAIL-FIRST-LOGIN] Chamando emailService.processFirstLoginEmail');
     const result = await emailService.processFirstLoginEmail(userId);
+    console.log('[EMAIL-FIRST-LOGIN] Resultado do processamento:', JSON.stringify(result));
     
+    console.log('[EMAIL-FIRST-LOGIN] =========== FIM DO PROCESSAMENTO ===========');
     res.status(200).json({
       success: true,
       message: 'Email de primeiro login processado com sucesso',
@@ -273,6 +283,7 @@ app.post('/api/email/process-first-login', isAuthenticated, async (req, res) => 
     });
   } catch (error) {
     console.error('[EMAIL-FIRST-LOGIN] Erro ao processar email de primeiro login:', error);
+    console.error('[EMAIL-FIRST-LOGIN] =========== FIM COM ERRO ===========');
     res.status(500).json({
       success: false,
       message: 'Erro ao processar email de primeiro login',

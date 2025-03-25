@@ -49,6 +49,9 @@ export interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Constante para a URL do servidor de email
+const EMAIL_SERVER_URL = import.meta.env.VITE_EMAIL_SERVER_URL || 'http://localhost:3002';
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userStatus, setUserStatus] = useState<UserStatusType | null>(null);
@@ -265,7 +268,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       // Chamar a API para enviar o email de boas-vindas
       try {
-        const response = await fetch('/api/email/send-welcome', {
+        const response = await fetch(`${EMAIL_SERVER_URL}/api/email/send-welcome`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -366,7 +369,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 console.log('Processando emails após primeiro login para o usuário:', user.id);
                 
                 // Chamar API para processar emails de primeiro login específicos para este usuário
-                const response = await fetch('/api/email/process-first-login', {
+                const response = await fetch(`${EMAIL_SERVER_URL}/api/email/process-first-login`, {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
@@ -507,7 +510,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 console.log('Processando emails após primeiro login para o usuário:', user.id);
                 
                 // Chamar API para processar emails de primeiro login específicos para este usuário
-                const response = await fetch('/api/email/process-first-login', {
+                const response = await fetch(`${EMAIL_SERVER_URL}/api/email/process-first-login`, {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
