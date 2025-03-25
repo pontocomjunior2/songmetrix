@@ -270,20 +270,27 @@ export const sendWelcomeEmail = async (userId) => {
 
 /**
  * Função para processar emails pendentes nas sequências
+ * @param {number} currentHour - A hora atual (0-23) para processar apenas emails agendados para esta hora
  */
-export const processScheduledEmails = async () => {
+export const processScheduledEmails = async (currentHour = null) => {
   const client = await pool.connect();
   
   try {
     await client.query('BEGIN');
     
-    // Consultar usuários com emails pendentes
-    const { rows: pendingEmails } = await client.query(`
+    // Obter a hora atual se não foi fornecida
+    if (currentHour === null) {
+      currentHour = new Date().getHours();
+    }
+    
+    // Consultar usuários com emails pendentes para agendamentos baseados em dias após cadastro
+    const { rows: pendingDaysAfterSignup } = await client.query(`
       WITH active_sequences AS (
         SELECT 
           seq.id as sequence_id,
           seq.template_id,
           seq.days_after_signup,
+          seq.send_hour,
           temp.subject,
           temp.body
         FROM 
@@ -292,6 +299,8 @@ export const processScheduledEmails = async () => {
         WHERE 
           seq.active = true 
           AND temp.active = true
+          AND seq.send_type = 'DAYS_AFTER_SIGNUP'
+          AND seq.send_hour = $1
       )
       SELECT 
         u.id as user_id,
@@ -307,7 +316,6 @@ export const processScheduledEmails = async () => {
         CROSS JOIN active_sequences s
       WHERE 
         u.status IN ('ATIVO', 'TRIAL', 'ADMIN')
-        AND u.email_confirmed_at IS NOT NULL
         AND EXTRACT(DAY FROM NOW() - u.created_at) >= s.days_after_signup
         AND NOT EXISTS (
           SELECT 1 FROM public.email_logs l
@@ -315,7 +323,51 @@ export const processScheduledEmails = async () => {
           AND l.sequence_id = s.sequence_id
         )
       LIMIT 100
+    `, [currentHour]);
+    
+    // Consultar usuários com emails pendentes para agendamentos após primeiro login
+    const { rows: pendingAfterFirstLogin } = await client.query(`
+      WITH active_sequences AS (
+        SELECT 
+          seq.id as sequence_id,
+          seq.template_id,
+          temp.subject,
+          temp.body
+        FROM 
+          public.email_sequences seq
+          JOIN public.email_templates temp ON seq.template_id = temp.id
+        WHERE 
+          seq.active = true 
+          AND temp.active = true
+          AND seq.send_type = 'AFTER_FIRST_LOGIN'
+      )
+      SELECT 
+        u.id as user_id,
+        u.email,
+        u.full_name,
+        u.created_at,
+        u.first_login_at,
+        s.sequence_id,
+        s.template_id,
+        s.subject,
+        s.body
+      FROM 
+        public.users u
+        CROSS JOIN active_sequences s
+      WHERE 
+        u.status IN ('ATIVO', 'TRIAL', 'ADMIN')
+        AND u.first_login_at IS NOT NULL
+        AND (NOW() - u.first_login_at) < INTERVAL '1 day'
+        AND NOT EXISTS (
+          SELECT 1 FROM public.email_logs l
+          WHERE l.user_id = u.id
+          AND l.sequence_id = s.sequence_id
+        )
+      LIMIT 100
     `);
+    
+    // Combinar ambos os tipos de emails pendentes
+    const pendingEmails = [...pendingDaysAfterSignup, ...pendingAfterFirstLogin];
     
     console.log(`Processando ${pendingEmails.length} emails pendentes`);
     

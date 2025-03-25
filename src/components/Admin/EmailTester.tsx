@@ -17,6 +17,8 @@ function EmailTester() {
   const [loading, setLoading] = useState(false);
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
+  const [debug, setDebug] = useState<string>('');
+  const [showDebug, setShowDebug] = useState(false);
 
   useEffect(() => {
     // Carregar templates
@@ -63,6 +65,7 @@ function EmailTester() {
     }
     
     setLoading(true);
+    setDebug(''); // Limpar logs de debug
     
     try {
       toast.info('Enviando email de teste...', {
@@ -74,7 +77,12 @@ function EmailTester() {
         draggable: true,
       });
       
-      console.log('Obtendo sessão do Supabase...');
+      const debugLog = (message: string) => {
+        console.log(message);
+        setDebug(prev => prev + message + '\n');
+      };
+      
+      debugLog('Obtendo sessão do Supabase...');
       const sessionData = await supabase.auth.getSession();
       const accessToken = sessionData.data.session?.access_token;
       
@@ -82,10 +90,17 @@ function EmailTester() {
         throw new Error('Sessão expirada. Faça login novamente.');
       }
       
-      console.log('Enviando requisição para servidor de email...');
-      // Usar URL absoluta para API
-      const apiUrl = '/api/email/send-test';
-      console.log('URL da API:', apiUrl);
+      debugLog('Enviando requisição para servidor de email...');
+      // Construindo URL para API
+      const apiUrl = window.location.hostname === 'localhost' 
+        ? 'http://localhost:3002/api/email/send-test'
+        : '/api/email/send-test';
+      
+      debugLog(`URL da API: ${apiUrl}`);
+      
+      // Adicionar logs detalhados para depuração
+      const reqBody = { email, templateId: selectedTemplate };
+      debugLog(`Corpo da requisição: ${JSON.stringify(reqBody)}`);
       
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -93,22 +108,19 @@ function EmailTester() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${accessToken}`
         },
-        body: JSON.stringify({
-          email,
-          templateId: selectedTemplate
-        })
+        body: JSON.stringify(reqBody)
       });
       
-      console.log('Resposta recebida:', response.status);
+      debugLog(`Resposta recebida: status ${response.status}`);
       
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`Erro no servidor: ${response.status}`, errorText);
+        debugLog(`Erro no servidor: ${response.status}\n${errorText}`);
         throw new Error(`Erro no servidor: ${response.status}\n${errorText}`);
       }
       
       const data = await response.json();
-      console.log('Dados da resposta:', data);
+      debugLog(`Dados da resposta: ${JSON.stringify(data)}`);
       
       if (data.success) {
         toast.success('Email de teste enviado com sucesso!', {
@@ -210,6 +222,22 @@ function EmailTester() {
           <p>
             As variáveis do template serão substituídas por valores de teste.
           </p>
+        </div>
+        
+        {/* Adicionar botão para mostrar/esconder informações de debug */}
+        <div className="mt-4">
+          <button
+            onClick={() => setShowDebug(!showDebug)}
+            className="text-sm text-blue-600 hover:text-blue-800"
+          >
+            {showDebug ? 'Esconder detalhes técnicos' : 'Mostrar detalhes técnicos'}
+          </button>
+          
+          {showDebug && debug && (
+            <div className="mt-2 p-3 bg-gray-100 rounded text-xs font-mono overflow-auto max-h-60">
+              <pre>{debug}</pre>
+            </div>
+          )}
         </div>
       </div>
     </div>

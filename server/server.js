@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
 import fs from 'fs';
+import { createProxyMiddleware } from 'http-proxy-middleware';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -111,6 +112,36 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Registrar as rotas
 registerRoutes(app);
+
+// Proxy para redirecionar requisições de email para o servidor de email
+// Em desenvolvimento, a aplicação client aponta diretamente para o servidor de email
+// Em produção, as requisições passam por este proxy
+if (process.env.NODE_ENV === 'production') {
+  const emailServerUrl = process.env.EMAIL_SERVER_URL || 'http://localhost:3002';
+  
+  console.log(`Configurando proxy para servidor de email: ${emailServerUrl}`);
+  
+  app.use('/api/email', createProxyMiddleware({
+    target: emailServerUrl,
+    changeOrigin: true,
+    pathRewrite: {
+      '^/api/email': '/api/email'
+    },
+    onProxyReq: (proxyReq, req, res) => {
+      console.log(`Proxy email request to: ${emailServerUrl}${proxyReq.path}`);
+    },
+    onError: (err, req, res) => {
+      console.error('Proxy email error:', err);
+      res.writeHead(500, {
+        'Content-Type': 'application/json'
+      });
+      res.end(JSON.stringify({
+        error: 'Proxy email error',
+        message: err.message
+      }));
+    }
+  }));
+}
 
 // Tratamento de erros global
 app.use((err, req, res, next) => {

@@ -338,12 +338,56 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // Atualizar usuário e status
         await refreshUserStatus();
         
-        // Enviar email de boas-vindas na primeira autenticação
-        // após confirmação de email
-        const emailConfirmed = user.email_confirmed_at !== null;
+        // Verificar se é o primeiro login 
         const isFirstAccess = !hasWelcomeEmailBeenSent.current;
         
-        if (emailConfirmed && isFirstAccess) {
+        if (isFirstAccess) {
+          // Verificar se o first_login_at já está registrado
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('first_login_at')
+            .eq('id', user.id)
+            .single();
+            
+          // Se first_login_at não estiver definido, atualizar com a data/hora atual
+          if (!userError && userData && !userData.first_login_at) {
+            await supabase
+              .from('users')
+              .update({ first_login_at: new Date().toISOString() })
+              .eq('id', user.id);
+              
+            console.log('Primeiro login registrado para o usuário:', user.id);
+            
+            // Processar imediatamente os emails após primeiro login
+            try {
+              const { data: { session } } = await supabase.auth.getSession();
+              
+              if (session) {
+                console.log('Processando emails após primeiro login para o usuário:', user.id);
+                
+                // Chamar API para processar emails de primeiro login específicos para este usuário
+                const response = await fetch('/api/email/process-first-login', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                  },
+                  body: JSON.stringify({ userId: user.id })
+                });
+                
+                if (!response.ok) {
+                  console.error('Erro ao processar emails após primeiro login:', response.status, response.statusText);
+                } else {
+                  const result = await response.json();
+                  console.log('Resultado do processamento de emails após primeiro login:', result);
+                }
+              }
+            } catch (processError) {
+              console.error('Erro ao processar emails após primeiro login:', processError);
+            }
+          }
+          
+          // Enviar email de boas-vindas
           sendWelcomeEmail();
         }
       } catch (error) {
@@ -361,12 +405,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // Logar todos os eventos para diagnóstico
       console.log('Evento de autenticação:', event, session ? 'com sessão' : 'sem sessão');
       
-      // Verificar especificamente eventos de confirmação de email
+      // Verificar especificamente eventos de atualização de usuário
       if (event === 'USER_UPDATED' && session?.user) {
         console.log('Usuário atualizado:', {
           id: session.user.id,
           email: session.user.email,
-          email_confirmado: session.user.email_confirmed_at ? 'Sim' : 'Não',
           created_at: session.user.created_at,
           metadados: session.user.user_metadata
         });
@@ -429,84 +472,67 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // Verificar status do usuário
       const { data: dbUser, error: dbError } = await supabase
         .from('users')
-        .select('status, created_at')
+        .select('status, created_at, first_login_at')
         .eq('id', user.id)
         .single();
-        
+
       if (dbError) {
-        console.error('Erro ao buscar usuário no banco:', dbError);
+        console.error('Erro ao buscar status do usuário:', dbError);
+        throw new CustomAuthError('Erro ao verificar status do usuário');
+      }
+
+      // Atualizar estado com dados do usuário
+      if (isMounted.current) {
+        setCurrentUser(user);
+        setUserStatus(dbUser.status as UserStatusType);
         
-        // Se o usuário não existir no banco mas existir na auth, criar registro
-        if (dbError.code === 'PGRST116') { // No rows returned
-          console.log('Criando registro de usuário que não existe no banco:', user.id);
-          
-          // Determinar se é um usuário novo (< 7 dias)
-          const createdAt = new Date(user.created_at);
-          const now = new Date();
-          const diffTime = Math.abs(now.getTime() - createdAt.getTime());
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-          const isNewUser = diffDays <= 7;
-          
-          // Inserir novo registro com status TRIAL para usuários novos
-          const { error: insertError } = await supabase
+        // Se o usuário não tem primeiro login registrado
+        if (!dbUser.first_login_at) {
+          // Registrar o primeiro login
+          const { error: updateError } = await supabase
             .from('users')
-            .insert({
-              id: user.id,
-              email: user.email,
-              status: isNewUser ? 'TRIAL' : 'INATIVO', // TRIAL para novos usuários
-              created_at: user.created_at || new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            });
+            .update({ first_login_at: new Date().toISOString() })
+            .eq('id', user.id);
             
-          if (insertError) {
-            console.error('Erro ao criar registro de usuário:', insertError);
-            throw insertError;
-          }
-          
-          // Buscar o registro recém-criado
-          const { data: newDbUser, error: newDbError } = await supabase
-            .from('users')
-            .select('status, created_at')
-            .eq('id', user.id)
-            .single();
+          if (updateError) {
+            console.error('Erro ao registrar primeiro login:', updateError);
+          } else {
+            console.log('Primeiro login registrado para o usuário:', user.id);
             
-          if (newDbError) {
-            console.error('Erro ao buscar usuário recém-criado:', newDbError);
-            throw newDbError;
+            // Processar imediatamente os emails após primeiro login
+            try {
+              const { data: { session } } = await supabase.auth.getSession();
+              
+              if (session) {
+                console.log('Processando emails após primeiro login para o usuário:', user.id);
+                
+                // Chamar API para processar emails de primeiro login específicos para este usuário
+                const response = await fetch('/api/email/process-first-login', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                  },
+                  body: JSON.stringify({ userId: user.id })
+                });
+                
+                if (!response.ok) {
+                  console.error('Erro ao processar emails após primeiro login:', response.status, response.statusText);
+                } else {
+                  const result = await response.json();
+                  console.log('Resultado do processamento de emails após primeiro login:', result);
+                }
+              }
+            } catch (processError) {
+              console.error('Erro ao processar emails após primeiro login:', processError);
+            }
           }
-          
-          if (!newDbUser) {
-            throw new CustomAuthError('Erro ao criar registro de usuário');
-          }
-          
-          // Atualizar metadados para corresponder ao banco
-          await supabase.auth.updateUser({
-            data: { status: newDbUser.status }
-          });
-          
-          // Usar o registro recém-criado
-          if (isMounted.current) {
-            setCurrentUser(user);
-            setUserStatus(newDbUser.status as UserStatusType);
-            setLoading(false);
-          }
-          
-          navigate('/dashboard', { replace: true });
-          return { error: null };
-        } else {
-          throw dbError;
         }
       }
-      
-      if (!dbUser) {
-        throw new CustomAuthError('Usuário não encontrado no banco de dados');
-      }
-      
-      const userStatus = dbUser.status;
 
       // Calcular dias restantes do trial
       let trialDaysRemaining = null;
-      if (userStatus === 'TRIAL') {
+      if (dbUser.status === 'TRIAL') {
         const createdAt = new Date(dbUser.created_at);
         const now = new Date();
         const diffTime = Math.abs(now.getTime() - createdAt.getTime());
@@ -520,15 +546,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       // Verificar status permitido
-      if (userStatus !== 'ADMIN' && userStatus !== 'ATIVO' && userStatus !== 'TRIAL') {
+      if (dbUser.status !== 'ADMIN' && dbUser.status !== 'ATIVO' && dbUser.status !== 'TRIAL') {
         await supabase.auth.signOut();
         throw new CustomAuthError('Usuário inativo. Entre em contato com o administrador.');
       }
 
       // Atualizar estado
       if (isMounted.current) {
-        setCurrentUser(user);
-        setUserStatus(userStatus as UserStatusType);
         setTrialDaysRemaining(trialDaysRemaining);
         setLoading(false);
       }

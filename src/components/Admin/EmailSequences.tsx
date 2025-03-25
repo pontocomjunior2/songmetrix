@@ -15,6 +15,8 @@ type EmailSequence = {
   template_id: string;
   days_after_signup: number;
   active: boolean;
+  send_type: 'DAYS_AFTER_SIGNUP' | 'AFTER_FIRST_LOGIN';
+  send_hour: number;
   created_at: string;
   updated_at: string;
   template?: EmailTemplate;
@@ -29,7 +31,9 @@ function EmailSequences() {
   const [formData, setFormData] = useState({
     name: '',
     template_id: '',
-    days_after_signup: 1
+    days_after_signup: 1,
+    send_type: 'DAYS_AFTER_SIGNUP' as 'DAYS_AFTER_SIGNUP' | 'AFTER_FIRST_LOGIN',
+    send_hour: 8
   });
 
   // Carregar sequências e templates
@@ -76,7 +80,9 @@ function EmailSequences() {
     setFormData({
       name: '',
       template_id: '',
-      days_after_signup: 1
+      days_after_signup: 1,
+      send_type: 'DAYS_AFTER_SIGNUP',
+      send_hour: 8
     });
     setCurrentSequence(null);
     setEditMode(false);
@@ -92,7 +98,9 @@ function EmailSequences() {
     setFormData({
       name: sequence.name,
       template_id: sequence.template_id,
-      days_after_signup: sequence.days_after_signup
+      days_after_signup: sequence.days_after_signup,
+      send_type: sequence.send_type || 'DAYS_AFTER_SIGNUP',
+      send_hour: sequence.send_hour || 8
     });
     setEditMode(true);
   };
@@ -101,7 +109,7 @@ function EmailSequences() {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: name === 'days_after_signup' ? parseInt(value) || 0 : value
+      [name]: name === 'days_after_signup' || name === 'send_hour' ? parseInt(value) || 0 : value
     }));
   };
 
@@ -156,6 +164,8 @@ function EmailSequences() {
             name: formData.name,
             template_id: formData.template_id,
             days_after_signup: formData.days_after_signup,
+            send_type: formData.send_type,
+            send_hour: formData.send_hour,
             updated_at: new Date().toISOString()
           })
           .eq('id', currentSequence.id);
@@ -170,6 +180,8 @@ function EmailSequences() {
             name: formData.name,
             template_id: formData.template_id,
             days_after_signup: formData.days_after_signup,
+            send_type: formData.send_type,
+            send_hour: formData.send_hour,
             active: true
           }]);
 
@@ -214,7 +226,10 @@ function EmailSequences() {
                 Template
               </th>
               <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                Dias após cadastro
+                Tipo de Envio
+              </th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                Agendamento
               </th>
               <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                 Status
@@ -234,7 +249,14 @@ function EmailSequences() {
                   {sequence.template?.name || 'Template não encontrado'}
                 </td>
                 <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                  {sequence.days_after_signup} {sequence.days_after_signup === 1 ? 'dia' : 'dias'}
+                  {sequence.send_type === 'AFTER_FIRST_LOGIN' ? 'Após Primeiro Login' : 'Dias Após Cadastro'}
+                </td>
+                <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                  {sequence.send_type === 'AFTER_FIRST_LOGIN' 
+                    ? 'Imediato'
+                    : `${sequence.days_after_signup} ${sequence.days_after_signup === 1 ? 'dia' : 'dias'}`}
+                  {sequence.send_hour !== undefined && sequence.send_type !== 'AFTER_FIRST_LOGIN' && 
+                    ` às ${sequence.send_hour}:00h`}
                 </td>
                 <td className="whitespace-nowrap px-3 py-4 text-sm">
                   <span 
@@ -328,22 +350,61 @@ function EmailSequences() {
           </div>
           
           <div className="mb-4">
-            <label htmlFor="days_after_signup" className="block text-sm font-medium text-gray-700 mb-1">
-              Dias após o cadastro
+            <label htmlFor="send_type" className="block text-sm font-medium text-gray-700 mb-1">
+              Tipo de Envio
             </label>
-            <input
-              type="number"
-              min="0"
-              id="days_after_signup"
-              name="days_after_signup"
-              value={formData.days_after_signup}
+            <select
+              id="send_type"
+              name="send_type"
+              value={formData.send_type}
               onChange={handleInputChange}
               className="w-full p-2 border rounded-md"
-            />
-            <p className="mt-1 text-xs text-gray-500">
-              Número de dias após o cadastro para enviar este email.
-            </p>
+            >
+              <option value="DAYS_AFTER_SIGNUP">Dias após cadastro</option>
+              <option value="AFTER_FIRST_LOGIN">Após primeiro login</option>
+            </select>
           </div>
+          
+          {formData.send_type === 'DAYS_AFTER_SIGNUP' && (
+            <div className="mb-4">
+              <label htmlFor="days_after_signup" className="block text-sm font-medium text-gray-700 mb-1">
+                Dias após o cadastro
+              </label>
+              <input
+                type="number"
+                min="0"
+                id="days_after_signup"
+                name="days_after_signup"
+                value={formData.days_after_signup}
+                onChange={handleInputChange}
+                className="w-full p-2 border rounded-md"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Número de dias após o cadastro para enviar este email.
+              </p>
+            </div>
+          )}
+          
+          {formData.send_type === 'DAYS_AFTER_SIGNUP' && (
+            <div className="mb-4">
+              <label htmlFor="send_hour" className="block text-sm font-medium text-gray-700 mb-1">
+                Hora de envio
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="23"
+                id="send_hour"
+                name="send_hour"
+                value={formData.send_hour}
+                onChange={handleInputChange}
+                className="w-full p-2 border rounded-md"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Hora do dia para enviar este email (0-23).
+              </p>
+            </div>
+          )}
           
           <div className="flex gap-3 justify-end">
             <button

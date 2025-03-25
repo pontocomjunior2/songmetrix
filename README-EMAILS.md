@@ -8,7 +8,7 @@ O sistema de emails é composto por:
 
 1. **Tabelas no Supabase**:
    - `email_templates`: Armazena os templates de email em HTML
-   - `email_sequences`: Configura sequências de email a serem enviadas após determinados dias do cadastro
+   - `email_sequences`: Configura sequências de email a serem enviadas após determinados dias do cadastro ou após o primeiro login
    - `email_logs`: Registra histórico de todos os emails enviados
 
 2. **APIs no servidor Express**:
@@ -16,7 +16,7 @@ O sistema de emails é composto por:
    - `/api/email/process-scheduled`: Endpoint para disparar processamento de emails agendados
 
 3. **Scripts de processamento**:
-   - `scripts/send-scheduled-emails.js`: Script para processamento diário de emails agendados
+   - `scripts/send-scheduled-emails.js`: Script para processamento diário de emails agendados na hora especificada
    - `scripts/send-welcome-email.js`: Script para envio manual de emails de boas-vindas
 
 4. **Interface Administrativa**:
@@ -58,46 +58,55 @@ SMTP_FROM=SongMetrix <noreply@songmetrix.com.br>
 
 Acesse a interface administrativa através do menu "Gerenciar Emails" no painel do administrador. Esta interface permite:
 
-1. **Gerenciar Templates**: 
-   - Criar, editar e visualizar templates HTML
-   - Ativar/desativar templates existentes
-   - Usar variáveis como `{{name}}`, `{{email}}` e `{{date}}` nos templates
+1. **Gerenciar Templates de Email**:
+   - Criar templates com HTML e variáveis de substituição
+   - Editar e visualizar templates existentes
+   - Ativar/desativar templates
 
-2. **Configurar Sequências**:
-   - Definir quando cada email deve ser enviado após o cadastro do usuário
-   - Associar templates a sequências de email
+2. **Configurar Sequências de Email**:
+   - Configurar quando cada template deve ser enviado
+   - **Tipos de agendamento disponíveis**:
+     - **Dias após cadastro**: Envia o email X dias após o cadastro do usuário, na hora especificada
+     - **Após primeiro login**: Envia o email imediatamente após o primeiro login do usuário (após confirmação de email)
+   - Especificar a hora do dia para envio (apenas para o tipo "Dias após cadastro")
    - Ativar/desativar sequências
 
-3. **Visualizar Logs**:
+3. **Visualizar Logs de Email**:
    - Ver histórico de emails enviados
-   - Filtrar por status, data e conteúdo
-   - Ver detalhes de erros em envios falhos
+   - Filtrar por usuário, status, template, etc.
+   - Ver detalhes e mensagens de erro
 
-### Envio Manual de Email de Boas-vindas
+### Configuração do Processamento Automático
 
-Para enviar manualmente um email de boas-vindas para um usuário específico:
-
-```bash
-npm run email:send-welcome
-```
-
-Este comando mostrará uma lista dos usuários recentes e permitirá selecionar um para envio.
-
-### Processamento Automático de Emails Programados
-
-Para processar manualmente os emails programados:
+Para configurar o processamento automático dos emails agendados, configure um cron job para executar o script `scripts/send-scheduled-emails.js` a cada hora:
 
 ```bash
-npm run email:send-scheduled
+# Exemplo de configuração no crontab
+0 * * * * cd /caminho/do/projeto && node scripts/send-scheduled-emails.js >> /var/log/songmetrix/emails.log 2>&1
 ```
 
-Em ambiente de produção, recomenda-se configurar um cron job para executar este comando diariamente:
+Este script irá:
+1. Verificar a hora atual
+2. Buscar emails que devem ser enviados nessa hora
+3. Processar e enviar os emails
+4. Registrar os resultados no log
 
-```
-0 9 * * * cd /caminho/para/songmetrix && npm run email:send-scheduled
-```
+## Variáveis de Template
 
-Este exemplo configura o envio para todos os dias às 9:00.
+Os templates de email suportam as seguintes variáveis que são substituídas automaticamente:
+
+- `{{name}}`: Nome do usuário (ou primeira parte do email se não houver nome)
+- `{{email}}`: Email do usuário
+- `{{date}}`: Data atual no formato brasileiro (DD/MM/AAAA)
+
+## Resolução de Problemas
+
+### Emails não estão sendo enviados
+
+1. Verifique os logs de email na interface administrativa para ver se há erros
+2. Confirme que as variáveis SMTP estão configuradas corretamente no arquivo .env
+3. Verifique se o cron job está executando corretamente (logs)
+4. Verifique se as sequências e templates estão ativos
 
 ## Funcionamento Técnico
 

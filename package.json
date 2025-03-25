@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "server": "node server.js",
-    "dev:all": "concurrently \"npm run dev\" \"npm run server\"",
+    "server": "node server/server.js",
+    "email-server": "node server-email.js",
+    "dev:all": "concurrently \"npm run dev\" \"npm run server\" \"npm run email-server\"",
     "build": "node scripts/check-env.js && vite build --mode production",
     "prebuild": "node server/check-production.js || true",
     "lint": "eslint .",
@@ -17,7 +18,9 @@
     "check-api": "node scripts/check-api.js",
     "check-api:prod": "node scripts/check-api.js --prod",
     "email:send-scheduled": "node scripts/send-scheduled-emails.js",
-    "email:send-welcome": "node scripts/send-welcome-email.js"
+    "email:send-welcome": "node scripts/send-welcome-email.js",
+    "email:migration": "node scripts/apply-migration.js",
+    "email:process-hour": "node scripts/send-scheduled-emails.js"
   },
   "dependencies": {
     "@chakra-ui/react": "^3.8.1",
