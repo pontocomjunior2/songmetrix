@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
+import { logEmail, logError, logInfo, logDebug, logWarn } from './logger.js';
 
 // Carregar variáveis de ambiente
 dotenv.config();
@@ -22,10 +23,10 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 
 // Configurar transporte de email
 const createTransporter = () => {
-  console.log('[SMTP-SERVICE] Criando transporter SMTP...');
+  logInfo('Criando transporter SMTP...');
   
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASSWORD) {
-    console.error('[SMTP-SERVICE] Configuração SMTP incompleta no arquivo .env');
+    logError('Configuração SMTP incompleta no arquivo .env');
     throw new Error('Configuração SMTP incompleta');
   }
   
@@ -48,9 +49,9 @@ const createTransporter = () => {
 let transporter;
 try {
   transporter = createTransporter();
-  console.log('[SMTP-SERVICE] Transporter SMTP criado com sucesso');
+  logInfo('Transporter SMTP criado com sucesso');
 } catch (error) {
-  console.error('[SMTP-SERVICE] Erro ao criar transporter SMTP:', error);
+  logError('Erro ao criar transporter SMTP', error);
 }
 
 /**
@@ -105,25 +106,24 @@ export const sendEmail = async (to, subject, html, options = {}) => {
   if (!transporter) {
     try {
       transporter = createTransporter();
-      console.log('[SMTP-SERVICE] Transporter SMTP recriado com sucesso');
+      logInfo('Transporter SMTP recriado com sucesso');
     } catch (error) {
-      console.error('[SMTP-SERVICE] Erro ao recriar transporter SMTP:', error);
+      logError('Erro ao recriar transporter SMTP', error);
       return { success: false, error: 'Não foi possível criar o transporter SMTP' };
     }
   }
 
   try {
-    console.log(`[SMTP-SERVICE] Iniciando envio de email para ${to}`);
-    console.log(`[SMTP-SERVICE] Assunto: ${subject}`);
+    logEmail('Iniciando envio de email', { to, subject });
     
     // Verificar configuração do transporte
     if (!transporter) {
-      console.error('[SMTP-SERVICE] Transporter não configurado');
+      logError('Transporter não configurado');
       return { success: false, error: 'Transporter não configurado' };
     }
     
     const from = process.env.SMTP_FROM || `SongMetrix <${process.env.SMTP_USER}>`;
-    console.log(`[SMTP-SERVICE] Remetente: ${from}`);
+    logDebug('Configuração do remetente', { from });
     
     const mailOptions = {
       from,
@@ -137,25 +137,25 @@ export const sendEmail = async (to, subject, html, options = {}) => {
     if (typeof transporter.verify === 'function') {
       try {
         const verifyResult = await transporter.verify();
-        console.log(`[SMTP-SERVICE] Verificação do transporter: ${verifyResult ? 'OK' : 'Falha'}`);
+        logDebug('Verificação do transporter', { success: verifyResult });
         if (!verifyResult) {
           // Tentar recriar o transporter
           transporter = createTransporter();
         }
       } catch (verifyError) {
-        console.error('[SMTP-SERVICE] Erro na verificação do transporter:', verifyError);
+        logError('Erro na verificação do transporter', verifyError);
         // Tentar recriar o transporter
         transporter = createTransporter();
       }
     }
     
-    console.log('[SMTP-SERVICE] Enviando email...');
+    logEmail('Enviando email...', { to, subject });
     const info = await transporter.sendMail(mailOptions);
-    console.log(`[SMTP-SERVICE] Email enviado com sucesso: ${info.messageId}`);
+    logEmail('Email enviado com sucesso', { to, subject, messageId: info.messageId });
     
     return { success: true, messageId: info.messageId, info };
   } catch (error) {
-    console.error('[SMTP-SERVICE] Erro ao enviar email:', error);
+    logError('Erro ao enviar email', error, { to, subject });
     return { success: false, error: error.message, stack: error.stack };
   }
 };
@@ -310,7 +310,7 @@ export const processScheduledEmails = async () => {
   try {
     // Obter hora atual no fuso horário local
     const currentHour = new Date().getHours();
-    console.log(`[SMTP-SERVICE] Processando emails agendados para hora ${currentHour}`);
+    logEmail('Processando emails agendados', { currentHour });
     
     // Consultar usuários com emails pendentes para a hora atual
     const { data: pendingEmails, error } = await supabase.rpc('get_pending_emails', {
@@ -318,11 +318,11 @@ export const processScheduledEmails = async () => {
     });
     
     if (error) {
-      console.error('[SMTP-SERVICE] Erro ao buscar emails pendentes:', error);
+      logError('Erro ao buscar emails pendentes', error);
       return { success: false, error: error.message };
     }
     
-    console.log(`[SMTP-SERVICE] Processando ${pendingEmails?.length || 0} emails pendentes`);
+    logEmail('Emails pendentes encontrados', { count: pendingEmails?.length || 0 });
     
     if (!pendingEmails || pendingEmails.length === 0) {
       return { success: true, count: 0 };
@@ -381,44 +381,36 @@ export const processScheduledEmails = async () => {
         // Registrar log
         if (result.success) {
           successCount++;
-          await logEmailSent({
-            user_id: pending.user_id,
-            template_id: pending.template_id,
-            sequence_id: pending.sequence_id,
-            status: 'SUCCESS',
-            email_to: pending.email,
-            subject: pending.subject
+          logEmail('Email processado com sucesso', { 
+            to: pending.email,
+            sequenceId: pending.sequence_id,
+            templateId: pending.template_id
           });
         } else {
           failCount++;
-          await logEmailSent({
-            user_id: pending.user_id,
-            template_id: pending.template_id,
-            sequence_id: pending.sequence_id,
-            status: 'FAILED',
-            error_message: result.error,
-            email_to: pending.email,
-            subject: pending.subject
+          logError('Falha ao processar email', result.error, {
+            to: pending.email,
+            sequenceId: pending.sequence_id,
+            templateId: pending.template_id
           });
         }
         
         console.log(`[SMTP-SERVICE] Email processado para ${pending.email}: ${result.success ? 'Sucesso' : 'Falha'}`);
       } catch (emailError) {
         failCount++;
-        console.error(`[SMTP-SERVICE] Erro ao processar email para ${pending.email}:`, emailError);
-        
-        // Registrar falha no log
-        await logEmailSent({
-          user_id: pending.user_id,
-          template_id: pending.template_id,
-          sequence_id: pending.sequence_id,
-          status: 'FAILED',
-          error_message: emailError.message,
-          email_to: pending.email,
-          subject: pending.subject
+        logError('Erro ao processar email', emailError, {
+          to: pending.email,
+          sequenceId: pending.sequence_id,
+          templateId: pending.template_id
         });
       }
     }
+    
+    logEmail('Processamento de emails agendados concluído', {
+      total: pendingEmails.length,
+      successCount,
+      failCount
+    });
     
     return { 
       success: true, 
@@ -427,7 +419,7 @@ export const processScheduledEmails = async () => {
       failCount
     };
   } catch (error) {
-    console.error('[SMTP-SERVICE] Erro ao processar emails agendados:', error);
+    logError('Erro ao processar emails agendados', error);
     return { success: false, error: error.message };
   }
 };
@@ -622,10 +614,10 @@ export const sendTestEmail = async ({ to }) => {
  */
 export const processFirstLoginEmail = async (userId) => {
   try {
-    console.log(`[SMTP-SERVICE] Processando email de primeiro login para usuário ID: ${userId}`);
+    logEmail('Processando email de primeiro login', { userId });
     
     // Obter dados do usuário
-    console.log('[SMTP-SERVICE] Buscando dados do usuário...');
+    logDebug('Buscando dados do usuário', { userId });
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select('id, email, full_name, created_at, first_login_at')
@@ -633,19 +625,19 @@ export const processFirstLoginEmail = async (userId) => {
       .single();
       
     if (userError) {
-      console.error(`[SMTP-SERVICE] Erro ao buscar usuário: ${userError.message}`);
+      logError('Erro ao buscar usuário', userError, { userId });
       throw userError;
     }
     
     if (!userData) {
-      console.error('[SMTP-SERVICE] Usuário não encontrado');
+      logError('Usuário não encontrado', null, { userId });
       throw new Error('Usuário não encontrado');
     }
     
-    console.log(`[SMTP-SERVICE] Usuário encontrado: ${userData.full_name || userData.email}`);
+    logDebug('Usuário encontrado', { email: userData.email, fullName: userData.full_name });
     
     // Buscar informações adicionais do usuário no auth.users
-    console.log('[SMTP-SERVICE] Buscando dados de autenticação do usuário...');
+    logDebug('Buscando dados de autenticação do usuário', { userId });
     const { data: authData, error: authError } = await supabase
       .auth.admin.getUserById(userId);
       
@@ -665,15 +657,13 @@ export const processFirstLoginEmail = async (userId) => {
                authData.user.user_metadata?.full_name || 
                displayName;
                    
-      console.log(`[SMTP-SERVICE] Nome de exibição do usuário: ${displayName}`);
-      console.log(`[SMTP-SERVICE] fullName do usuário: ${fullName}`);
+      logDebug('Dados de usuário obtidos da autenticação', { displayName, fullName });
     } else {
-      console.log('[SMTP-SERVICE] Dados de autenticação não encontrados, usando full_name do perfil');
+      logWarn('Dados de autenticação não encontrados, usando full_name do perfil', { userId });
     }
     
     // Buscar sequências de email configuradas para primeiro login (várias possibilidades de nome do campo)
-    console.log('[SMTP-SERVICE] Buscando sequências de primeiro login...');
-    console.log('[SMTP-SERVICE] Verificando sequências com diferentes configurações...');
+    logDebug('Buscando sequências de primeiro login...');
 
     // Tentar com send_type = AFTER_FIRST_LOGIN (padrão)
     const { data: sequences1, error: seqError1 } = await supabase
@@ -714,18 +704,19 @@ export const processFirstLoginEmail = async (userId) => {
     // Remover possíveis duplicatas pelo ID
     const uniqueSequences = [...new Map(sequences.map(seq => [seq.id, seq])).values()];
 
-    console.log(`[SMTP-SERVICE] Encontradas ${uniqueSequences.length} sequências de primeiro login`);
+    logInfo(`Encontradas ${uniqueSequences.length} sequências de primeiro login`, { sequenceCount: uniqueSequences.length });
 
     if (seqError1 || seqError2 || seqError3 || seqError4) {
-      console.error('[SMTP-SERVICE] Erros ao buscar sequências:');
-      if (seqError1) console.error('- Erro em AFTER_FIRST_LOGIN:', seqError1.message);
-      if (seqError2) console.error('- Erro em FIRST_LOGIN:', seqError2.message);
-      if (seqError3) console.error('- Erro em trigger_type:', seqError3.message);
-      if (seqError4) console.error('- Erro em busca por nome:', seqError4.message);
+      logWarn('Erros ao buscar sequências de primeiro login', {
+        errorAFTER_FIRST_LOGIN: seqError1 ? seqError1.message : null,
+        errorFIRST_LOGIN: seqError2 ? seqError2.message : null,
+        errorTriggerType: seqError3 ? seqError3.message : null,
+        errorByName: seqError4 ? seqError4.message : null
+      });
     }
 
     if (uniqueSequences.length === 0) {
-      console.log('[SMTP-SERVICE] Nenhuma sequência de primeiro login ativa encontrada');
+      logWarn('Nenhuma sequência de primeiro login ativa encontrada');
       return { success: true, count: 0, message: 'Nenhuma sequência de primeiro login ativa configurada' };
     }
 
@@ -735,7 +726,7 @@ export const processFirstLoginEmail = async (userId) => {
     
     for (const sequence of uniqueSequences) {
       try {
-        console.log(`[SMTP-SERVICE] Processando sequência: ${sequence.name}`);
+        logDebug(`Processando sequência de primeiro login`, { sequenceName: sequence.name, sequenceId: sequence.id });
         
         // Buscar template associado à sequência
         const { data: template, error: templateError } = await supabase
@@ -745,16 +736,16 @@ export const processFirstLoginEmail = async (userId) => {
           .single();
           
         if (templateError) {
-          console.error(`[SMTP-SERVICE] Erro ao buscar template para sequência ${sequence.id}: ${templateError.message}`);
+          logError(`Erro ao buscar template para sequência`, templateError, { sequenceId: sequence.id });
           throw templateError;
         }
         
         if (!template) {
-          console.error(`[SMTP-SERVICE] Template não encontrado para sequência ${sequence.id}`);
+          logError(`Template não encontrado para sequência`, null, { sequenceId: sequence.id });
           throw new Error(`Template não encontrado para sequência ${sequence.id}`);
         }
         
-        console.log(`[SMTP-SERVICE] Template encontrado: "${template.name}"`);
+        logDebug(`Template encontrado`, { templateName: template.name, templateId: template.id });
         
         // Verificar se já enviou email para este usuário nesta sequência
         const { data: existingLogs, error: logCheckError } = await supabase
@@ -765,10 +756,10 @@ export const processFirstLoginEmail = async (userId) => {
           .limit(1);
           
         if (logCheckError) {
-          console.error(`[SMTP-SERVICE] Erro ao verificar logs: ${logCheckError.message}`);
+          logError(`Erro ao verificar logs de envio`, logCheckError, { userId, sequenceId: sequence.id });
           // Continuar mesmo com erro, para não bloquear o envio
         } else if (existingLogs && existingLogs.length > 0) {
-          console.log(`[SMTP-SERVICE] Email já enviado anteriormente para este usuário na sequência ${sequence.id}`);
+          logDebug(`Email já enviado anteriormente para este usuário nesta sequência`, { userId, sequenceId: sequence.id });
           continue; // Pular para a próxima sequência
         }
         
@@ -781,7 +772,7 @@ export const processFirstLoginEmail = async (userId) => {
         });
         
         // Enviar email
-        console.log(`[SMTP-SERVICE] Enviando email para ${userData.email}...`);
+        logEmail(`Enviando email de primeiro login`, { to: userData.email, subject: template.subject });
         const result = await sendEmail(
           userData.email,
           template.subject,
@@ -799,7 +790,7 @@ export const processFirstLoginEmail = async (userId) => {
             email_to: userData.email,
             subject: template.subject
           });
-          console.log(`[SMTP-SERVICE] Email de primeiro login enviado com sucesso para ${userData.email}`);
+          logEmail(`Email de primeiro login enviado com sucesso`, { to: userData.email, sequenceId: sequence.id });
         } else {
           failCount++;
           await logEmailSent({
@@ -811,22 +802,32 @@ export const processFirstLoginEmail = async (userId) => {
             email_to: userData.email,
             subject: template.subject
           });
-          console.error(`[SMTP-SERVICE] Falha ao enviar email de primeiro login para ${userData.email}: ${result.error}`);
+          logError(`Falha ao enviar email de primeiro login`, null, { to: userData.email, error: result.error });
         }
       } catch (sequenceError) {
         failCount++;
-        console.error(`[SMTP-SERVICE] Erro ao processar sequência ${sequence.id}:`, sequenceError);
+        logError(`Erro ao processar sequência de primeiro login`, sequenceError, { sequenceId: sequence.id });
       }
     }
     
+    logEmail('Processamento de emails de primeiro login concluído', {
+      userId,
+      email: userData.email,
+      total: uniqueSequences.length,
+      successCount,
+      failCount
+    });
+    
     return { 
       success: true, 
-      count: sequences.length,
+      userId,
+      email: userData.email,
+      count: uniqueSequences.length,
       successCount,
       failCount
     };
   } catch (error) {
-    console.error('[SMTP-SERVICE] Erro ao processar email de primeiro login:', error);
+    logError('Erro ao processar email de primeiro login', error, { userId });
     return { success: false, error: error.message };
   }
 };

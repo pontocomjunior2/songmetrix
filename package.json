@@ -22,7 +22,12 @@
     "email:migration": "node scripts/apply-migration.js",
     "email:process-hour": "node scripts/send-scheduled-emails.js",
     "start:email-scheduler": "node scripts/schedule-emails.js",
-    "process-scheduled-emails": "node scripts/send-scheduled-emails.js"
+    "process-scheduled-emails": "node scripts/send-scheduled-emails.js",
+    "ensure-first-login": "node scripts/ensure-first-login-sequence.js",
+    "email:sync-brevo": "node scripts/sync-brevo-contacts.js",
+    "email:server-brevo": "node server-email.js",
+    "sync-brevo-contacts": "node scripts/sync-brevo-contacts.js",
+    "sync-brevo-lists": "node scripts/sync-brevo-lists.js"
   },
   "dependencies": {
     "@chakra-ui/react": "^3.8.1",
@@ -33,6 +38,7 @@
     "@heroicons/react": "^2.0.18",
     "@radix-ui/react-dialog": "^1.1.6",
     "@radix-ui/react-label": "^2.1.2",
+    "@sendgrid/mail": "^7.7.0",
     "@stripe/stripe-js": "^5.6.0",
     "@supabase/supabase-js": "^2.48.1",
     "axios": "^1.6.2",
@@ -57,8 +63,11 @@
     "react-select": "^5.10.0",
     "react-toastify": "^11.0.3",
     "recharts": "^2.15.1",
+    "sib-api-v3-sdk": "^8.5.0",
     "stripe": "^17.6.0",
-    "tailwind-merge": "^3.0.2"
+    "tailwind-merge": "^3.0.2",
+    "winston": "^3.11.0",
+    "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
