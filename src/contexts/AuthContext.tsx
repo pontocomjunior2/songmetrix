@@ -613,31 +613,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signUp = async (email: string, password: string, fullName?: string, whatsapp?: string) => {
     try {
-      // Verificar se o email já existe
-      const { data: existingUsers, error: checkError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', email);
-        
-      if (checkError) {
-        console.error('Erro ao verificar email existente:', checkError);
-      } else if (existingUsers && existingUsers.length > 0) {
-        return { error: new CustomAuthError('Este email já está registrado. Por favor, faça login ou use outro email.') };
-      }
+      setLoading(true);
       
+      // Verificar inputs
+      if (!email || !password) {
+        return { error: { message: 'Email e senha são obrigatórios' } };
+      }
+
+      // Realizar cadastro no Supabase
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/login`,
-          data: { status: 'TRIAL', fullName, whatsapp }
+          data: {
+            fullName: fullName,
+            whatsapp: whatsapp,
+            status: 'TRIAL'
+          }
         }
       });
-      
-      if (error) {
-        console.error('Erro no signUp do Supabase:', error);
-        throw error;
-      }
+
+      if (error) throw error;
       
       // Garantir que o usuário foi criado e tem o status TRIAL
       if (data?.user) {
@@ -660,6 +656,41 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           console.error('Erro ao criar registro do usuário no banco de dados:', dbError);
         } else {
           console.log('Registro do usuário criado/atualizado com sucesso na tabela users');
+        }
+        
+        try {
+          // Registrar o contato no Brevo
+          const token = data.session?.access_token;
+          
+          if (token) {
+            console.log('Enviando dados para adicionar contato no Brevo');
+            const response = await fetch('/api/email/create-contact', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                email: email,
+                fullName: fullName,
+                whatsapp: whatsapp,
+                status: 'TRIAL',
+                createdAt: new Date().toISOString()
+              })
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+              console.log('Contato adicionado com sucesso no Brevo:', result);
+            } else {
+              console.error('Erro ao adicionar contato no Brevo:', result.error);
+            }
+          } else {
+            console.warn('Token não disponível para registrar contato no Brevo');
+          }
+        } catch (brevoError) {
+          console.error('Erro ao registrar contato no Brevo:', brevoError);
+          // Não impedir o fluxo principal se falhar a criação do contato no Brevo
         }
         
         // Retornar sucesso, mas sem fazer logout automaticamente

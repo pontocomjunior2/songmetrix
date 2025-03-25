@@ -5,8 +5,10 @@ import bodyParser from 'body-parser';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import emailService from './server/smtp-email-service.js';
+// Importar o novo serviço de email do Brevo
+import emailService from './server/brevo-email-service.js';
 import { createClient } from '@supabase/supabase-js';
+import { logEmail, logError, logInfo, logDebug } from './server/logger.js';
 
 // Obter o diretório atual em ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -243,27 +245,18 @@ app.post('/api/email/process-scheduled', isAuthenticated, async (req, res) => {
 
 // Rota para processar email de primeiro login
 app.post('/api/email/process-first-login', isAuthenticated, async (req, res) => {
-  console.log('[EMAIL-FIRST-LOGIN] =========== INÍCIO DO PROCESSAMENTO ===========');
-  console.log('[EMAIL-FIRST-LOGIN] Requisição recebida para processar email de primeiro login');
-  console.log('[EMAIL-FIRST-LOGIN] Headers:', JSON.stringify(req.headers));
-  console.log('[EMAIL-FIRST-LOGIN] Body:', JSON.stringify(req.body));
-  
   try {
     const { userId } = req.body;
     
     if (!userId) {
-      console.error('[EMAIL-FIRST-LOGIN] ID do usuário não fornecido na requisição');
-      return res.status(400).json({
-        success: false,
-        message: 'ID do usuário não fornecido'
+      return res.status(400).json({ 
+        success: false, 
+        message: 'ID do usuário não fornecido' 
       });
     }
     
-    console.log(`[EMAIL-FIRST-LOGIN] Processando para usuário ID: ${userId}`);
-    
     // Verificar se há um serviço de email configurado
     if (!emailService) {
-      console.error('[EMAIL-FIRST-LOGIN] Serviço de email não configurado');
       return res.status(500).json({
         success: false,
         message: 'Serviço de email não configurado'
@@ -271,11 +264,8 @@ app.post('/api/email/process-first-login', isAuthenticated, async (req, res) => 
     }
     
     // Processar email de primeiro login
-    console.log('[EMAIL-FIRST-LOGIN] Chamando emailService.processFirstLoginEmail');
     const result = await emailService.processFirstLoginEmail(userId);
-    console.log('[EMAIL-FIRST-LOGIN] Resultado do processamento:', JSON.stringify(result));
     
-    console.log('[EMAIL-FIRST-LOGIN] =========== FIM DO PROCESSAMENTO ===========');
     res.status(200).json({
       success: true,
       message: 'Email de primeiro login processado com sucesso',
@@ -283,10 +273,146 @@ app.post('/api/email/process-first-login', isAuthenticated, async (req, res) => 
     });
   } catch (error) {
     console.error('[EMAIL-FIRST-LOGIN] Erro ao processar email de primeiro login:', error);
-    console.error('[EMAIL-FIRST-LOGIN] =========== FIM COM ERRO ===========');
     res.status(500).json({
       success: false,
       message: 'Erro ao processar email de primeiro login',
+      error: error.message
+    });
+  }
+});
+
+// Rota para criar/atualizar contato no Brevo
+app.post('/api/email/create-contact', isAuthenticated, async (req, res) => {
+  try {
+    const { email, fullName, whatsapp, status, createdAt, listIds } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email do contato não fornecido' 
+      });
+    }
+    
+    // Verificar se há um serviço de email configurado
+    if (!emailService) {
+      return res.status(500).json({
+        success: false,
+        message: 'Serviço de email não configurado'
+      });
+    }
+    
+    // Valor padrão para listIds se não fornecido
+    // ID da lista principal de contatos (deve ser configurado no .env)
+    const mainListId = process.env.BREVO_MAIN_LIST_ID;
+    const defaultListIds = mainListId ? [parseInt(mainListId)] : [];
+    
+    let result;
+    
+    // Se tiver status, usar a função de atualização baseada em status
+    if (status) {
+      // Primeiro criar/atualizar o contato
+      const contactResult = await emailService.createOrUpdateContact({
+        email,
+        fullName,
+        whatsapp,
+        status,
+        createdAt,
+        listIds: [] // Não adicionar a nenhuma lista ainda
+      });
+      
+      if (!contactResult.success) {
+        return res.status(400).json({
+          success: false,
+          message: 'Erro ao criar/atualizar contato no Brevo',
+          error: contactResult.error
+        });
+      }
+      
+      // Atualizar as listas com base no status
+      result = await emailService.updateContactListsByStatus(email, status);
+    } else {
+      // Sem status, usar a função padrão
+      result = await emailService.createOrUpdateContact({
+        email,
+        fullName,
+        whatsapp,
+        status,
+        createdAt,
+        listIds: listIds || defaultListIds
+      });
+    }
+    
+    if (result.success) {
+      res.status(200).json({
+        success: true,
+        message: 'Contato criado/atualizado com sucesso no Brevo',
+        result
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Erro ao criar/atualizar contato no Brevo',
+        error: result.error
+      });
+    }
+  } catch (error) {
+    console.error('[EMAIL-CREATE-CONTACT] Erro ao criar/atualizar contato:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao criar/atualizar contato no Brevo',
+      error: error.message
+    });
+  }
+});
+
+// Rota para atualizar listas de um contato baseado no status
+app.post('/api/email/update-contact-lists', isAuthenticated, async (req, res) => {
+  try {
+    const { email, status } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email do contato não fornecido' 
+      });
+    }
+    
+    if (!status) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Status do usuário não fornecido' 
+      });
+    }
+    
+    // Verificar se há um serviço de email configurado
+    if (!emailService) {
+      return res.status(500).json({
+        success: false,
+        message: 'Serviço de email não configurado'
+      });
+    }
+    
+    // Atualizar as listas do contato com base no status
+    const result = await emailService.updateContactListsByStatus(email, status);
+    
+    if (result.success) {
+      res.status(200).json({
+        success: true,
+        message: 'Listas do contato atualizadas com sucesso',
+        result
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Erro ao atualizar listas do contato',
+        error: result.error
+      });
+    }
+  } catch (error) {
+    console.error('[EMAIL-UPDATE-CONTACT-LISTS] Erro ao atualizar listas do contato:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao atualizar listas do contato',
       error: error.message
     });
   }
@@ -301,4 +427,6 @@ app.listen(PORT, () => {
   console.log('- /api/email/send-test (POST)');
   console.log('- /api/email/process-scheduled (POST)');
   console.log('- /api/email/process-first-login (POST)');
+  console.log('- /api/email/create-contact (POST)');
+  console.log('- /api/email/update-contact-lists (POST)');
 }); 

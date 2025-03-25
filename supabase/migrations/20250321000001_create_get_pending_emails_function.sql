@@ -8,7 +8,8 @@ RETURNS TABLE (
   template_id UUID,
   subject VARCHAR,
   body TEXT,
-  send_hour INTEGER
+  send_hour INTEGER,
+  send_type VARCHAR
 ) LANGUAGE sql SECURITY DEFINER
 AS $$
   WITH active_sequences AS (
@@ -17,6 +18,7 @@ AS $$
       seq.template_id,
       seq.days_after_signup,
       seq.send_hour,
+      seq.send_type,
       temp.subject,
       temp.body
     FROM 
@@ -25,7 +27,7 @@ AS $$
     WHERE 
       seq.active = true 
       AND temp.active = true
-      AND (p_current_hour IS NULL OR seq.send_hour = p_current_hour)
+      AND (p_current_hour IS NULL OR seq.send_hour = p_current_hour OR seq.send_type = 'AFTER_FIRST_LOGIN')
   )
   SELECT 
     u.id as user_id,
@@ -35,14 +37,19 @@ AS $$
     s.template_id,
     s.subject,
     s.body,
-    s.send_hour
+    s.send_hour,
+    s.send_type
   FROM 
     public.users u
     CROSS JOIN active_sequences s
   WHERE 
     u.status IN ('ATIVO', 'TRIAL', 'ADMIN')
     AND u.email_confirmed_at IS NOT NULL
-    AND EXTRACT(DAY FROM NOW() - u.created_at) >= s.days_after_signup
+    AND (
+      (s.send_type = 'DAYS_AFTER_SIGNUP' AND EXTRACT(DAY FROM NOW() - u.created_at) >= s.days_after_signup)
+      OR 
+      (s.send_type = 'AFTER_FIRST_LOGIN' AND u.first_login_at IS NOT NULL AND EXTRACT(DAY FROM NOW() - u.first_login_at) < 1)
+    )
     AND NOT EXISTS (
       SELECT 1 FROM public.email_logs l
       WHERE l.user_id = u.id
