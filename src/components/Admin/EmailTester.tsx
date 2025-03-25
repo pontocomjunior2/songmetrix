@@ -12,6 +12,9 @@ type EmailTemplate = {
   created_at: string;
 };
 
+// Constante para a URL do servidor de email
+const EMAIL_SERVER_URL = import.meta.env.VITE_EMAIL_SERVER_URL || 'http://localhost:3002';
+
 function EmailTester() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -91,10 +94,8 @@ function EmailTester() {
       }
       
       debugLog('Enviando requisição para servidor de email...');
-      // Construindo URL para API
-      const apiUrl = window.location.hostname === 'localhost' 
-        ? 'http://localhost:3002/api/email/send-test'
-        : '/api/email/send-test';
+      // Usar a constante EMAIL_SERVER_URL para a API
+      const apiUrl = `${EMAIL_SERVER_URL}/api/email/send-test`;
       
       debugLog(`URL da API: ${apiUrl}`);
       
@@ -244,4 +245,4 @@ function EmailTester() {
   );
 }
 
-export default EmailTester; 
+export default EmailTester;

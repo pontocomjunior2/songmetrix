@@ -190,6 +190,33 @@ export const sendWelcomeEmail = async (userId) => {
     
     console.log(`[SMTP-SERVICE] Usuário encontrado: ${userData.full_name || userData.email}`);
     
+    // Buscar informações adicionais do usuário no auth.users
+    console.log('[SMTP-SERVICE] Buscando dados de autenticação do usuário...');
+    const { data: authData, error: authError } = await supabase
+      .auth.admin.getUserById(userId);
+      
+    let displayName = userData.full_name;
+    let fullName = userData.full_name;
+    
+    if (!authError && authData?.user) {
+      // Extrair display_name e fullName do user_metadata
+      displayName = authData.user.user_metadata?.display_name || 
+                   authData.user.user_metadata?.full_name || 
+                   authData.user.user_metadata?.name || 
+                   userData.full_name;
+
+      // Extrair fullName diretamente do raw_user_meta_data
+      fullName = authData.user.raw_user_meta_data?.fullName || 
+                authData.user.user_metadata?.fullName || 
+                authData.user.user_metadata?.full_name || 
+                displayName;
+                   
+      console.log(`[SMTP-SERVICE] Nome de exibição do usuário: ${displayName}`);
+      console.log(`[SMTP-SERVICE] fullName do usuário: ${fullName}`);
+    } else {
+      console.log('[SMTP-SERVICE] Dados de autenticação não encontrados, usando full_name do perfil');
+    }
+    
     // Verificar se já enviou email anteriormente
     console.log('[SMTP-SERVICE] Verificando histórico de emails...');
     const { data: logData, error: logError } = await supabase
@@ -230,14 +257,15 @@ export const sendWelcomeEmail = async (userId) => {
     
     // Processar template
     console.log('[SMTP-SERVICE] Processando template...');
-    const name = userData.full_name || userData.email.split('@')[0];
+    // Incluir tanto name quanto fullName nas variáveis do template
     const htmlContent = processTemplate(template.body, { 
-      name,
+      name: displayName || userData.full_name || userData.email.split('@')[0],
+      fullName: fullName || displayName || userData.full_name || userData.email.split('@')[0],
       email: userData.email,
       date: new Date().toLocaleDateString('pt-BR')
     });
     
-    // Enviar email
+    // Enviar email com o assunto exato do template (sem prefixo [TESTE])
     console.log(`[SMTP-SERVICE] Enviando email para ${userData.email}...`);
     const result = await sendEmail(
       userData.email,
@@ -300,10 +328,39 @@ export const processScheduledEmails = async () => {
     
     for (const pending of pendingEmails) {
       try {
+        // Buscar informações adicionais do usuário no auth.users para obter display_name
+        let displayName = pending.full_name;
+        let fullName = pending.full_name;
+        
+        if (pending.user_id) {
+          console.log(`[SMTP-SERVICE] Buscando dados de autenticação para usuário ID: ${pending.user_id}`);
+          const { data: authData, error: authError } = await supabase
+            .auth.admin.getUserById(pending.user_id);
+            
+          if (!authError && authData?.user) {
+            // Extrair display_name do user_metadata
+            displayName = authData.user.user_metadata?.display_name || 
+                        authData.user.user_metadata?.full_name || 
+                        authData.user.user_metadata?.name || 
+                        pending.full_name;
+                        
+            // Extrair fullName diretamente do raw_user_meta_data
+            fullName = authData.user.raw_user_meta_data?.fullName || 
+                     authData.user.user_metadata?.fullName || 
+                     authData.user.user_metadata?.full_name || 
+                     displayName;
+                        
+            console.log(`[SMTP-SERVICE] Nome de exibição do usuário: ${displayName}`);
+            console.log(`[SMTP-SERVICE] fullName do usuário: ${fullName}`);
+          } else {
+            console.log('[SMTP-SERVICE] Dados de autenticação não encontrados, usando full_name do perfil');
+          }
+        }
+        
         // Processar template
-        const name = pending.full_name || pending.email.split('@')[0];
         const htmlContent = processTemplate(pending.body, { 
-          name,
+          name: displayName || pending.full_name || pending.email.split('@')[0],
+          fullName: fullName || displayName || pending.full_name || pending.email.split('@')[0],
           email: pending.email,
           date: new Date().toLocaleDateString('pt-BR')
         });
@@ -401,30 +458,59 @@ export const sendTestEmailWithTemplate = async ({ to, templateId }) => {
     
     console.log(`[SMTP-SERVICE] Template encontrado: "${template.name}"`);
     
+    // Buscar dados do usuário pelo email
+    console.log(`[SMTP-SERVICE] Buscando dados do usuário com email: ${to}`);
+    const { data: userData, error: userError } = await supabase
+      .auth.admin.getUserByEmail(to);
+    
+    let displayName = 'Usuário de Teste';
+    let fullName = 'Usuário de Teste';
+    
+    if (!userError && userData?.user) {
+      console.log('[SMTP-SERVICE] Dados do usuário encontrados');
+      // Buscar display_name no user_metadata
+      displayName = userData.user.user_metadata?.display_name || 
+                userData.user.user_metadata?.full_name || 
+                userData.user.user_metadata?.name || 
+                'Usuário';
+      
+      // Extrair fullName diretamente do raw_user_meta_data
+      fullName = userData.user.raw_user_meta_data?.fullName || 
+               userData.user.user_metadata?.fullName || 
+               userData.user.user_metadata?.full_name || 
+               displayName;
+                
+      console.log(`[SMTP-SERVICE] Nome de exibição do usuário: ${displayName}`);
+      console.log(`[SMTP-SERVICE] fullName do usuário: ${fullName}`);
+    } else {
+      console.log('[SMTP-SERVICE] Usuário não encontrado, usando nome padrão');
+    }
+    
     // Processar template
     console.log('[SMTP-SERVICE] Processando template de teste...');
     const htmlContent = processTemplate(template.body, { 
-      name: 'Usuário de Teste',
+      name: displayName,
+      fullName: fullName,
       email: to,
       date: new Date().toLocaleDateString('pt-BR')
     });
     
-    // Enviar email
+    // Enviar email - sem o prefixo [TESTE]
     console.log(`[SMTP-SERVICE] Enviando email de teste para ${to}...`);
     const result = await sendEmail(
       to,
-      `[TESTE] ${template.subject}`,
+      template.subject,
       htmlContent
     );
     
-    // Registrar log
+    // Registrar log - sem incluir o prefixo [TESTE] no assunto
     console.log(`[SMTP-SERVICE] Resultado do envio de teste: ${result.success ? 'Sucesso' : 'Falha'}`);
     await logEmailSent({
       template_id: template.id,
       status: result.success ? 'SUCCESS' : 'FAILED',
       error_message: result.success ? null : result.error,
       email_to: to,
-      subject: `[TESTE] ${template.subject}`
+      subject: template.subject
     });
     
     return result;
@@ -458,26 +544,243 @@ export const sendTestEmail = async ({ to }) => {
       </div>
     `;
     
-    // Enviar email
+    // Enviar email - removido o prefixo [TESTE]
     const result = await sendEmail(
       to,
-      '[TESTE] Email de teste do SongMetrix',
+      'Email de teste do SongMetrix',
       htmlContent
     );
     
-    // Registrar log
+    // Registrar log - removido o prefixo [TESTE]
     console.log(`[SMTP-SERVICE] Resultado do envio de teste simples: ${result.success ? 'Sucesso' : 'Falha'}`);
     await logEmailSent({
       status: result.success ? 'SUCCESS' : 'FAILED',
       error_message: result.success ? null : result.error,
       email_to: to,
-      subject: '[TESTE] Email de teste do SongMetrix'
+      subject: 'Email de teste do SongMetrix'
     });
     
     return result;
   } catch (error) {
     console.error('[SMTP-SERVICE] Erro ao enviar email de teste simples:', error);
     return { success: false, error: error.message, stack: error.stack };
+  }
+};
+
+/**
+ * Função para processar email de primeiro login
+ * 
+ * @param {string} userId - ID do usuário que fez o primeiro login
+ * @returns {Promise<object>} - Resultado do processamento
+ */
+export const processFirstLoginEmail = async (userId) => {
+  try {
+    console.log(`[SMTP-SERVICE] Processando email de primeiro login para usuário ID: ${userId}`);
+    
+    // Obter dados do usuário
+    console.log('[SMTP-SERVICE] Buscando dados do usuário...');
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('id, email, full_name, created_at, first_login_at')
+      .eq('id', userId)
+      .single();
+      
+    if (userError) {
+      console.error(`[SMTP-SERVICE] Erro ao buscar usuário: ${userError.message}`);
+      throw userError;
+    }
+    
+    if (!userData) {
+      console.error('[SMTP-SERVICE] Usuário não encontrado');
+      throw new Error('Usuário não encontrado');
+    }
+    
+    console.log(`[SMTP-SERVICE] Usuário encontrado: ${userData.full_name || userData.email}`);
+    
+    // Buscar informações adicionais do usuário no auth.users
+    console.log('[SMTP-SERVICE] Buscando dados de autenticação do usuário...');
+    const { data: authData, error: authError } = await supabase
+      .auth.admin.getUserById(userId);
+      
+    let displayName = userData.full_name;
+    let fullName = userData.full_name;
+    
+    if (!authError && authData?.user) {
+      // Extrair display_name do user_metadata
+      displayName = authData.user.user_metadata?.display_name || 
+                   authData.user.user_metadata?.full_name || 
+                   authData.user.user_metadata?.name || 
+                   userData.full_name;
+                   
+      // Extrair fullName diretamente do raw_user_meta_data
+      fullName = authData.user.raw_user_meta_data?.fullName || 
+               authData.user.user_metadata?.fullName || 
+               authData.user.user_metadata?.full_name || 
+               displayName;
+                   
+      console.log(`[SMTP-SERVICE] Nome de exibição do usuário: ${displayName}`);
+      console.log(`[SMTP-SERVICE] fullName do usuário: ${fullName}`);
+    } else {
+      console.log('[SMTP-SERVICE] Dados de autenticação não encontrados, usando full_name do perfil');
+    }
+    
+    // Buscar sequências de email configuradas para primeiro login (várias possibilidades de nome do campo)
+    console.log('[SMTP-SERVICE] Buscando sequências de primeiro login...');
+    console.log('[SMTP-SERVICE] Verificando sequências com diferentes configurações...');
+
+    // Tentar com send_type = AFTER_FIRST_LOGIN (padrão)
+    const { data: sequences1, error: seqError1 } = await supabase
+      .from('email_sequences')
+      .select('id, name, send_type, template_id')
+      .eq('send_type', 'AFTER_FIRST_LOGIN')
+      .eq('active', true);
+
+    // Tentar com send_type = FIRST_LOGIN (alternativa)
+    const { data: sequences2, error: seqError2 } = await supabase
+      .from('email_sequences')
+      .select('id, name, send_type, template_id')
+      .eq('send_type', 'FIRST_LOGIN')
+      .eq('active', true);
+
+    // Tentar com trigger_type (alternativa)
+    const { data: sequences3, error: seqError3 } = await supabase
+      .from('email_sequences')
+      .select('id, name, trigger_type, template_id')
+      .eq('trigger_type', 'first_login')
+      .eq('active', true);
+
+    // Tentar diretamente pelo nome da sequência
+    const { data: sequences4, error: seqError4 } = await supabase
+      .from('email_sequences')
+      .select('id, name, template_id')
+      .ilike('name', '%primeiro login%')
+      .eq('active', true);
+
+    // Combinar os resultados das diferentes consultas
+    const sequences = [
+      ...(sequences1 || []),
+      ...(sequences2 || []),
+      ...(sequences3 || []),
+      ...(sequences4 || [])
+    ];
+
+    // Remover possíveis duplicatas pelo ID
+    const uniqueSequences = [...new Map(sequences.map(seq => [seq.id, seq])).values()];
+
+    console.log(`[SMTP-SERVICE] Encontradas ${uniqueSequences.length} sequências de primeiro login`);
+
+    if (seqError1 || seqError2 || seqError3 || seqError4) {
+      console.error('[SMTP-SERVICE] Erros ao buscar sequências:');
+      if (seqError1) console.error('- Erro em AFTER_FIRST_LOGIN:', seqError1.message);
+      if (seqError2) console.error('- Erro em FIRST_LOGIN:', seqError2.message);
+      if (seqError3) console.error('- Erro em trigger_type:', seqError3.message);
+      if (seqError4) console.error('- Erro em busca por nome:', seqError4.message);
+    }
+
+    if (uniqueSequences.length === 0) {
+      console.log('[SMTP-SERVICE] Nenhuma sequência de primeiro login ativa encontrada');
+      return { success: true, count: 0, message: 'Nenhuma sequência de primeiro login ativa configurada' };
+    }
+
+    // Processar cada sequência
+    let successCount = 0;
+    let failCount = 0;
+    
+    for (const sequence of uniqueSequences) {
+      try {
+        console.log(`[SMTP-SERVICE] Processando sequência: ${sequence.name}`);
+        
+        // Buscar template associado à sequência
+        const { data: template, error: templateError } = await supabase
+          .from('email_templates')
+          .select('*')
+          .eq('id', sequence.template_id)
+          .single();
+          
+        if (templateError) {
+          console.error(`[SMTP-SERVICE] Erro ao buscar template para sequência ${sequence.id}: ${templateError.message}`);
+          throw templateError;
+        }
+        
+        if (!template) {
+          console.error(`[SMTP-SERVICE] Template não encontrado para sequência ${sequence.id}`);
+          throw new Error(`Template não encontrado para sequência ${sequence.id}`);
+        }
+        
+        console.log(`[SMTP-SERVICE] Template encontrado: "${template.name}"`);
+        
+        // Verificar se já enviou email para este usuário nesta sequência
+        const { data: existingLogs, error: logCheckError } = await supabase
+          .from('email_logs')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('sequence_id', sequence.id)
+          .limit(1);
+          
+        if (logCheckError) {
+          console.error(`[SMTP-SERVICE] Erro ao verificar logs: ${logCheckError.message}`);
+          // Continuar mesmo com erro, para não bloquear o envio
+        } else if (existingLogs && existingLogs.length > 0) {
+          console.log(`[SMTP-SERVICE] Email já enviado anteriormente para este usuário na sequência ${sequence.id}`);
+          continue; // Pular para a próxima sequência
+        }
+        
+        // Processar template
+        const htmlContent = processTemplate(template.body, { 
+          name: displayName || userData.full_name || userData.email.split('@')[0],
+          fullName: fullName || displayName || userData.full_name || userData.email.split('@')[0],
+          email: userData.email,
+          date: new Date().toLocaleDateString('pt-BR')
+        });
+        
+        // Enviar email
+        console.log(`[SMTP-SERVICE] Enviando email para ${userData.email}...`);
+        const result = await sendEmail(
+          userData.email,
+          template.subject,
+          htmlContent
+        );
+        
+        // Registrar log
+        if (result.success) {
+          successCount++;
+          await logEmailSent({
+            user_id: userId,
+            template_id: template.id,
+            sequence_id: sequence.id,
+            status: 'SUCCESS',
+            email_to: userData.email,
+            subject: template.subject
+          });
+          console.log(`[SMTP-SERVICE] Email de primeiro login enviado com sucesso para ${userData.email}`);
+        } else {
+          failCount++;
+          await logEmailSent({
+            user_id: userId,
+            template_id: template.id,
+            sequence_id: sequence.id,
+            status: 'FAILED',
+            error_message: result.error,
+            email_to: userData.email,
+            subject: template.subject
+          });
+          console.error(`[SMTP-SERVICE] Falha ao enviar email de primeiro login para ${userData.email}: ${result.error}`);
+        }
+      } catch (sequenceError) {
+        failCount++;
+        console.error(`[SMTP-SERVICE] Erro ao processar sequência ${sequence.id}:`, sequenceError);
+      }
+    }
+    
+    return { 
+      success: true, 
+      count: sequences.length,
+      successCount,
+      failCount
+    };
+  } catch (error) {
+    console.error('[SMTP-SERVICE] Erro ao processar email de primeiro login:', error);
+    return { success: false, error: error.message };
   }
 };
 
@@ -488,5 +791,6 @@ export default {
   sendWelcomeEmail,
   processScheduledEmails,
   sendTestEmailWithTemplate,
-  sendTestEmail
+  sendTestEmail,
+  processFirstLoginEmail
 }; 
