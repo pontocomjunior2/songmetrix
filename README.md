@@ -14,6 +14,8 @@
 - [Instruções de Uso](#instruções-de-uso)
 - [Roadmap](#roadmap)
 - [Contato](#contato)
+- [Gerenciamento de Metadados de Usuário](#gerenciamento-de-metadados-de-usuário)
+- [Scripts de Utilitário para Metadados](#scripts-de-utilitário-para-metadados)
 
 ## Visão Geral
 
@@ -147,6 +149,22 @@ Para mais informações, demonstrações ou parcerias, entre em contato:
 - **Email**: contato@songmetrix.com
 - **Website**: [www.songmetrix.com](https://www.songmetrix.com)
 - **LinkedIn**: [linkedin.com/company/songmetrix](https://linkedin.com/company/songmetrix)
+
+## Gerenciamento de Metadados de Usuário
+
+O SONGMETRIX sincroniza automaticamente os metadados de autenticação do Supabase com o perfil de usuário. Isso é feito através de um trigger no banco de dados que captura os campos `full_name` e `whatsapp` durante o registro ou atualização do usuário.
+
+### Scripts de Utilitário para Metadados
+
+Os seguintes comandos estão disponíveis para gerenciar a sincronização de metadados:
+
+- `npm run check-user-metadata` - Verifica os metadados existentes na tabela auth.users
+- `npm run migrate-user-metadata` - Migra metadados de usuários existentes para a tabela public.users
+- `npm run fix-user-profiles` - Corrige campos vazios em perfis de usuário existentes
+- `npm run apply-profile-trigger` - Aplica o trigger de sincronização de metadados no banco de dados
+- `npm run test-metadata-sync` - Testa a sincronização de metadados criando um usuário de teste
+
+Para mais detalhes sobre a implementação da sincronização de metadados, consulte a documentação em [docs/user_metadata_sync_solution.md](docs/user_metadata_sync_solution.md).
 
 ---
 

@@ -80,6 +80,19 @@ export default function UserList() {
       }
       
       console.log('Usuários carregados:', usersData);
+      // Log adicional para verificar se os campos full_name e whatsapp estão presentes
+      const usersWithFullName = usersData.filter(user => user.full_name);
+      const usersWithWhatsapp = usersData.filter(user => user.whatsapp);
+      console.log(`Usuários com nome completo: ${usersWithFullName.length}/${usersData.length}`);
+      console.log(`Usuários com WhatsApp: ${usersWithWhatsapp.length}/${usersData.length}`);
+      
+      if (usersWithFullName.length > 0) {
+        console.log('Exemplo de usuário com nome completo:', usersWithFullName[0]);
+      }
+      
+      if (usersWithWhatsapp.length > 0) {
+        console.log('Exemplo de usuário com WhatsApp:', usersWithWhatsapp[0]);
+      }
       
       // Não vamos mais alterar automaticamente o status dos usuários
       // Isso respeitará o status definido pelo administrador
@@ -363,10 +376,14 @@ export default function UserList() {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{user.full_name || '-'}</div>
+                    <div className="text-sm text-gray-900">
+                      {user.full_name ? user.full_name : <span className="text-gray-400">Não informado</span>}
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{user.whatsapp || '-'}</div>
+                    <div className="text-sm text-gray-900">
+                      {user.whatsapp ? user.whatsapp : <span className="text-gray-400">Não informado</span>}
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
