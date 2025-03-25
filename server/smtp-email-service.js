@@ -369,10 +369,124 @@ export const processScheduledEmails = async () => {
   }
 };
 
+/**
+ * Função para enviar email de teste utilizando um template específico
+ * 
+ * @param {object} options - Opções do email
+ * @param {string} options.to - Email do destinatário
+ * @param {string} options.templateId - ID do template a ser utilizado
+ * @returns {Promise<object>} - Resultado do envio
+ */
+export const sendTestEmailWithTemplate = async ({ to, templateId }) => {
+  try {
+    console.log(`[SMTP-SERVICE] Iniciando envio de email de teste com template ID: ${templateId} para: ${to}`);
+    
+    // Obter dados do template
+    console.log('[SMTP-SERVICE] Buscando template...');
+    const { data: template, error: templateError } = await supabase
+      .from('email_templates')
+      .select('*')
+      .eq('id', templateId)
+      .single();
+      
+    if (templateError) {
+      console.error(`[SMTP-SERVICE] Erro ao buscar template: ${templateError.message}`);
+      throw templateError;
+    }
+    
+    if (!template) {
+      console.error('[SMTP-SERVICE] Template não encontrado');
+      throw new Error(`Template com ID ${templateId} não encontrado`);
+    }
+    
+    console.log(`[SMTP-SERVICE] Template encontrado: "${template.name}"`);
+    
+    // Processar template
+    console.log('[SMTP-SERVICE] Processando template de teste...');
+    const htmlContent = processTemplate(template.body, { 
+      name: 'Usuário de Teste',
+      email: to,
+      date: new Date().toLocaleDateString('pt-BR')
+    });
+    
+    // Enviar email
+    console.log(`[SMTP-SERVICE] Enviando email de teste para ${to}...`);
+    const result = await sendEmail(
+      to,
+      `[TESTE] ${template.subject}`,
+      htmlContent
+    );
+    
+    // Registrar log
+    console.log(`[SMTP-SERVICE] Resultado do envio de teste: ${result.success ? 'Sucesso' : 'Falha'}`);
+    await logEmailSent({
+      template_id: template.id,
+      status: result.success ? 'SUCCESS' : 'FAILED',
+      error_message: result.success ? null : result.error,
+      email_to: to,
+      subject: `[TESTE] ${template.subject}`
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('[SMTP-SERVICE] Erro ao enviar email de teste com template:', error);
+    return { success: false, error: error.message, stack: error.stack };
+  }
+};
+
+/**
+ * Função para enviar email de teste simples
+ * 
+ * @param {object} options - Opções do email
+ * @param {string} options.to - Email do destinatário
+ * @returns {Promise<object>} - Resultado do envio
+ */
+export const sendTestEmail = async ({ to }) => {
+  try {
+    console.log(`[SMTP-SERVICE] Iniciando envio de email de teste simples para: ${to}`);
+    
+    // Criar conteúdo HTML simples para o teste
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 5px;">
+        <h2 style="color: #4a6ee0;">Teste de Email SongMetrix</h2>
+        <p>Olá,</p>
+        <p>Este é um email de teste enviado pelo sistema SongMetrix.</p>
+        <p>Se você está recebendo este email, significa que a configuração do sistema de email está funcionando corretamente.</p>
+        <p>Data e hora do teste: ${new Date().toLocaleString('pt-BR')}</p>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
+        <p style="font-size: 12px; color: #666;">Este é um email automático de teste. Por favor, não responda.</p>
+      </div>
+    `;
+    
+    // Enviar email
+    const result = await sendEmail(
+      to,
+      '[TESTE] Email de teste do SongMetrix',
+      htmlContent
+    );
+    
+    // Registrar log
+    console.log(`[SMTP-SERVICE] Resultado do envio de teste simples: ${result.success ? 'Sucesso' : 'Falha'}`);
+    await logEmailSent({
+      status: result.success ? 'SUCCESS' : 'FAILED',
+      error_message: result.success ? null : result.error,
+      email_to: to,
+      subject: '[TESTE] Email de teste do SongMetrix'
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('[SMTP-SERVICE] Erro ao enviar email de teste simples:', error);
+    return { success: false, error: error.message, stack: error.stack };
+  }
+};
+
 export default {
   sendEmail,
   processTemplate,
   logEmailSent,
   sendWelcomeEmail,
-  processScheduledEmails
+  processScheduledEmails,
+  sendTestEmailWithTemplate,
+  sendTestEmail
 }; 
