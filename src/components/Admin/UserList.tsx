@@ -696,13 +696,46 @@ export default function UserList() {
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-1 sm:gap-2">
                       {editingUser === user.id && (
+                        <>
+                          <button
+                            onClick={() => handleStatusChange(user.id, newStatus)}
+                            disabled={updatingUserId === user.id}
+                            className="p-1 sm:p-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md"
+                            title="Salvar status"
+                          >
+                            <FaEdit className="w-4 h-4 sm:w-5 sm:h-5" />
+                          </button>
+                          <button
+                            onClick={() => setEditingUser(null)}
+                            className="p-1 sm:p-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900/30 rounded-md"
+                            title="Cancelar edição"
+                          >
+                            <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5" />
+                          </button>
+                        </>
+                      )}
+                      
+                      {editingUser !== user.id && (
                         <button
-                          onClick={() => handleStatusChange(user.id, newStatus)}
-                          disabled={updatingUserId === user.id}
-                          className="p-1 sm:p-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md"
-                          title="Salvar status"
+                          onClick={() => {
+                            setEditingUser(user.id);
+                            setNewStatus(user.status);
+                          }}
+                          className="p-1 sm:p-2 text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-md"
+                          title="Editar status"
                         >
                           <FaEdit className="w-4 h-4 sm:w-5 sm:h-5" />
+                        </button>
+                      )}
+                      
+                      {user.status === USER_STATUS.TRIAL && (
+                        <button
+                          onClick={() => handleSimulateTrialEnd(user.id)}
+                          disabled={updatingUserId === user.id}
+                          className="p-1 sm:p-2 text-orange-600 dark:text-orange-400 hover:text-orange-800 dark:hover:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-900/30 rounded-md"
+                          title="Encerrar período de teste"
+                        >
+                          <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
                         </button>
                       )}
                       

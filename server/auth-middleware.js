@@ -75,7 +75,7 @@ export const authenticateBasicUser = async (req, res, next) => {
       const now = new Date();
       const diffTime = Math.abs(now.getTime() - createdAt.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      const isNewUser = diffDays <= 7;
+      const isNewUser = diffDays <= 14;
       const initialStatus = isNewUser ? 'TRIAL' : 'INATIVO';
       
       console.log(`Criando usuário com status ${initialStatus} (dias desde criação: ${diffDays})`);
@@ -134,19 +134,19 @@ export const authenticateBasicUser = async (req, res, next) => {
       }
     }
 
-    // Verificar se o usuário foi criado nos últimos 7 dias
+    // Verificar se o usuário foi criado nos últimos 14 dias
     const createdAt = new Date(user.created_at);
     const now = new Date();
     const diffTime = Math.abs(now.getTime() - createdAt.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const isNewUser = diffDays <= 7;
+    const isNewUser = diffDays <= 14;
     
     console.log(`User ${user.id} created ${diffDays} days ago. Is new user: ${isNewUser}`);
 
     // Determinar o status final
     let finalStatus;
     
-    // Verificar se o usuário é novo (< 7 dias) e não é ADMIN/ATIVO, deve ser TRIAL
+    // Verificar se o usuário é novo (< 14 dias) e não é ADMIN/ATIVO, deve ser TRIAL
     // Essa condição agora tem precedência sobre as condições de INATIVO
     if (isNewUser && (!userStatus || userStatus === 'TRIAL' || userStatus === 'INATIVO')) {
       finalStatus = 'TRIAL';
@@ -298,7 +298,7 @@ export const authenticateBasicUser = async (req, res, next) => {
     
     // Adicionar dias restantes do trial se aplicável
     if (finalStatus === 'TRIAL') {
-      req.user.trial_days_remaining = Math.max(0, 7 - diffDays);
+      req.user.trial_days_remaining = Math.max(0, 14 - diffDays);
     }
     
     next();
@@ -349,7 +349,7 @@ export const authenticateUser = async (req, res, next) => {
       const now = new Date();
       const diffTime = Math.abs(now.getTime() - createdAt.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      const isNewUser = diffDays <= 7;
+      const isNewUser = diffDays <= 14;
       const initialStatus = isNewUser ? 'TRIAL' : 'INATIVO';
       
       console.log(`Criando usuário com status ${initialStatus} (dias desde criação: ${diffDays})`);
@@ -385,12 +385,12 @@ export const authenticateUser = async (req, res, next) => {
 
     console.log('User status from database:', dbUser?.status);
 
-    // Verificar se o usuário foi criado nos últimos 7 dias
+    // Verificar se o usuário foi criado nos últimos 14 dias
     const createdAt = new Date(user.created_at);
     const now = new Date();
     const diffTime = Math.abs(now.getTime() - createdAt.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const isNewUser = diffDays <= 7;
+    const isNewUser = diffDays <= 14;
     
     console.log(`User ${user.id} created ${diffDays} days ago. Is new user: ${isNewUser}`);
 
@@ -550,7 +550,7 @@ export const authenticateUser = async (req, res, next) => {
     
     // Adicionar dias restantes do trial se aplicável
     if (correctStatus === 'TRIAL') {
-      req.user.trial_days_remaining = Math.max(0, 7 - diffDays);
+      req.user.trial_days_remaining = Math.max(0, 14 - diffDays);
     }
     
     next();

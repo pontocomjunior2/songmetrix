@@ -1856,7 +1856,7 @@ app.get('/api/users/check-status/:userId', authenticateUser, async (req, res) =>
     const now = new Date();
     const diffTime = Math.abs(now.getTime() - createdAt.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const isNewUser = diffDays <= 7;
+    const isNewUser = diffDays <= 14;
 
     res.status(200).json({ 
       userId,
