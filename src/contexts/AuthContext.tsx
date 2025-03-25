@@ -552,7 +552,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const now = new Date();
         const diffTime = Math.abs(now.getTime() - createdAt.getTime());
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        trialDaysRemaining = Math.max(0, 7 - diffDays);
+        trialDaysRemaining = Math.max(0, 14 - diffDays);
         
         if (trialDaysRemaining <= 0) {
           await supabase.auth.signOut();
