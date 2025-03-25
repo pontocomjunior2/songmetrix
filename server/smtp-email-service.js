@@ -308,8 +308,14 @@ export const sendWelcomeEmail = async (userId) => {
  */
 export const processScheduledEmails = async () => {
   try {
-    // Consultar usuários com emails pendentes
-    const { data: pendingEmails, error } = await supabase.rpc('get_pending_emails');
+    // Obter hora atual no fuso horário local
+    const currentHour = new Date().getHours();
+    console.log(`[SMTP-SERVICE] Processando emails agendados para hora ${currentHour}`);
+    
+    // Consultar usuários com emails pendentes para a hora atual
+    const { data: pendingEmails, error } = await supabase.rpc('get_pending_emails', {
+      p_current_hour: currentHour
+    });
     
     if (error) {
       console.error('[SMTP-SERVICE] Erro ao buscar emails pendentes:', error);
@@ -460,30 +466,70 @@ export const sendTestEmailWithTemplate = async ({ to, templateId }) => {
     
     // Buscar dados do usuário pelo email
     console.log(`[SMTP-SERVICE] Buscando dados do usuário com email: ${to}`);
-    const { data: userData, error: userError } = await supabase
-      .auth.admin.getUserByEmail(to);
     
+    // Corrigindo para usar a forma correta de buscar usuário por email
+    const { data: users, error: usersError } = await supabase
+      .from('users')
+      .select('id, email, full_name')
+      .eq('email', to)
+      .limit(1);
+      
     let displayName = 'Usuário de Teste';
     let fullName = 'Usuário de Teste';
+    let userId = null;
     
-    if (!userError && userData?.user) {
-      console.log('[SMTP-SERVICE] Dados do usuário encontrados');
-      // Buscar display_name no user_metadata
-      displayName = userData.user.user_metadata?.display_name || 
-                userData.user.user_metadata?.full_name || 
-                userData.user.user_metadata?.name || 
-                'Usuário';
+    if (!usersError && users && users.length > 0) {
+      userId = users[0].id;
+      displayName = users[0].full_name || 'Usuário';
+      fullName = users[0].full_name || 'Usuário';
       
-      // Extrair fullName diretamente do raw_user_meta_data
-      fullName = userData.user.raw_user_meta_data?.fullName || 
-               userData.user.user_metadata?.fullName || 
-               userData.user.user_metadata?.full_name || 
-               displayName;
-                
-      console.log(`[SMTP-SERVICE] Nome de exibição do usuário: ${displayName}`);
-      console.log(`[SMTP-SERVICE] fullName do usuário: ${fullName}`);
+      console.log(`[SMTP-SERVICE] Usuário encontrado com ID: ${userId}`);
+      
+      // Se encontrou o usuário, busca os metadados de autenticação
+      if (userId) {
+        const { data: authData, error: authError } = await supabase
+          .auth.admin.getUserById(userId);
+          
+        if (!authError && authData?.user) {
+          // Extrair display_name e fullName
+          displayName = authData.user.user_metadata?.display_name || 
+                      authData.user.user_metadata?.full_name || 
+                      authData.user.user_metadata?.name || 
+                      displayName;
+          
+          // Extrair fullName diretamente do raw_user_meta_data
+          fullName = authData.user.raw_user_meta_data?.fullName || 
+                   authData.user.user_metadata?.fullName || 
+                   authData.user.user_metadata?.full_name || 
+                   displayName;
+                    
+          console.log(`[SMTP-SERVICE] Nome de exibição do usuário: ${displayName}`);
+          console.log(`[SMTP-SERVICE] fullName do usuário: ${fullName}`);
+        }
+      }
     } else {
-      console.log('[SMTP-SERVICE] Usuário não encontrado, usando nome padrão');
+      console.log('[SMTP-SERVICE] Usuário não encontrado na tabela users, usando valores padrão');
+      
+      // Tentativa alternativa: buscar diretamente na tabela auth.users
+      try {
+        // Esta é uma abordagem alternativa que pode exigir permissões específicas
+        const { data: authUsers, error: authUsersError } = await supabase
+          .from('auth.users')
+          .select('id, email, raw_user_meta_data')
+          .eq('email', to)
+          .limit(1);
+          
+        if (!authUsersError && authUsers && authUsers.length > 0) {
+          const user = authUsers[0];
+          fullName = user.raw_user_meta_data?.fullName || 
+                   user.raw_user_meta_data?.full_name || 
+                   'Usuário de Teste';
+          displayName = fullName;
+          console.log(`[SMTP-SERVICE] Usuário encontrado diretamente na tabela auth: ${fullName}`);
+        }
+      } catch (authError) {
+        console.log('[SMTP-SERVICE] Erro ao buscar na tabela auth.users, continuando com valores padrão');
+      }
     }
     
     // Processar template
@@ -506,6 +552,7 @@ export const sendTestEmailWithTemplate = async ({ to, templateId }) => {
     // Registrar log - sem incluir o prefixo [TESTE] no assunto
     console.log(`[SMTP-SERVICE] Resultado do envio de teste: ${result.success ? 'Sucesso' : 'Falha'}`);
     await logEmailSent({
+      user_id: userId,
       template_id: template.id,
       status: result.success ? 'SUCCESS' : 'FAILED',
       error_message: result.success ? null : result.error,

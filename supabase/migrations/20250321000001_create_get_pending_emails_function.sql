@@ -1,5 +1,5 @@
 -- Função para obter emails pendentes para processamento
-CREATE OR REPLACE FUNCTION public.get_pending_emails()
+CREATE OR REPLACE FUNCTION public.get_pending_emails(p_current_hour INTEGER DEFAULT NULL)
 RETURNS TABLE (
   user_id UUID,
   email VARCHAR,
@@ -7,7 +7,8 @@ RETURNS TABLE (
   sequence_id UUID,
   template_id UUID,
   subject VARCHAR,
-  body TEXT
+  body TEXT,
+  send_hour INTEGER
 ) LANGUAGE sql SECURITY DEFINER
 AS $$
   WITH active_sequences AS (
@@ -15,6 +16,7 @@ AS $$
       seq.id as sequence_id,
       seq.template_id,
       seq.days_after_signup,
+      seq.send_hour,
       temp.subject,
       temp.body
     FROM 
@@ -23,6 +25,7 @@ AS $$
     WHERE 
       seq.active = true 
       AND temp.active = true
+      AND (p_current_hour IS NULL OR seq.send_hour = p_current_hour)
   )
   SELECT 
     u.id as user_id,
@@ -31,7 +34,8 @@ AS $$
     s.sequence_id,
     s.template_id,
     s.subject,
-    s.body
+    s.body,
+    s.send_hour
   FROM 
     public.users u
     CROSS JOIN active_sequences s
@@ -43,11 +47,19 @@ AS $$
       SELECT 1 FROM public.email_logs l
       WHERE l.user_id = u.id
       AND l.sequence_id = s.sequence_id
+      AND l.status = 'SUCCESS'
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM public.email_logs l
+      WHERE l.user_id = u.id
+      AND l.sequence_id = s.sequence_id
+      AND l.status = 'FAILED'
+      AND l.created_at > NOW() - INTERVAL '24 hours'
     )
   LIMIT 100;
 $$;
 
 -- Permissões da função
-REVOKE ALL ON FUNCTION public.get_pending_emails() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_pending_emails() TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_pending_emails() TO service_role; 
+REVOKE ALL ON FUNCTION public.get_pending_emails(INTEGER) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_pending_emails(INTEGER) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_pending_emails(INTEGER) TO service_role; 
