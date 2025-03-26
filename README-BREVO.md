@@ -57,7 +57,35 @@ Quando um usuário é criado ou seu status é alterado no Supabase, o sistema au
    - ATIVO: Lista 8
    - INATIVO: Lista 9
 
-Isso é feito através da integração webhook do Supabase, que chama a função Edge `user-webhook` quando há mudanças na tabela `users`.
+Isso é feito através de dois mecanismos:
+
+1. **Trigger automático para novos usuários TRIAL**: Novos usuários com status TRIAL são automaticamente sincronizados com a lista correspondente no Brevo. Para instalar/atualizar este trigger, execute:
+
+```bash
+npm run install-brevo-auto-sync
+```
+
+O script de instalação tentará primeiro o método padrão e, caso falhe, tentará automaticamente o método alternativo. Se você encontrar problemas, também pode executar diretamente o método alternativo:
+
+```bash
+npm run direct-sql-setup
+```
+
+Este método se conecta diretamente ao banco de dados PostgreSQL do Supabase usando o driver pg, sem depender da API do Supabase que pode ter limitações. Para funcionar corretamente, este método usa as seguintes variáveis de ambiente:
+
+```
+POSTGRES_HOST=db.seu-projeto.supabase.co
+POSTGRES_PORT=5432
+POSTGRES_DB=postgres
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=sua-chave-de-servico
+```
+
+Se estas variáveis não estiverem definidas, o script tentará extrair as informações da URL do Supabase automaticamente.
+
+Para mais detalhes sobre a instalação e solução de problemas, consulte o arquivo `SETUP-BREVO-AUTO-SYNC.md`.
+
+2. **Sincronização manual pelo painel de administrador**: Administradores podem forçar a sincronização de todos os usuários através do botão "Sincronizar com Brevo" no painel administrativo.
 
 ### Sincronização Manual
 

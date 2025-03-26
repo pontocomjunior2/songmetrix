@@ -9,6 +9,7 @@ import { Trash2, Clock, RefreshCw, MailCheck, Database, Calendar } from 'lucide-
 import { supabase } from '../../lib/supabase-client';
 import { FaEdit } from 'react-icons/fa';
 import { Tooltip } from 'react-tooltip';
+import { syncUserWithSendPulse } from '../../utils/sendpulse-service';
 
 type UserStatusType = 'ADMIN' | 'ATIVO' | 'INATIVO' | 'TRIAL';
 
@@ -40,6 +41,20 @@ interface SyncProgress {
   percentage: number;
 }
 
+// Adicionar interface para o tipo de evento
+interface SyncEventData {
+  type: string;
+  processed?: number;
+  total?: number;
+  success?: boolean;
+  email?: string;
+  message?: string;
+  percentage?: number;
+  errors?: number;
+  totalUsers?: number;
+  errorDetails?: Array<{user: string, error: string}>;
+}
+
 export default function UserList() {
   const [users, setUsers] = useState<User[]>([]);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
@@ -56,6 +71,7 @@ export default function UserList() {
   const [updatingLastLogin, setUpdatingLastLogin] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const { updateUserStatus, currentUser, userStatus } = useAuth();
+  const [syncingUsers, setSyncingUsers] = useState<string[]>([]);
 
   useEffect(() => {
     loadUsers();
@@ -208,43 +224,27 @@ export default function UserList() {
     }
   };
   
-  const handleSyncBrevo = async () => {
-    if (syncing) {
-      // Cancelar sincronização atual
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        abortControllerRef.current = null;
-      }
-      setSyncing(false);
-      setSyncProgress(null);
-      reactToast.info('Sincronização cancelada');
-      return;
-    }
-    
+  const handleSyncAllUsers = async () => {
     try {
       setSyncing(true);
       setSyncProgress(null);
       setSyncResults(null);
       setError(null);
       
-      // Criar um AbortController para permitir cancelar a requisição
-      abortControllerRef.current = new AbortController();
-      
-      // Obter a sessão
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) {
-        throw new Error('Sessão não encontrada');
-      }
-      
-      // Iniciar a requisição
-      const response = await fetch('/api/brevo/sync-users', {
+      // Usar o novo endpoint do SendPulse
+      const response = await fetch('/api/sendpulse/sync-users', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.data.session.access_token}`
-        },
-        signal: abortControllerRef.current.signal
+          'X-User-Id': localStorage.getItem('userId') || '',
+          'X-User-Role': localStorage.getItem('userRole') || ''
+        }
       });
+      
+      if (!response.ok && response.headers.get('Content-Type') !== 'text/event-stream') {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Erro ${response.status}: ${response.statusText}`);
+      }
       
       // Stream de resposta - processar as atualizações de progresso
       const reader = response.body?.getReader();
@@ -252,7 +252,8 @@ export default function UserList() {
         throw new Error('Leitor de resposta não disponível');
       }
       
-      let finalResult = null;
+      let parsedEventData: SyncEventData | null = null;
+      let currentData = '';
       
       // Ler o stream de resposta e processar as atualizações
       while (true) {
@@ -262,45 +263,126 @@ export default function UserList() {
         // Decodificar o chunk recebido
         const chunk = new TextDecoder().decode(value);
         
-        // Um chunk pode conter múltiplas linhas JSON
-        const lines = chunk.split('\n').filter(line => line.trim());
+        // Processar eventos SSE linha por linha
+        const lines = chunk.split('\n');
         
         for (const line of lines) {
-          try {
-            const data = JSON.parse(line);
+          if (line.startsWith('data: ')) {
+            currentData = line.substring(6);
             
-            // Verificar o tipo de atualização
-            if (data.progress) {
-              // Atualização de progresso
-              setSyncProgress(data.progress);
-            } else if (data.final) {
-              // Resultado final
-              finalResult = data;
-              setSyncResults(data);
-              setSyncProgress(null); // Limpar o progresso quando receber o resultado final
-            } else if (data.error) {
-              // Erro durante o processamento
-              throw new Error(data.message || 'Erro durante a sincronização');
+            try {
+              parsedEventData = JSON.parse(currentData);
+              
+              // Processar diferentes tipos de eventos
+              if (parsedEventData && parsedEventData.type === 'start') {
+                // Início da sincronização
+                setSyncProgress({
+                  total: parsedEventData.totalUsers || 0,
+                  processed: 0,
+                  success: 0,
+                  failed: 0,
+                  percentage: 0
+                });
+              } 
+              else if (parsedEventData && parsedEventData.type === 'progress') {
+                // Atualização de progresso
+                const total = parsedEventData.total || 0;
+                const processed = parsedEventData.processed || 0;
+                const percentage = total > 0 ? Math.round((processed / total) * 100) : 0;
+                
+                setSyncProgress(prev => ({
+                  total: total,
+                  processed: processed,
+                  success: prev ? prev.success + (parsedEventData.success ? 1 : 0) : (parsedEventData.success ? 1 : 0),
+                  failed: prev ? prev.failed + (!parsedEventData.success ? 1 : 0) : (!parsedEventData.success ? 1 : 0),
+                  percentage: percentage
+                }));
+              } 
+              else if (parsedEventData && parsedEventData.type === 'complete') {
+                // Final da sincronização - resultado completo
+                setSyncResults(parsedEventData);
+                setSyncProgress({
+                  total: parsedEventData.total || 0,
+                  processed: parsedEventData.total || 0,
+                  success: parsedEventData.success || 0,
+                  failed: parsedEventData.errors || 0,
+                  percentage: 100
+                });
+                
+                reactToast.success(`Sincronização concluída! ${parsedEventData.success || 0} usuários sincronizados com sucesso, ${parsedEventData.errors || 0} falhas.`);
+              } 
+              else if (parsedEventData && parsedEventData.type === 'error') {
+                // Erro durante o processamento
+                throw new Error(parsedEventData.message || 'Erro durante a sincronização');
+              }
+            } catch (parseError) {
+              console.error('Erro ao processar evento SSE:', parseError, currentData);
             }
-          } catch (parseError) {
-            console.error('Erro ao analisar resposta:', parseError, line);
           }
         }
       }
-      
-      if (finalResult) {
-        reactToast.success(`Sincronização concluída! ${finalResult.success} usuários sincronizados com sucesso, ${finalResult.failed} falhas.`);
-      } else {
-        reactToast.warning('Sincronização concluída, mas sem resultados detalhados');
-      }
     } catch (error: any) {
-      console.error('Erro ao sincronizar com Brevo:', error);
-      setError(`Erro ao sincronizar com Brevo: ${error.message}`);
-      reactToast.error(`Erro ao sincronizar com Brevo: ${error.message}`);
+      console.error('Erro ao sincronizar usuários com SendPulse:', error);
+      setError(`Erro ao sincronizar usuários com SendPulse: ${error.message}`);
+      reactToast.error(`Erro ao sincronizar usuários com SendPulse: ${error.message}`);
     } finally {
       setSyncing(false);
-      abortControllerRef.current = null;
       setSyncProgress(null); // Garantir que o progresso seja limpo mesmo em caso de erro
+    }
+  };
+
+  const handleSyncUserWithSendPulse = async (user: User) => {
+    try {
+      setSyncingUsers((prev) => [...prev, user.id]);
+      
+      const syncData = {
+        id: user.id,
+        email: user.email,
+        name: user.full_name,
+        status: user.status,
+        whatsapp: user.whatsapp || ''
+      };
+      
+      // Usar o método do SendPulse
+      const result = await syncUserWithSendPulse(syncData);
+      
+      if (result.success) {
+        reactToast.success(`Usuário ${user.email} sincronizado com o SendPulse com sucesso.`, {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+          progress: undefined,
+          theme: "light",
+        });
+      } else {
+        reactToast.error(`Erro ao sincronizar usuário ${user.email} com SendPulse: ${result.error || 'Erro desconhecido'}`, {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+          progress: undefined,
+          theme: "light",
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao sincronizar usuário com SendPulse:', error);
+      reactToast.error(`Erro ao sincronizar usuário ${user.email} com SendPulse: ${error instanceof Error ? error.message : 'Erro desconhecido'}`, {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+        progress: undefined,
+        theme: "light",
+      });
+    } finally {
+      setSyncingUsers((prev) => prev.filter(id => id !== user.id));
     }
   };
 
@@ -480,7 +562,7 @@ export default function UserList() {
       </div>
     );
   };
-  
+
   if (loading) {
     return <Loading size="large" message="Carregando usuários..." />;
   }
@@ -511,50 +593,54 @@ export default function UserList() {
               <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
             </button>
             
-            <button
-              onClick={handleSyncBrevo}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                syncing 
-                  ? 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900 dark:text-red-300 dark:hover:bg-red-800' 
-                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300 dark:hover:bg-blue-800'
-              }`}
-              title={syncing ? "Cancelar sincronização" : "Sincronizar usuários com Brevo"}
-            >
-              {syncing ? (
-                <>
-                  <Database className="w-5 h-5 animate-pulse" />
-                  <span>Cancelar Sincronização</span>
-                </>
-              ) : (
-                <>
-                  <MailCheck className="w-5 h-5" />
-                  <span>Sincronizar com Brevo</span>
-                </>
-              )}
-            </button>
-            
-            <button
-              onClick={handleUpdateLastSignIn}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                updatingLastLogin 
-                  ? 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900 dark:text-orange-300 dark:hover:bg-orange-800' 
-                  : 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300 dark:hover:bg-green-800'
-              }`}
-              disabled={updatingLastLogin}
-              title="Atualizar dados de último acesso para todos os usuários"
-            >
-              {updatingLastLogin ? (
-                <>
-                  <Calendar className="w-5 h-5 animate-pulse" />
-                  <span>Atualizando...</span>
-                </>
-              ) : (
-                <>
-                  <Calendar className="w-5 h-5" />
-                  <span>Atualizar Último Acesso</span>
-                </>
-              )}
-            </button>
+            {userStatus === 'ADMIN' && (
+              <>
+                <button
+                  onClick={handleSyncAllUsers}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                    syncing 
+                      ? 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900 dark:text-red-300 dark:hover:bg-red-800' 
+                      : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300 dark:hover:bg-blue-800'
+                  }`}
+                  title={syncing ? "Cancelar sincronização" : "Sincronizar usuários com SendPulse"}
+                >
+                  {syncing ? (
+                    <>
+                      <Database className="w-5 h-5 animate-pulse" />
+                      <span>Cancelar Sincronização</span>
+                    </>
+                  ) : (
+                    <>
+                      <MailCheck className="w-5 h-5" />
+                      <span>Sincronizar com SendPulse</span>
+                    </>
+                  )}
+                </button>
+                
+                <button
+                  onClick={handleUpdateLastSignIn}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                    updatingLastLogin 
+                      ? 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900 dark:text-orange-300 dark:hover:bg-orange-800' 
+                      : 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300 dark:hover:bg-green-800'
+                  }`}
+                  disabled={updatingLastLogin}
+                  title="Atualizar dados de último acesso para todos os usuários"
+                >
+                  {updatingLastLogin ? (
+                    <>
+                      <Calendar className="w-5 h-5 animate-pulse" />
+                      <span>Atualizando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Calendar className="w-5 h-5" />
+                      <span>Atualizar Último Acesso</span>
+                    </>
+                  )}
+                </button>
+              </>
+            )}
           </div>
           
           <div className="text-sm text-gray-600 dark:text-gray-400">
@@ -562,11 +648,11 @@ export default function UserList() {
           </div>
         </div>
         
-        {/* Barra de progresso para sincronização com Brevo */}
+        {/* Barra de progresso para sincronização com SendPulse */}
         {syncProgress && (
           <div className="w-full mb-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
             <div className="flex justify-between mb-2 text-sm">
-              <span>Sincronizando usuários com Brevo...</span>
+              <span>Sincronizando usuários com SendPulse...</span>
               <span>{syncProgress.percentage}% ({syncProgress.processed}/{syncProgress.total})</span>
             </div>
             <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -748,6 +834,16 @@ export default function UserList() {
                           <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
                         </button>
                       )}
+                      
+                      {/* Botão para sincronizar usuário individual com SendPulse */}
+                      <button
+                        onClick={() => handleSyncUserWithSendPulse(user)}
+                        disabled={syncingUsers.includes(user.id)}
+                        className="p-1 sm:p-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md"
+                        title="Sincronizar com SendPulse"
+                      >
+                        <MailCheck className="w-4 h-4 sm:w-5 sm:h-5" />
+                      </button>
                     </div>
                   </td>
                 </tr>
