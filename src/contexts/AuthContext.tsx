@@ -4,6 +4,7 @@ import { PostgrestError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase-client';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
+import { syncUserWithBrevo } from '../utils/brevo-service';
 
 // Custom error type that includes both Auth and Postgrest errors
 class CustomAuthError extends AuthError {
@@ -671,37 +672,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
         
         try {
-          // Registrar o contato no Brevo
-          const token = data.session?.access_token;
+          // Sincronizar o usuário diretamente com o Brevo
+          console.log('Sincronizando novo usuário TRIAL com o Brevo');
           
-          if (token) {
-            console.log('Enviando dados para adicionar contato no Brevo');
-            const response = await fetch('/api/email/create-contact', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-              },
-              body: JSON.stringify({
-                email: email,
-                fullName: fullName,
-                whatsapp: whatsapp,
-                status: 'TRIAL',
-                createdAt: new Date().toISOString()
-              })
-            });
-            
-            const result = await response.json();
-            if (result.success) {
-              console.log('Contato adicionado com sucesso no Brevo:', result);
-            } else {
-              console.error('Erro ao adicionar contato no Brevo:', result.error);
-            }
+          const brevoResult = await syncUserWithBrevo({
+            id: data.user.id,
+            email: email,
+            name: fullName || '',
+            whatsapp: whatsapp || '',
+            status: 'TRIAL'
+          });
+          
+          if (brevoResult.success) {
+            console.log('Usuário TRIAL sincronizado com sucesso com o Brevo:', brevoResult.message);
           } else {
-            console.warn('Token não disponível para registrar contato no Brevo');
+            console.error('Erro ao sincronizar usuário TRIAL com o Brevo:', brevoResult.error);
           }
         } catch (brevoError) {
-          console.error('Erro ao registrar contato no Brevo:', brevoError);
+          console.error('Exceção ao sincronizar com o Brevo:', brevoError);
           // Não impedir o fluxo principal se falhar a criação do contato no Brevo
         }
         
@@ -720,6 +708,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } catch (err) {
       console.error('Erro durante o processo de cadastro:', err);
       return { error: err };
+    } finally {
+      setLoading(false);
     }
   };
 

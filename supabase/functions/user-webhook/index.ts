@@ -7,6 +7,14 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Log aprimorado para depuração
+function logDebug(message: string, data?: any) {
+  console.log(`[${new Date().toISOString()}] ${message}`);
+  if (data) {
+    console.log(JSON.stringify(data, null, 2).substring(0, 500) + (JSON.stringify(data).length > 500 ? '...' : ''));
+  }
+}
+
 serve(async (req) => {
   // Tratamento para requisições OPTIONS (CORS)
   if (req.method === 'OPTIONS') {
@@ -17,22 +25,18 @@ serve(async (req) => {
     // Obter as variáveis de ambiente
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const brevoApiKey = Deno.env.get('BREVO_API_KEY');
-    const brevoMainListId = Deno.env.get('BREVO_MAIN_LIST_ID');
+    const brevoApiKey = Deno.env.get('BREVO_API_KEY') || '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';
     
-    // IDs das listas do Brevo conforme o status do usuário
+    // IDs corretos das listas do Brevo conforme o status do usuário
     const statusListIds = {
       TRIAL: '7',    // Lista para usuários Trial
       ATIVO: '8',    // Lista para usuários Ativos
       INATIVO: '9',  // Lista para usuários Inativos
+      ADMIN: '8'     // Admins vão para a mesma lista que usuários ativos
     };
     
     if (!supabaseUrl || !supabaseServiceKey) {
       throw new Error('Variáveis de ambiente do Supabase não configuradas');
-    }
-    
-    if (!brevoApiKey) {
-      throw new Error('API Key do Brevo não configurada');
     }
     
     // Criar cliente Supabase
@@ -40,7 +44,51 @@ serve(async (req) => {
     
     // Obter dados da requisição
     const payload = await req.json();
-    console.log('Payload recebido:', JSON.stringify(payload).substring(0, 200) + '...');
+    logDebug('Payload recebido:', payload);
+    
+    // Manipulação de chamada direta sem ser webhook de database
+    if (!payload.type) {
+      // Se for chamada direta, verificar se é teste direto ou novo usuário trial
+      logDebug('Chamada direta detectada, processando usuário para Brevo');
+      
+      // Determinar se temos dados de usuário válidos
+      if (payload.email) {
+        // Considerar como teste direto da função
+        logDebug('Processando dados do usuário:', payload);
+        
+        // Determinar o status do usuário, default para TRIAL se não especificado
+        const userStatus = payload.status || 'TRIAL';
+        const userName = payload.name || '';
+        const userId = payload.id || 'direct-test';
+        
+        // Enviar para o Brevo
+        const brevoResponse = await syncToBrevo(
+          payload.email, 
+          userName, 
+          userStatus, 
+          userId, 
+          brevoApiKey, 
+          statusListIds
+        );
+        
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: 'Usuário sincronizado com o Brevo',
+            email: payload.email,
+            status: userStatus,
+            brevoResponse
+          }),
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              ...corsHeaders
+            },
+            status: 200
+          }
+        );
+      }
+    }
     
     // Verificar se é um evento DELETE (exclusão de usuário)
     if (payload.type === 'DELETE') {
@@ -52,7 +100,7 @@ serve(async (req) => {
       const userId = payload.old_record.id;
       const userEmail = payload.old_record.email;
       
-      console.log(`Processando exclusão do usuário: ${userEmail}, ID: ${userId}`);
+      logDebug(`Processando exclusão do usuário: ${userEmail}, ID: ${userId}`);
       
       // Remover o contato de todas as listas do Brevo
       try {
@@ -66,12 +114,12 @@ serve(async (req) => {
         
         // Se o contato existe, remover de todas as listas
         if (getContactResponse.ok) {
-          console.log(`Contato encontrado no Brevo: ${userEmail}. Removendo de todas as listas...`);
+          logDebug(`Contato encontrado no Brevo: ${userEmail}. Removendo de todas as listas...`);
           
           // Remover de todas as listas
           for (const listId of Object.values(statusListIds)) {
             try {
-              console.log(`Removendo contato da lista ${listId}...`);
+              logDebug(`Removendo contato da lista ${listId}...`);
               const removeResponse = await fetch(`https://api.brevo.com/v3/contacts/lists/${listId}/contacts/remove`, {
                 method: 'POST',
                 headers: {
@@ -84,7 +132,7 @@ serve(async (req) => {
               });
               
               if (removeResponse.ok) {
-                console.log(`Contato removido com sucesso da lista ${listId}`);
+                logDebug(`Contato removido com sucesso da lista ${listId}`);
               } else {
                 console.warn(`Falha ao remover da lista ${listId}: ${removeResponse.status}`);
               }
@@ -110,7 +158,7 @@ serve(async (req) => {
             }
           );
         } else {
-          console.log(`Contato não encontrado no Brevo: ${userEmail}. Nada a fazer.`);
+          logDebug(`Contato não encontrado no Brevo: ${userEmail}. Nada a fazer.`);
           return new Response(
             JSON.stringify({
               success: true,
@@ -146,9 +194,10 @@ serve(async (req) => {
     
     const userId = payload.record.id;
     const userEmail = payload.record.email;
-    const currentStatus = payload.record.status;
+    const currentStatus = payload.record.status || 'TRIAL';  // Default para TRIAL se não especificado
+    const userName = payload.record.full_name || '';
     
-    console.log(`Processando usuário: ${userEmail}, ID: ${userId}, Status: ${currentStatus}`);
+    logDebug(`Processando usuário: ${userEmail}, ID: ${userId}, Status: ${currentStatus}`);
     
     // Verificar se é uma mudança de status
     let oldStatus = null;
@@ -159,339 +208,100 @@ serve(async (req) => {
         payload.old_record.status !== payload.record.status) {
       oldStatus = payload.old_record.status;
       isStatusChange = true;
-      console.log(`Detectada mudança de status: ${oldStatus} -> ${payload.record.status}`);
+      logDebug(`Detectada mudança de status: ${oldStatus} -> ${currentStatus}`);
     }
     
-    // Obter dados completos do usuário
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .single();
-      
-    if (userError) {
-      throw new Error(`Erro ao buscar dados do usuário: ${userError.message}`);
-    }
+    // Enviar para o Brevo
+    const brevoResponse = await syncToBrevo(
+      userEmail, 
+      userName, 
+      currentStatus, 
+      userId, 
+      brevoApiKey, 
+      statusListIds
+    );
     
-    if (!userData) {
-      throw new Error('Usuário não encontrado');
-    }
-    
-    console.log('Dados completos do usuário:', JSON.stringify(userData).substring(0, 200) + '...');
-    
-    // Preparar atributos do contato
-    const attributes = {};
-    
-    if (userData.full_name) {
-      // Dividir nome completo em primeiro nome e sobrenome
-      const nameParts = userData.full_name.split(' ');
-      attributes.FNAME = nameParts[0] || '';
-      attributes.LNAME = nameParts.slice(1).join(' ') || '';
-      attributes.NOME = userData.full_name;
-    }
-    
-    if (userData.whatsapp) {
-      // Remover caracteres não numéricos e adicionar prefixo se necessário
-      let whatsapp = userData.whatsapp.replace(/\D/g, '');
-      if (!whatsapp.startsWith('+')) {
-        // Se não começar com +, adicionar código do Brasil
-        if (!whatsapp.startsWith('55')) {
-          whatsapp = '55' + whatsapp;
-        }
-      }
-      attributes.SMS = whatsapp;
-      attributes.WHATSAPP = whatsapp;
-    }
-    
-    if (userData.status) {
-      attributes.STATUS = userData.status;
-    }
-    
-    if (userData.created_at) {
-      attributes.DATA_CADASTRO = new Date(userData.created_at).toISOString().split('T')[0];
-    }
-    
-    // Determinar a lista apropriada pelo status do usuário
-    const userStatus = userData.status;
-    const targetListId = statusListIds[userStatus];
-    
-    console.log(`Status do usuário: ${userStatus}, Lista alvo: ${targetListId}`);
-    
-    // Processar contato no Brevo
-    // Verificar primeiro se o contato já existe
-    try {
-      // Buscar dados do contato no Brevo
-      console.log(`Verificando se contato já existe no Brevo: ${userEmail}`);
-      const getContactResponse = await fetch(`https://api.brevo.com/v3/contacts/${encodeURIComponent(userEmail)}`, {
-        method: 'GET',
-        headers: {
-          'api-key': brevoApiKey
-        }
-      });
-      
-      // Se o contato já existe
-      if (getContactResponse.ok) {
-        const contactData = await getContactResponse.json();
-        console.log(`Contato encontrado no Brevo: ${userEmail}`);
+    // Verificar se é necessário atualizar a tabela users
+    if (payload.type === 'INSERT' && payload.table === 'auth.users') {
+      // É um novo usuário do auth, precisamos garantir que ele tenha um registro na tabela users
+      try {
+        logDebug(`Verificando/criando registro na tabela users para: ${userEmail}`);
         
-        // Se for mudança de status, realizar tratamento especial
-        if (isStatusChange && oldStatus) {
-          console.log(`Processando mudança de status de ${oldStatus} para ${userStatus}`);
-          
-          // Remover o contato de todas as listas de status
-          console.log('Removendo contato de todas as listas de status...');
-          for (const listId of Object.values(statusListIds)) {
-            try {
-              console.log(`Removendo contato da lista ${listId}...`);
-              const removeResponse = await fetch(`https://api.brevo.com/v3/contacts/lists/${listId}/contacts/remove`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'api-key': brevoApiKey
-                },
-                body: JSON.stringify({
-                  emails: [userEmail]
-                })
-              });
-              
-              if (removeResponse.ok) {
-                console.log(`Contato removido com sucesso da lista ${listId}`);
-              } else {
-                console.warn(`Falha ao remover da lista ${listId}: ${removeResponse.status}`);
-              }
-            } catch (removeError) {
-              console.warn(`Erro ao remover da lista ${listId}:`, removeError);
-              // Continuar mesmo com erro (pode não estar na lista)
-            }
-            
-            // Pequena pausa para evitar rate limits
-            await new Promise(resolve => setTimeout(resolve, 100));
+        // Verificar se já existe um registro para este usuário
+        const { data: existingUser, error: checkError } = await supabase
+          .from('users')
+          .select('id')
+          .eq('id', userId)
+          .single();
+        
+        if (checkError && checkError.code !== 'PGRST116') {
+          console.error('Erro ao verificar usuário existente:', checkError);
+        }
+        
+        if (!existingUser) {
+          // Extrair nome do email se não tiver nome
+          let fullName = '';
+          if (payload.record.raw_user_meta_data && payload.record.raw_user_meta_data.name) {
+            fullName = payload.record.raw_user_meta_data.name;
+          } else {
+            fullName = userEmail.split('@')[0];
           }
           
-          // Adicionar à lista correta para o status atual
-          if (targetListId) {
-            console.log(`Adicionando contato à lista ${targetListId} para status ${userStatus}...`);
-            const addToListResponse = await fetch(`https://api.brevo.com/v3/contacts/lists/${targetListId}/contacts/add`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'api-key': brevoApiKey
-              },
-              body: JSON.stringify({
-                emails: [userEmail]
-              })
+          // Determinar status baseado nos metadados
+          let status = 'TRIAL';
+          if (payload.record.raw_user_meta_data && payload.record.raw_user_meta_data.status) {
+            status = payload.record.raw_user_meta_data.status;
+          }
+          
+          // Inserir o usuário na tabela users
+          const { error: insertError } = await supabase
+            .from('users')
+            .insert({
+              id: userId,
+              email: userEmail,
+              full_name: fullName,
+              status: status,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
             });
-            
-            if (addToListResponse.ok) {
-              const addToListResult = await addToListResponse.json();
-              console.log(`Contato adicionado com sucesso à lista ${targetListId}`);
-            } else {
-              console.error(`Falha ao adicionar à lista ${targetListId}: ${addToListResponse.status}`);
-            }
+          
+          if (insertError) {
+            console.error('Erro ao inserir usuário na tabela users:', insertError);
           } else {
-            console.warn(`Não foi possível determinar uma lista para o status ${userStatus}`);
+            logDebug(`Usuário inserido com sucesso na tabela users: ${userEmail}`);
           }
         }
-        
-        // Atualizar os atributos do contato (sempre, mesmo se não for mudança de status)
-        console.log('Atualizando atributos do contato...');
-        const updateContactResponse = await fetch(`https://api.brevo.com/v3/contacts/${encodeURIComponent(userEmail)}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'api-key': brevoApiKey
-          },
-          body: JSON.stringify({
-            attributes: attributes
-          })
-        });
-        
-        if (updateContactResponse.ok) {
-          console.log('Atributos do contato atualizados com sucesso');
-        } else {
-          console.error(`Falha ao atualizar atributos: ${updateContactResponse.status}`);
-        }
-        
-        // Retornar resposta de sucesso
-        return new Response(
-          JSON.stringify({
-            success: true,
-            message: isStatusChange 
-              ? `Usuário movido com sucesso da lista ${oldStatus} para ${userStatus}`
-              : 'Usuário atualizado com sucesso no Brevo',
-            userId: userId,
-            email: userEmail
-          }),
-          {
-            headers: {
-              'Content-Type': 'application/json',
-              ...corsHeaders
-            },
-            status: 200
-          }
-        );
-      } else {
-        // Contato não existe, criar novo
-        console.log(`Contato não encontrado no Brevo. Criando novo contato para ${userEmail}...`);
-      }
-    } catch (contactError) {
-      console.warn('Erro ao verificar contato existente:', contactError);
-      console.log('Continuando com o fluxo de criação de novo contato...');
-    }
-    
-    // Fluxo normal para novos usuários ou quando não foi possível processar a verificação
-    // Preparar dados para enviar ao Brevo
-    const brevoContact = {
-      email: userEmail,
-      attributes: attributes,
-      listIds: [],
-      updateEnabled: true
-    };
-    
-    if (targetListId) {
-      brevoContact.listIds = [parseInt(targetListId)];
-      console.log(`Adicionando novo contato à lista ${targetListId} para status ${userStatus}`);
-    } else {
-      console.warn(`Status do usuário não mapeado para uma lista: ${userStatus}`);
-    }
-    
-    // Enviar requisição para o Brevo
-    console.log('Enviando dados para o Brevo...');
-    const brevoResponse = await fetch('https://api.brevo.com/v3/contacts', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': brevoApiKey
-      },
-      body: JSON.stringify(brevoContact)
-    });
-    
-    // Verificar resposta
-    if (brevoResponse.ok) {
-      const brevoResult = await brevoResponse.json();
-      console.log('Contato criado com sucesso no Brevo');
-      
-      // Retornar resposta de sucesso
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: 'Novo contato criado no Brevo com sucesso',
-          userId: userId,
-          email: userEmail
-        }),
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          },
-          status: 200
-        }
-      );
-    } else {
-      // Em caso de falha
-      const brevoError = await brevoResponse.json();
-      
-      // Se o contato já existir, tentar atualizar
-      if (brevoResponse.status === 400 && brevoError.code === 'duplicate_parameter') {
-        console.log('Contato já existe, atualizando informações...');
-        
-        // Buscar ID do contato
-        const getContactResponse = await fetch(`https://api.brevo.com/v3/contacts/${encodeURIComponent(userEmail)}`, {
-          method: 'GET',
-          headers: {
-            'api-key': brevoApiKey
-          }
-        });
-        
-        if (!getContactResponse.ok) {
-          throw new Error(`Erro ao buscar contato no Brevo: ${getContactResponse.statusText}`);
-        }
-        
-        // Atualizar os atributos do contato
-        const updateContactResponse = await fetch(`https://api.brevo.com/v3/contacts/${encodeURIComponent(userEmail)}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'api-key': brevoApiKey
-          },
-          body: JSON.stringify({
-            attributes: attributes
-          })
-        });
-        
-        // Atualizar a lista com base no status
-        if (targetListId) {
-          console.log(`Atualizando lista para status ${userStatus}...`);
-          
-          // Remover das outras listas primeiro
-          for (const listId of Object.values(statusListIds)) {
-            if (listId !== targetListId) {
-              try {
-                await fetch(`https://api.brevo.com/v3/contacts/lists/${listId}/contacts/remove`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'api-key': brevoApiKey
-                  },
-                  body: JSON.stringify({
-                    emails: [userEmail]
-                  })
-                });
-              } catch (removeError) {
-                console.warn(`Erro ao remover da lista ${listId} (ignorando):`, removeError);
-              }
-            }
-          }
-          
-          // Adicionar à lista correta
-          const addToListResponse = await fetch(`https://api.brevo.com/v3/contacts/lists/${targetListId}/contacts/add`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'api-key': brevoApiKey
-            },
-            body: JSON.stringify({
-              emails: [userEmail]
-            })
-          });
-          
-          if (addToListResponse.ok) {
-            console.log(`Contato adicionado com sucesso à lista ${targetListId}`);
-          } else {
-            console.error(`Erro ao adicionar à lista ${targetListId}: ${addToListResponse.status}`);
-          }
-        }
-        
-        // Retornar resposta de sucesso para atualizações
-        return new Response(
-          JSON.stringify({
-            success: true,
-            message: 'Contato atualizado com sucesso no Brevo',
-            userId: userId,
-            email: userEmail
-          }),
-          {
-            headers: {
-              'Content-Type': 'application/json',
-              ...corsHeaders
-            },
-            status: 200
-          }
-        );
-      } else {
-        // Outro tipo de erro
-        throw new Error(`Erro ao criar contato no Brevo: ${brevoError.message || JSON.stringify(brevoError)}`);
+      } catch (error) {
+        console.error('Erro ao verificar/criar registro de usuário:', error);
       }
     }
+    
+    // Resposta final
+    return new Response(
+      JSON.stringify({
+        success: brevoResponse.success,
+        message: `Usuário ${isStatusChange ? 'atualizado' : 'sincronizado'} com o Brevo`,
+        userId,
+        email: userEmail,
+        status: currentStatus,
+        oldStatus: isStatusChange ? oldStatus : null,
+        brevoStatus: brevoResponse.status,
+        brevoResult: brevoResponse.result ? brevoResponse.result.substring(0, 200) : null
+      }),
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders
+        },
+        status: brevoResponse.success ? 200 : 500
+      }
+    );
   } catch (error) {
     console.error('Erro ao processar webhook:', error);
-    
-    // Retornar resposta de erro
     return new Response(
       JSON.stringify({
         success: false,
-        message: error.message,
-        error: error.stack
+        error: error.message
       }),
       {
         headers: {
@@ -502,4 +312,210 @@ serve(async (req) => {
       }
     );
   }
-}); 
+});
+
+async function syncToBrevo(
+  email: string, 
+  name: string, 
+  status: string, 
+  userId: string, 
+  apiKey: string, 
+  statusListIds: Record<string, string>
+) {
+  try {
+    logDebug(`Sincronizando com Brevo: ${email}, Status: ${status}`);
+    
+    // Determinar o ID da lista correta com base no status
+    const listId = statusListIds[status];
+    if (!listId) {
+      console.warn(`Status desconhecido '${status}', usando lista TRIAL para: ${email}`);
+    }
+    
+    // Definir o ID da lista a ser usada (padrão para TRIAL se não encontrar correspondência)
+    const targetListId = listId || statusListIds['TRIAL'];
+    logDebug(`Lista alvo para ${status}: ${targetListId}`);
+    
+    // Preparar payload com atributos para o Brevo
+    const payload = {
+      email: email,
+      attributes: {
+        NOME: name,
+        FNAME: name.split(' ')[0] || '',
+        LNAME: name.split(' ').slice(1).join(' ') || '',
+        STATUS: status,
+        USER_ID: userId,
+        DATA_CADASTRO: new Date().toISOString().split('T')[0]
+      },
+      listIds: [parseInt(targetListId)],
+      updateEnabled: true
+    };
+    
+    logDebug('Payload para Brevo:', payload);
+    
+    // Verificar se o contato já existe
+    const checkResponse = await fetch(`https://api.brevo.com/v3/contacts/${encodeURIComponent(email)}`, {
+      method: 'GET',
+      headers: {
+        'api-key': apiKey
+      }
+    });
+    
+    let response;
+    
+    if (checkResponse.ok) {
+      // Contato existe, atualizar seus atributos
+      logDebug('Contato já existe no Brevo, atualizando...');
+      
+      // 1. Atualizar atributos do contato
+      response = await fetch('https://api.brevo.com/v3/contacts', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': apiKey
+        },
+        body: JSON.stringify({
+          email: email,
+          attributes: payload.attributes
+        })
+      });
+      
+      if (!response.ok) {
+        const updateError = await response.text();
+        console.error(`Erro ao atualizar atributos do contato ${email}:`, updateError);
+        return {
+          success: false,
+          status: response.status,
+          result: updateError
+        };
+      }
+      
+      // 2. Remover o contato de todas as outras listas
+      for (const [listStatus, listId] of Object.entries(statusListIds)) {
+        // Pular a lista alvo - não precisamos remover da lista que ele deve estar
+        if (listId === targetListId) continue;
+        
+        try {
+          const removeResponse = await fetch(`https://api.brevo.com/v3/contacts/lists/${listId}/contacts/remove`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'api-key': apiKey
+            },
+            body: JSON.stringify({
+              emails: [email]
+            })
+          });
+          
+          if (removeResponse.ok) {
+            logDebug(`Contato removido da lista ${listId} (${listStatus})`);
+          }
+        } catch (removeError) {
+          console.warn(`Erro ao remover contato da lista ${listId}: ${removeError.message}`);
+        }
+      }
+      
+      // 3. Adicionar à lista correta
+      const addResponse = await fetch(`https://api.brevo.com/v3/contacts/lists/${targetListId}/contacts/add`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': apiKey
+        },
+        body: JSON.stringify({
+          emails: [email]
+        })
+      });
+      
+      if (addResponse.ok) {
+        logDebug(`Contato adicionado com sucesso à lista ${targetListId}`);
+        return {
+          success: true,
+          status: 200,
+          result: `Contato atualizado e movido para lista ${targetListId}`
+        };
+      } else {
+        const addError = await addResponse.text();
+        console.warn(`Falha ao adicionar à lista ${targetListId}: ${addResponse.status}`, addError);
+        return {
+          success: false,
+          status: addResponse.status,
+          result: addError
+        };
+      }
+    } else {
+      // Contato não existe, criar novo
+      logDebug('Criando novo contato no Brevo...');
+      
+      response = await fetch('https://api.brevo.com/v3/contacts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': apiKey
+        },
+        body: JSON.stringify(payload)
+      });
+      
+      const result = await response.text();
+      
+      // Verificar se é um erro de duplicação (contato já existe)
+      if (!response.ok && response.status === 400) {
+        try {
+          const errorData = JSON.parse(result);
+          
+          if (errorData.code === 'duplicate_parameter') {
+            logDebug('Contato duplicado, tentando atualizar como existente');
+            
+            // Atualizar os atributos do contato
+            const updateResponse = await fetch('https://api.brevo.com/v3/contacts', {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                'api-key': apiKey
+              },
+              body: JSON.stringify({
+                email: email,
+                attributes: payload.attributes
+              })
+            });
+            
+            if (updateResponse.ok) {
+              // Adicionar à lista correta
+              await fetch(`https://api.brevo.com/v3/contacts/lists/${targetListId}/contacts/add`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'api-key': apiKey
+                },
+                body: JSON.stringify({
+                  emails: [email]
+                })
+              });
+              
+              return {
+                success: true,
+                status: 200,
+                result: 'Contato atualizado após erro de duplicação'
+              };
+            }
+          }
+        } catch (parseError) {
+          console.error('Erro ao analisar resposta de erro:', parseError);
+        }
+      }
+      
+      logDebug(`Resposta da API Brevo (criar contato): ${response.status}`, result);
+      
+      return {
+        success: response.status >= 200 && response.status < 300,
+        status: response.status,
+        result: result
+      };
+    }
+  } catch (error) {
+    console.error('Erro ao sincronizar com Brevo:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+} 

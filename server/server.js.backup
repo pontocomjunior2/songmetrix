@@ -5,15 +5,6 @@ import { dirname } from 'path';
 import path from 'path';
 import fs from 'fs';
 import { createProxyMiddleware } from 'http-proxy-middleware';
-import express from 'express';
-import cors from 'cors';
-import pg from 'pg';
-import { format } from 'date-fns';
-import { authenticateBasicUser, authenticateUser } from './auth-middleware.js';
-import { createClient } from '@supabase/supabase-js';
-import { createCheckoutSession, handleWebhook } from './stripe.js';
-import { reportQuery } from './report-query.js';
-import registerRoutes from './index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -50,33 +41,17 @@ console.log('Database configuration:', {
   port: process.env.POSTGRES_PORT
 });
 
-// Importar o serviço do SendPulse (substituindo o Brevo)
-let sendPulseService;
-
-try {
-  sendPulseService = await import('../utils/sendpulse-service-esm.js');
-  console.log('SendPulse service (ESM) importado com sucesso');
-} catch (error) {
-  console.error('Erro ao importar sendpulse-service-esm:', error);
-  try {
-    sendPulseService = await import('../utils/sendpulse-service.js');
-    console.log('Usando versão alternativa do sendpulse-service');
-  } catch (fallbackError) {
-    console.error('Erro ao importar versão alternativa do sendpulse-service:', fallbackError);
-    sendPulseService = {
-      syncUserWithSendPulse: async (userData) => {
-        console.error('Módulo sendpulse-service não disponível, usando fallback');
-        return {
-          success: false,
-          error: 'Módulo sendpulse-service não disponível'
-        };
-      }
-    };
-    console.log('Usando versão de fallback para sendpulse-service');
-  }
-}
-
-const { syncUserWithSendPulse, syncUserWithBrevo } = sendPulseService;
+// Import other dependencies after environment variables are loaded
+import express from 'express';
+import cors from 'cors';
+import pg from 'pg';
+import { format } from 'date-fns';
+import { authenticateBasicUser, authenticateUser } from './auth-middleware.js';
+import { createClient } from '@supabase/supabase-js';
+import { createCheckoutSession, handleWebhook } from './stripe.js';
+import { reportQuery } from './report-query.js';
+// Importar o registrador de rotas
+import registerRoutes from './index.js';
 
 const app = express();
 
@@ -1701,18 +1676,6 @@ app.post('/api/users/update-status', authenticateUser, async (req, res) => {
     const currentStatus = userData.user.user_metadata?.status || 'INATIVO';
     console.log(`Status atual nos metadados: ${currentStatus}, Novo status: ${newStatus}`);
 
-    // Obter dados completos do usuário para sincronização com Brevo
-    const { data: userDetails, error: userDetailsError } = await supabaseAdmin
-      .from('users')
-      .select('email, full_name, whatsapp')
-      .eq('id', userId)
-      .single();
-
-    if (userDetailsError || !userDetails) {
-      console.error(`Erro ao obter detalhes do usuário ${userId}:`, userDetailsError);
-      return res.status(500).json({ error: 'Erro ao obter detalhes do usuário', details: userDetailsError });
-    }
-
     // Atualizar na tabela users
     const { error: updateDbError } = await supabaseAdmin
       .from('users')
@@ -1752,6 +1715,55 @@ app.post('/api/users/update-status', authenticateUser, async (req, res) => {
 
     console.log(`Metadados do usuário ${userId} atualizados com sucesso:`, updateMetaData);
 
+    // Verificar se o metadados foi realmente atualizado
+    const { data: verifyData, error: verifyError } = await supabaseAdmin.auth.admin.getUserById(userId);
+    
+    if (verifyError) {
+      console.error(`Erro ao verificar metadados do usuário ${userId} após atualização:`, verifyError);
+    } else {
+      console.log(`Metadados verificados do usuário ${userId} após atualização:`, verifyData.user.user_metadata);
+      
+      // Verificar se o status foi realmente atualizado
+      const updatedStatus = verifyData.user.user_metadata?.status;
+      if (updatedStatus !== newStatus) {
+        console.error(`ATENÇÃO: Status do usuário ${userId} nos metadados não foi atualizado corretamente. Esperado: ${newStatus}, Atual: ${updatedStatus}`);
+        
+        // Tentar abordagem alternativa: atualizar apenas o campo status diretamente
+        try {
+          console.log(`Tentando atualização direta do status nos metadados do usuário ${userId}`);
+          
+          // Abordagem direta para atualizar apenas o campo status usando rawUpdate
+          const updateResponse = await supabaseAdmin.auth.admin.updateUserById(
+            userId,
+            { 
+              user_metadata: { status: newStatus } 
+            },
+            { rawUpdate: true }
+          );
+          
+          if (updateResponse.error) {
+            console.error(`Segunda tentativa de atualizar status nos metadados falhou:`, updateResponse.error);
+          } else {
+            console.log(`Segunda tentativa de atualização de status nos metadados concluída`);
+            
+            // Verificar novamente
+            const { data: verifyRetryData, error: verifyRetryError } = await supabaseAdmin.auth.admin.getUserById(userId);
+            if (verifyRetryError) {
+              console.error(`Erro ao verificar após segunda tentativa:`, verifyRetryError);
+            } else if (verifyRetryData.user.user_metadata?.status !== newStatus) {
+              console.error(`ATENÇÃO CRÍTICA: Mesmo após segunda tentativa, o status nos metadados continua incorreto. Atual: ${verifyRetryData.user.user_metadata?.status}`);
+            } else {
+              console.log(`Status nos metadados atualizado com sucesso na segunda tentativa para: ${verifyRetryData.user.user_metadata?.status}`);
+            }
+          }
+        } catch (retryError) {
+          console.error(`Erro na tentativa alternativa de atualizar metadados:`, retryError);
+        }
+      } else {
+        console.log(`Status nos metadados atualizado com sucesso para: ${updatedStatus}`);
+      }
+    }
+
     // Tentar forçar invalidação de sessões (para garantir que o novo status seja aplicado)
     try {
       if (newStatus === 'INATIVO') {
@@ -1770,42 +1782,41 @@ app.post('/api/users/update-status', authenticateUser, async (req, res) => {
       console.error(`Erro ao processar sessões do usuário ${userId}:`, error);
     }
 
-    // ===== SINCRONIZAR COM SENDPULSE USANDO O NOVO SERVIÇO =====
-    let sendPulseSyncResult = null;
-
-    console.log(`Iniciando sincronização com SendPulse para usuário ${userId} (${userDetails.email})`);
-
-    // Usar o novo serviço do SendPulse para sincronizar o usuário
-    sendPulseSyncResult = await syncUserWithSendPulse({
-      id: userId,
-      email: userDetails.email,
-      name: userDetails.name,
-      status: userDetails.status,
-      whatsapp: userDetails.whatsapp
-    });
-
-    if (sendPulseSyncResult.success) {
-      console.log(`Sincronização com SendPulse concluída com sucesso: ${sendPulseSyncResult.message}`);
-    } else {
-      console.error(`Erro na sincronização com SendPulse: ${sendPulseSyncResult.error}`);
+    // Adicionar à fila de sincronização para garantir
+    try {
+      const { error: queueError } = await supabaseAdmin
+        .from('auth_sync_queue')
+        .insert({
+          user_id: userId,
+          status: newStatus,
+          processed: false,
+          created_at: new Date().toISOString()
+        })
+        .select();
+        
+      if (queueError) {
+        console.error(`Erro ao adicionar usuário ${userId} à fila de sincronização:`, queueError);
+      } else {
+        console.log(`Usuário ${userId} adicionado à fila de sincronização`);
+      }
+    } catch (error) {
+      console.error(`Erro ao adicionar usuário ${userId} à fila de sincronização:`, error);
     }
-  } catch (sendPulseError) {
-    console.error(`Exceção ao sincronizar com SendPulse:`, sendPulseError);
-    sendPulseSyncResult = {
-      success: false,
-      error: sendPulseError.message || 'Erro desconhecido ao sincronizar com SendPulse'
-    };
+
+    console.log(`Status do usuário ${userId} atualizado com sucesso para ${newStatus}`);
+
+    res.status(200).json({ 
+      message: 'Status do usuário atualizado com sucesso',
+      userId,
+      newStatus,
+      oldStatus: currentStatus,
+      oldMetadata: userData.user.user_metadata,
+      newMetadata: updatedMetadata
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar status do usuário:', error);
+    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
   }
-
-  console.log(`Status do usuário ${userId} atualizado com sucesso para ${newStatus}`);
-
-  res.status(200).json({ 
-    message: 'Status do usuário atualizado com sucesso',
-    userId,
-    newStatus,
-    oldStatus: currentStatus,
-    sendPulseSync: sendPulseSyncResult
-  });
 });
 
 // Rota para verificar o status de um usuário específico
@@ -2424,36 +2435,359 @@ app.post('/api/users/force-trial-status', authenticateUser, async (req, res) => 
   }
 });
 
-// Rota para sincronizar manualmente usuários com o SendPulse
-app.post('/api/sendpulse/sync-users', authenticateUser, async (req, res) => {
-  // Verificar se o usuário é administrador
-  if (req.user.role !== 'ADMIN') {
-    console.error('Tentativa de sincronização não autorizada:', req.user.id);
-    return res.status(403).json({
-      success: false,
-      error: 'Apenas administradores podem sincronizar usuários com o SendPulse'
+// Rota para sincronizar manualmente usuários com o Brevo
+app.post('/api/brevo/sync-users', authenticateUser, async (req, res) => {
+  try {
+    // Verificar se o usuário é administrador
+    if (req.user.user_metadata?.status !== 'ADMIN') {
+      console.log('Tentativa não autorizada de sincronizar com Brevo:', req.user.id);
+      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
+    }
+
+    console.log('Iniciando sincronização manual com Brevo');
+    
+    // Buscar todos os usuários
+    const { data: users, error: fetchError } = await supabaseAdmin
+      .from('users')
+      .select('id, email, status, full_name, whatsapp, created_at')
+      .order('created_at', { ascending: false });
+    
+    if (fetchError) {
+      console.error('Erro ao buscar usuários para sincronização:', fetchError);
+      return res.status(500).json({ error: 'Erro ao buscar usuários', details: fetchError });
+    }
+    
+    console.log(`Sincronizando ${users.length} usuários com o Brevo`);
+    
+    // IDs das listas no Brevo
+    const statusListIds = {
+      TRIAL: '7',    // Lista para usuários Trial
+      ATIVO: '8',    // Lista para usuários Ativos
+      INATIVO: '9',  // Lista para usuários Inativos
+      ADMIN: '8'     // Admin vai na mesma lista dos Ativos
+    };
+    
+    // Obter a chave de API do Brevo
+    const brevoApiKey = process.env.BREVO_API_KEY;
+    if (!brevoApiKey) {
+      return res.status(500).json({ error: 'API Key do Brevo não configurada' });
+    }
+    
+    // Enviar status inicial com configuração de streaming
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Transfer-Encoding': 'chunked'
     });
+    
+    // Processar usuários em batches para evitar timeouts
+    const batchSize = 10;
+    const results = {
+      success: 0,
+      failed: 0,
+      details: []
+    };
+    let processed = 0;
+    
+    // Função para processar um usuário
+    async function processUser(user) {
+      try {
+        if (!user.email) {
+          return { 
+            success: false, 
+            error: 'Email não encontrado',
+            user: user.id
+          };
+        }
+        
+        console.log(`Processando usuário: ${user.email} (${user.status})`);
+        
+        // Preparar atributos do contato
+        const attributes = {};
+        
+        if (user.full_name) {
+          attributes.NOME = user.full_name;
+          
+          // Dividir nome completo em primeiro nome e sobrenome se necessário
+          const nameParts = user.full_name.split(' ');
+          attributes.FNAME = nameParts[0] || '';
+          attributes.LNAME = nameParts.slice(1).join(' ') || '';
+        }
+        
+        if (user.whatsapp) {
+          // Remover caracteres não numéricos e adicionar prefixo se necessário
+          let whatsapp = user.whatsapp.replace(/\D/g, '');
+          if (!whatsapp.startsWith('+')) {
+            // Se não começar com +, adicionar código do Brasil
+            if (!whatsapp.startsWith('55')) {
+              whatsapp = '55' + whatsapp;
+            }
+          }
+          attributes.SMS = whatsapp;
+          attributes.WHATSAPP = whatsapp;
+        }
+        
+        // Dados essenciais
+        attributes.STATUS = user.status;
+        attributes.ID = user.id;
+        
+        if (user.created_at) {
+          attributes.DATA_CADASTRO = new Date(user.created_at).toISOString().split('T')[0];
+        }
+        
+        // Determinar a lista apropriada pelo status do usuário
+        const targetListId = statusListIds[user.status];
+        if (!targetListId) {
+          return { 
+            success: false, 
+            error: `Status desconhecido: ${user.status}`,
+            email: user.email
+          };
+        }
+        
+        // 1. Verificar se contato já existe
+        try {
+          const contactResponse = await fetch(`https://api.brevo.com/v3/contacts/${encodeURIComponent(user.email)}`, {
+            method: 'GET',
+            headers: {
+              'api-key': brevoApiKey
+            }
+          });
+          
+          if (contactResponse.ok) {
+            // Contato existe, atualizar
+            console.log(`Atualizando contato existente: ${user.email}`);
+            
+            // Atualizar atributos
+            const updateResponse = await fetch('https://api.brevo.com/v3/contacts', {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                'api-key': brevoApiKey
+              },
+              body: JSON.stringify({
+                email: user.email,
+                attributes: attributes
+              })
+            });
+            
+            if (!updateResponse.ok) {
+              const updateError = await updateResponse.text();
+              console.error(`Erro ao atualizar contato ${user.email}:`, updateError);
+              return { 
+                success: false, 
+                error: `Erro ao atualizar atributos: ${updateError}`,
+                email: user.email
+              };
+            }
+            
+            // 2. Remover de todas as listas exceto a correta
+            for (const [status, listId] of Object.entries(statusListIds)) {
+              // Só remover de listas diferentes da lista alvo
+              if (listId !== targetListId) {
+                await fetch(`https://api.brevo.com/v3/contacts/lists/${listId}/contacts/remove`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'api-key': brevoApiKey
+                  },
+                  body: JSON.stringify({
+                    emails: [user.email]
+                  })
+                });
+              }
+            }
+            
+            // 3. Adicionar à lista correta
+            const addResponse = await fetch(`https://api.brevo.com/v3/contacts/lists/${targetListId}/contacts/add`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'api-key': brevoApiKey
+              },
+              body: JSON.stringify({
+                emails: [user.email]
+              })
+            });
+            
+            if (!addResponse.ok) {
+              const addError = await addResponse.text();
+              console.error(`Erro ao adicionar ${user.email} à lista ${targetListId}:`, addError);
+              return { 
+                success: false, 
+                error: `Erro ao adicionar à lista: ${addError}`,
+                email: user.email
+              };
+            }
+            
+            return { 
+              success: true, 
+              message: `Contato atualizado e movido para lista de ${user.status}`,
+              email: user.email,
+              status: user.status,
+              listId: targetListId
+            };
+          } else {
+            // Contato não existe, criar novo
+            console.log(`Criando novo contato: ${user.email}`);
+            
+            const createResponse = await fetch('https://api.brevo.com/v3/contacts', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'api-key': brevoApiKey
+              },
+              body: JSON.stringify({
+                email: user.email,
+                attributes: attributes,
+                listIds: [parseInt(targetListId)],
+                updateEnabled: true
+              })
+            });
+            
+            if (!createResponse.ok) {
+              // Verificar se é erro de contato duplicado
+              if (createResponse.status === 400) {
+                try {
+                  const errorData = await createResponse.json();
+                  
+                  if (errorData.code === 'duplicate_parameter') {
+                    // Contato existe mesmo com o GET retornando erro, tentar atualizar
+                    console.log(`Erro de duplicação, tentando atualizar: ${user.email}`);
+                    
+                    // Atualizar atributos
+                    await fetch('https://api.brevo.com/v3/contacts', {
+                      method: 'PUT',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'api-key': brevoApiKey
+                      },
+                      body: JSON.stringify({
+                        email: user.email,
+                        attributes: attributes
+                      })
+                    });
+                    
+                    // Adicionar à lista correta
+                    await fetch(`https://api.brevo.com/v3/contacts/lists/${targetListId}/contacts/add`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'api-key': brevoApiKey
+                      },
+                      body: JSON.stringify({
+                        emails: [user.email]
+                      })
+                    });
+                    
+                    return { 
+                      success: true, 
+                      message: `Contato atualizado após erro de duplicação`,
+                      email: user.email,
+                      status: user.status,
+                      listId: targetListId
+                    };
+                  }
+                } catch (parseError) {
+                  console.error(`Erro ao analisar resposta de erro:`, parseError);
+                }
+              }
+              
+              const createError = await createResponse.text();
+              console.error(`Erro ao criar contato ${user.email}:`, createError);
+              return { 
+                success: false, 
+                error: `Erro ao criar contato: ${createError}`,
+                email: user.email
+              };
+            }
+            
+            return { 
+              success: true, 
+              message: `Novo contato criado e adicionado à lista de ${user.status}`,
+              email: user.email,
+              status: user.status,
+              listId: targetListId
+            };
+          }
+        } catch (error) {
+          console.error(`Erro ao sincronizar usuário ${user.email}:`, error);
+          return { 
+            success: false, 
+            error: error.message,
+            email: user.email
+          };
+        }
+      } catch (error) {
+        console.error(`Erro geral no processamento de ${user?.email || 'usuário desconhecido'}:`, error);
+        return { 
+          success: false, 
+          error: error.message,
+          email: user?.email
+        };
+      }
+    }
+    
+    // Processar todos os usuários em batches
+    for (let i = 0; i < users.length; i += batchSize) {
+      const batch = users.slice(i, i + batchSize);
+      const batchResults = await Promise.all(batch.map(processUser));
+      
+      // Atualizar resultados
+      batchResults.forEach(result => {
+        if (result.success) {
+          results.success++;
+        } else {
+          results.failed++;
+        }
+        results.details.push(result);
+      });
+      
+      processed += batch.length;
+      
+      // Enviar atualização de progresso
+      const progressUpdate = {
+        progress: {
+          total: users.length,
+          processed,
+          success: results.success,
+          failed: results.failed,
+          percentage: Math.round((processed / users.length) * 100)
+        }
+      };
+      
+      res.write(`${JSON.stringify(progressUpdate)}\n`);
+    }
+    
+    // Enviar resultado final
+    const finalResult = {
+      final: true,
+      message: 'Sincronização concluída',
+      total: users.length,
+      success: results.success,
+      failed: results.failed,
+      details: results.details.slice(0, 10) // Limitar detalhes para não sobrecarregar a resposta
+    };
+    
+    res.write(`${JSON.stringify(finalResult)}\n`);
+    res.end();
+  } catch (error) {
+    console.error('Erro na sincronização com Brevo:', error);
+    
+    // Se já enviamos cabeçalhos, enviar erro como chunk
+    if (res.headersSent) {
+      res.write(JSON.stringify({
+        error: true,
+        message: error.message
+      }));
+      res.end();
+    } else {
+      res.status(500).json({ error: 'Erro na sincronização com Brevo', details: error.message });
+    }
   }
-
-  // ... existing code ...
 });
 
-// Rota de webhook para sincronizar novos usuários com o SendPulse
-app.post('/api/sendpulse/webhook', async (req, res) => {
-  // ... existing code ...
-});
-
-// Endpoint para sincronizar um usuário com o SendPulse
-app.post('/api/sendpulse/sync-user', async (req, res) => {
-  // Log da requisição
-  console.log('📩 Recebendo request para sincronizar usuário com SendPulse:', req.body.email);
-  // ... existing code ...
-});
-
-// Endpoint para sincronizar todos os usuários com o SendPulse (apenas para ADMIN)
-app.post('/api/sendpulse/sync-all-users', authenticateJWT, async (req, res) => {
-  // ... existing code ...
-});
+// const PORT = process.env.PORT || 3001;
+// ... existing code ...
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
@@ -2494,6 +2828,190 @@ app.post('/api/users/update-last-sign-in', authenticateUser, async (req, res) =>
   } catch (error) {
     console.error('Erro ao processar requisição de atualização de último acesso:', error);
     return res.status(500).json({ error: `Erro interno do servidor: ${error.message}` });
+  }
+});
+
+// Atualizar status do usuário com API dedicada
+app.post('/api/users/update-status', authenticateUser, async (req, res) => {
+  try {
+    // Verificar se o usuário é administrador
+    if (req.user.user_metadata?.status !== 'ADMIN') {
+      console.log('Tentativa não autorizada de atualizar status:', req.user.id);
+      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
+    }
+
+    const { userId, newStatus } = req.body;
+
+    if (!userId || !newStatus) {
+      return res.status(400).json({ error: 'ID do usuário e novo status são obrigatórios' });
+    }
+
+    // Validar o status
+    const validStatuses = ['INATIVO', 'ATIVO', 'ADMIN', 'TRIAL'];
+    if (!validStatuses.includes(newStatus)) {
+      return res.status(400).json({ error: 'Status inválido' });
+    }
+
+    console.log(`Atualizando status do usuário ${userId} para ${newStatus}`);
+
+    // Obter os metadados do usuário
+    const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId);
+    
+    if (userError) {
+      console.error(`Erro ao obter metadados do usuário ${userId}:`, userError);
+      return res.status(500).json({ error: 'Erro ao obter metadados do usuário', details: userError });
+    }
+
+    // Verificar se o usuário existe
+    if (!userData || !userData.user) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    // Registrar metadados atuais
+    console.log(`Metadados atuais do usuário ${userId}:`, userData.user.user_metadata);
+    const currentStatus = userData.user.user_metadata?.status || 'INATIVO';
+    console.log(`Status atual nos metadados: ${currentStatus}, Novo status: ${newStatus}`);
+
+    // Atualizar na tabela users
+    const { error: updateDbError } = await supabaseAdmin
+      .from('users')
+      .update({
+        status: newStatus,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId);
+      
+    if (updateDbError) {
+      console.error(`Erro ao atualizar status do usuário ${userId} no banco:`, updateDbError);
+      return res.status(500).json({ error: 'Erro ao atualizar status no banco de dados', details: updateDbError });
+    }
+
+    console.log(`Status do usuário ${userId} atualizado no banco de dados para ${newStatus}`);
+
+    // Certificar-se de que os metadados incluem o status
+    // Criamos um novo objeto com todos os metadados existentes + o novo status
+    const currentMetadata = userData.user.user_metadata || {};
+    const updatedMetadata = { ...currentMetadata, status: newStatus };
+    console.log(`Novos metadados para o usuário ${userId}:`, updatedMetadata);
+
+    // Utilizar a API direta do Supabase para atualização completa dos metadados
+    const { data: updateMetaData, error: updateMetaError } = await supabaseAdmin.auth.admin.updateUserById(
+      userId,
+      { user_metadata: updatedMetadata }
+    );
+    
+    if (updateMetaError) {
+      console.error(`Erro ao atualizar metadados do usuário ${userId}:`, updateMetaError);
+      return res.status(500).json({ 
+        error: 'Erro ao atualizar metadados do usuário', 
+        details: updateMetaError,
+        note: 'O status foi atualizado no banco de dados, mas não nos metadados'
+      });
+    }
+
+    console.log(`Metadados do usuário ${userId} atualizados com sucesso:`, updateMetaData);
+
+    // Verificar se o metadados foi realmente atualizado
+    const { data: verifyData, error: verifyError } = await supabaseAdmin.auth.admin.getUserById(userId);
+    
+    if (verifyError) {
+      console.error(`Erro ao verificar metadados do usuário ${userId} após atualização:`, verifyError);
+    } else {
+      console.log(`Metadados verificados do usuário ${userId} após atualização:`, verifyData.user.user_metadata);
+      
+      // Verificar se o status foi realmente atualizado
+      const updatedStatus = verifyData.user.user_metadata?.status;
+      if (updatedStatus !== newStatus) {
+        console.error(`ATENÇÃO: Status do usuário ${userId} nos metadados não foi atualizado corretamente. Esperado: ${newStatus}, Atual: ${updatedStatus}`);
+        
+        // Tentar abordagem alternativa: atualizar apenas o campo status diretamente
+        try {
+          console.log(`Tentando atualização direta do status nos metadados do usuário ${userId}`);
+          
+          // Abordagem direta para atualizar apenas o campo status usando rawUpdate
+          const updateResponse = await supabaseAdmin.auth.admin.updateUserById(
+            userId,
+            { 
+              user_metadata: { status: newStatus } 
+            },
+            { rawUpdate: true }
+          );
+          
+          if (updateResponse.error) {
+            console.error(`Segunda tentativa de atualizar status nos metadados falhou:`, updateResponse.error);
+          } else {
+            console.log(`Segunda tentativa de atualização de status nos metadados concluída`);
+            
+            // Verificar novamente
+            const { data: verifyRetryData, error: verifyRetryError } = await supabaseAdmin.auth.admin.getUserById(userId);
+            if (verifyRetryError) {
+              console.error(`Erro ao verificar após segunda tentativa:`, verifyRetryError);
+            } else if (verifyRetryData.user.user_metadata?.status !== newStatus) {
+              console.error(`ATENÇÃO CRÍTICA: Mesmo após segunda tentativa, o status nos metadados continua incorreto. Atual: ${verifyRetryData.user.user_metadata?.status}`);
+            } else {
+              console.log(`Status nos metadados atualizado com sucesso na segunda tentativa para: ${verifyRetryData.user.user_metadata?.status}`);
+            }
+          }
+        } catch (retryError) {
+          console.error(`Erro na tentativa alternativa de atualizar metadados:`, retryError);
+        }
+      } else {
+        console.log(`Status nos metadados atualizado com sucesso para: ${updatedStatus}`);
+      }
+    }
+
+    // Tentar forçar invalidação de sessões (para garantir que o novo status seja aplicado)
+    try {
+      if (newStatus === 'INATIVO') {
+        // Para status INATIVO, forçamos o logout
+        const { error: signOutError } = await supabaseAdmin.auth.admin.signOut(userId);
+        if (signOutError) {
+          console.error(`Erro ao invalidar sessões do usuário ${userId}:`, signOutError);
+        } else {
+          console.log(`Sessões do usuário ${userId} invalidadas com sucesso`);
+        }
+      } else {
+        // Para outros status, o usuário precisará fazer logout e login novamente
+        console.log(`O usuário ${userId} precisará fazer logout e login novamente para que o novo status (${newStatus}) seja aplicado completamente.`);
+      }
+    } catch (error) {
+      console.error(`Erro ao processar sessões do usuário ${userId}:`, error);
+    }
+
+    // Adicionar à fila de sincronização para garantir
+    try {
+      const { error: queueError } = await supabaseAdmin
+        .from('auth_sync_queue')
+        .insert({
+          user_id: userId,
+          status: newStatus,
+          processed: false,
+          created_at: new Date().toISOString()
+        })
+        .select();
+        
+      if (queueError) {
+        console.error(`Erro ao adicionar usuário ${userId} à fila de sincronização:`, queueError);
+      } else {
+        console.log(`Usuário ${userId} adicionado à fila de sincronização`);
+      }
+    } catch (error) {
+      console.error(`Erro ao adicionar usuário ${userId} à fila de sincronização:`, error);
+    }
+
+    console.log(`Status do usuário ${userId} atualizado com sucesso para ${newStatus}`);
+
+    res.status(200).json({ 
+      message: 'Status do usuário atualizado com sucesso',
+      userId,
+      newStatus,
+      oldStatus: currentStatus,
+      oldMetadata: userData.user.user_metadata,
+      newMetadata: updatedMetadata
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar status do usuário:', error);
+    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
   }
 });
 
