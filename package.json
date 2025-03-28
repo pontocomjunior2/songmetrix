@@ -7,7 +7,11 @@
     "dev": "vite",
     "server": "node server/server.js",
     "email-server": "node server-email.js",
-    "dev:all": "concurrently \"npm run dev\" \"npm run server\" \"npm run email-server\"",
+    "server:all": "node start-servers.js",
+    "dev:all": "node node_modules/concurrently/dist/bin/concurrently.js --kill-others-on-fail --prefix \"[{name}]\" --names \"FRONTEND,SERVIDORES\" --prefix-colors \"green.bold,blue.bold\" \"npm run dev\" \"npm run server:all\"",
+    "verify-modules": "node scripts/verify-module-paths.js",
+    "fix-modules": "node scripts/verify-module-paths.js --fix",
+    "predev:all": "npm run verify-modules",
     "build": "tsc && vite build",
     "prebuild": "node server/check-production.js || true",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
@@ -81,7 +85,8 @@
     "stripe": "^17.6.0",
     "tailwind-merge": "^3.0.2",
     "winston": "^3.11.0",
-    "winston-daily-rotate-file": "^5.0.0"
+    "winston-daily-rotate-file": "^5.0.0",
+    "http-proxy-middleware": "^3.0.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
@@ -101,7 +106,6 @@
     "eslint-plugin-react-refresh": "^0.4.11",
     "express": "^4.21.2",
     "globals": "^15.9.0",
-    "http-proxy-middleware": "^3.0.3",
     "multer": "^1.4.5-lts.2",
     "nodemon": "^2.0.22",
     "postcss": "^8.5.2",

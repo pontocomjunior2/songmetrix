@@ -14,23 +14,11 @@ interface LayoutProps {
 
 const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
   const { theme, toggleTheme } = useTheme();
-  const { currentUser, logout, sendWelcomeEmail } = useAuth();
+  const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
   const [isMobile, setIsMobile] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-
-  // Efeito para enviar email de boas-vindas quando o usuário faz login pela primeira vez
-  useEffect(() => {
-    const checkEmailConfirmationAndSendWelcome = async () => {
-      if (currentUser && currentUser.email_confirmed_at) {
-        // Usuário está autenticado e email está confirmado
-        sendWelcomeEmail();
-      }
-    };
-
-    checkEmailConfirmationAndSendWelcome();
-  }, [currentUser, sendWelcomeEmail]);
 
   useEffect(() => {
     const handleResize = () => {

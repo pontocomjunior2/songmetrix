@@ -7,6 +7,15 @@ import { ErrorAlert } from '../Common/Alert';
 import Loading from '../Common/Loading';
 import { supabase } from '../../lib/supabase-client';
 import Input from '../Common/Input';
+import { FiLoader } from 'react-icons/fi';
+import { CgAsterisk } from 'react-icons/cg';
+
+// Função para validar senha
+const validatePassword = (password: string): boolean => {
+  // Pelo menos 6 caracteres, 1 caractere especial e 1 letra maiúscula
+  const passwordRegex = /^(?=.*[A-Z])(?=.*[!@#$%^&*])(?=.{6,})/;
+  return passwordRegex.test(password);
+};
 
 export default function Register() {
   const [email, setEmail] = useState('');
@@ -16,14 +25,10 @@ export default function Register() {
   const [whatsapp, setWhatsapp] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   const { signUp } = useAuth();
   const navigate = useNavigate();
-
-  const validatePassword = (password: string): boolean => {
-    // Pelo menos 6 caracteres, 1 caractere especial e 1 letra maiúscula
-    const passwordRegex = /^(?=.*[A-Z])(?=.*[!@#$%^&*])(?=.{6,})/;
-    return passwordRegex.test(password);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,9 +60,6 @@ export default function Register() {
 
       if (signUpError) throw signUpError;
 
-      // O registro na tabela users já foi criado pelo AuthContext.signUp
-      // Não precisamos criar novamente aqui
-      
       // Atualizar os metadados do usuário explicitamente para garantir o status TRIAL
       const { error: updateError } = await supabase.auth.updateUser({
         data: { status: 'TRIAL' }
@@ -67,7 +69,7 @@ export default function Register() {
         console.error('Erro ao atualizar metadados do usuário:', updateError);
         // Continuar mesmo com erro, pois o usuário foi criado
       }
-      
+
       // Só fazer logout se should_redirect não for explicitamente false
       if (should_redirect !== false) {
         // Deslogar o usuário após o registro
@@ -75,7 +77,7 @@ export default function Register() {
       }
       
       // Personalizar a mensagem se fornecida
-      const customMessage = message || 'Por favor, verifique seu email para confirmar seu cadastro. Após a confirmação, você terá acesso ao sistema com 7 dias gratuitos para testar todas as funcionalidades. Se não encontrar o email, verifique sua caixa de spam.';
+      const customMessage = message || 'Por favor, verifique seu email para confirmar seu cadastro. Após a confirmação, você terá acesso ao sistema com 14 dias gratuitos para testar todas as funcionalidades. Se não encontrar o email, verifique sua caixa de spam.';
       
       // Navigate to pending-approval
       navigate('/pending-approval', { 
@@ -159,7 +161,7 @@ export default function Register() {
             </p>
             <div className="mt-2 p-3 bg-blue-50 rounded-md text-blue-700 text-sm">
               <p className="font-medium">Período de avaliação gratuito!</p>
-              <p>Ao se cadastrar, você terá 7 dias gratuitos para testar todas as funcionalidades do sistema.</p>
+              <p>Ao se cadastrar, você terá 14 dias gratuitos para testar todas as funcionalidades do sistema.</p>
             </div>
           </div>
 

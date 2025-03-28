@@ -4,7 +4,6 @@ import { PostgrestError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase-client';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { syncUserWithBrevo } from '../utils/brevo-service';
 
 // Custom error type that includes both Auth and Postgrest errors
 class CustomAuthError extends AuthError {
@@ -45,7 +44,6 @@ export interface AuthContextType {
     message?: string
   }>;
   updateFavoriteRadios: (radios: string[]) => Promise<void>;
-  sendWelcomeEmail: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -62,7 +60,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const isRefreshing = useRef(false);
   const isInitialized = useRef(false);
   const isMounted = useRef(true);
-  const hasWelcomeEmailBeenSent = useRef(false);
   const navigate = useNavigate();
 
   // Desmontar o componente
@@ -173,10 +170,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         // Calcular dias restantes se for TRIAL
         if (dbUser.status === 'TRIAL') {
           const createdAt = new Date(dbUser.created_at);
-          const now = new Date();
-          const diffTime = Math.abs(now.getTime() - createdAt.getTime());
-          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-          const daysRemaining = Math.max(0, 7 - diffDays);
+          // Resetar as horas para comparar apenas as datas
+          const createdAtDate = new Date(createdAt.getFullYear(), createdAt.getMonth(), createdAt.getDate());
+          const today = new Date();
+          const currentDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+          
+          // Calcular diferença em dias sem considerar horas
+          const timeDiff = currentDate.getTime() - createdAtDate.getTime();
+          const diffDays = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+          const daysRemaining = Math.max(0, 14 - diffDays);
           
           if (isMounted.current) {
             setTrialDaysRemaining(daysRemaining);
@@ -236,73 +238,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  // Função para enviar email de boas-vindas
-  const sendWelcomeEmail = async (): Promise<boolean> => {
-    try {
-      if (!currentUser || hasWelcomeEmailBeenSent.current) {
-        return false;
-      }
-
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        return false;
-      }
-
-      // Verificar se este usuário já recebeu um email de boas-vindas
-      const { data: existingLogs, error: logsError } = await supabase
-        .from('email_logs')
-        .select('id')
-        .eq('user_id', currentUser.id)
-        .eq('status', 'SUCCESS')
-        .limit(1);
-
-      if (logsError) {
-        console.error('Erro ao verificar logs de email:', logsError);
-        return false;
-      }
-
-      // Se já recebeu email de boas-vindas, não enviar novamente
-      if (existingLogs && existingLogs.length > 0) {
-        hasWelcomeEmailBeenSent.current = true;
-        return false;
-      }
-
-      // Chamar a API para enviar o email de boas-vindas
-      try {
-        const response = await fetch(`${EMAIL_SERVER_URL}/api/email/send-welcome`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`
-          },
-          body: JSON.stringify({ userId: currentUser.id })
-        });
-
-        if (!response.ok) {
-          console.error(`Erro na API: ${response.status} ${response.statusText}`);
-          return false;
-        }
-
-        const result = await response.json();
-
-        if (result.success) {
-          hasWelcomeEmailBeenSent.current = true;
-          toast.success('Email de boas-vindas enviado com sucesso!');
-          return true;
-        } else {
-          console.error('Erro ao enviar email de boas-vindas:', result.message);
-          return false;
-        }
-      } catch (error) {
-        console.error('Erro ao enviar email de boas-vindas:', error);
-        return false;
-      }
-    } catch (error) {
-      console.error('Erro ao enviar email de boas-vindas:', error);
-      return false;
-    }
-  };
-
   // Verificar sessão inicial e configurar listener para mudanças de autenticação
   useEffect(() => {
     // Evitar inicialização repetida
@@ -310,91 +245,78 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     isInitialized.current = true;
     
     const initializeAuth = async () => {
-      if (!isMounted.current) return;
-      
       try {
-        // Verificar se há uma sessão rápida no storage
-        const storageKey = `sb-${import.meta.env.VITE_SUPABASE_URL.split('//')[1].split('.')[0]}-auth-token`;
-        const hasStoredSession = !!sessionStorage.getItem(storageKey);
+        if (isInitialized.current) return;
+        isInitialized.current = true;
+        console.log('Inicializando autenticação...');
         
-        if (!hasStoredSession) {
-          // Não há sessão armazenada, finalizar carga rapidamente
-          if (isMounted.current) {
-            setCurrentUser(null);
-            setUserStatus(null);
-            setLoading(false);
-          }
-          return;
-        }
-        
-        // Obter sessão atual com detalhes completos
-        const { data: { user } } = await supabase.auth.getUser();
-        
-        if (!user) {
-          if (isMounted.current) {
-            setCurrentUser(null);
-            setUserStatus(null);
-            setLoading(false);
-          }
-          return;
-        }
-        
-        // Atualizar usuário e status
-        await refreshUserStatus();
-        
-        // Verificar se é o primeiro login 
-        const isFirstAccess = !hasWelcomeEmailBeenSent.current;
-        
-        if (isFirstAccess) {
-          // Verificar se o first_login_at já está registrado
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('first_login_at')
-            .eq('id', user.id)
-            .single();
+        // Ouvir por mudanças na autenticação
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+          async (event, session) => {
+            console.log('Evento de autenticação:', event, session ? 'com sessão' : 'sem sessão');
             
-          // Se first_login_at não estiver definido, atualizar com a data/hora atual
-          if (!userError && userData && !userData.first_login_at) {
-            await supabase
-              .from('users')
-              .update({ first_login_at: new Date().toISOString() })
-              .eq('id', user.id);
-              
-            console.log('Primeiro login registrado para o usuário:', user.id);
-            
-            // Processar imediatamente os emails após primeiro login
-            try {
-              const { data: { session } } = await supabase.auth.getSession();
-              
-              if (session) {
-                console.log('Processando emails após primeiro login para o usuário:', user.id);
-                
-                // Chamar API para processar emails de primeiro login específicos para este usuário
-                const response = await fetch(`${EMAIL_SERVER_URL}/api/email/process-first-login`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`
-                  },
-                  body: JSON.stringify({ userId: user.id })
-                });
-                
-                if (!response.ok) {
-                  console.error('Erro ao processar emails após primeiro login:', response.status, response.statusText);
-                } else {
-                  const result = await response.json();
-                  console.log('Resultado do processamento de emails após primeiro login:', result);
+            if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+              if (session && session.user) {
+                if (isMounted.current) {
+                  setCurrentUser(session.user);
                 }
+                
+                // Tentar obter o status do usuário do banco de dados
+                const userRefreshed = await refreshUserStatus();
+                
+                // Se o usuário não tiver acesso válido, o refreshUserStatus já faz o
+                // redirecionamento apropriado e retorna false
+                if (!userRefreshed) {
+                  console.log('Usuário não tem acesso válido');
+                  return;
+                }
+                
+                // Se chegou aqui, o usuário tem acesso válido e o status foi atualizado no state
               }
-            } catch (processError) {
-              console.error('Erro ao processar emails após primeiro login:', processError);
+            } else if (event === 'SIGNED_OUT') {
+              if (isMounted.current) {
+                setCurrentUser(null);
+                setUserStatus(null);
+                setTrialDaysRemaining(null);
+              }
+            } else if (event === 'USER_UPDATED') {
+              if (session && session.user) {
+                if (isMounted.current) {
+                  setCurrentUser(session.user);
+                }
+                await refreshUserStatus();
+              }
+            } else if (event === 'INITIAL_SESSION') {
+              if (session && session.user) {
+                if (isMounted.current) {
+                  setCurrentUser(session.user);
+                }
+                await refreshUserStatus();
+              }
             }
           }
+        );
+        
+        // Verificar sessão inicial
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (session && session.user) {
+          if (isMounted.current) {
+            setCurrentUser(session.user);
+          }
           
-          // Enviar email de boas-vindas
-          sendWelcomeEmail();
+          await refreshUserStatus();
+        } else {
+          if (isMounted.current) {
+            setLoading(false);
+          }
         }
+        
+        return () => {
+          subscription.unsubscribe();
+        };
       } catch (error) {
+        console.error('Erro ao inicializar autenticação:', error);
         if (isMounted.current) {
           setLoading(false);
         }
@@ -403,48 +325,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     
     // Inicializar autenticação
     initializeAuth();
-    
-    // Configurar listener para mudanças de autenticação
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      // Logar todos os eventos para diagnóstico
-      console.log('Evento de autenticação:', event, session ? 'com sessão' : 'sem sessão');
-      
-      // Verificar especificamente eventos de atualização de usuário
-      if (event === 'USER_UPDATED' && session?.user) {
-        console.log('Usuário atualizado:', {
-          id: session.user.id,
-          email: session.user.email,
-          created_at: session.user.created_at,
-          metadados: session.user.user_metadata
-        });
-      }
-      
-      // Ignorar eventos específicos para evitar loops
-      if (event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
-        return;
-      }
-      
-      if (event === 'SIGNED_OUT' || !session) {
-        if (isMounted.current) {
-          setCurrentUser(null);
-          setUserStatus(null);
-          setTrialDaysRemaining(null);
-        }
-        return;
-      }
-      
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        if (!currentUser && isMounted.current) {
-          // Atualizar dados apenas se não tivermos usuário ainda
-          refreshUserStatus();
-        }
-      }
-    });
-    
-    // Limpar listener ao desmontar
-    return () => {
-      subscription.unsubscribe();
-    };
   }, [navigate]);
 
   const login = async (email: string, password: string): Promise<{ error: CustomAuthError | null }> => {
@@ -514,34 +394,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             console.error('Erro ao registrar primeiro login:', updateError);
           } else {
             console.log('Primeiro login registrado para o usuário:', user.id);
-            
-            // Processar imediatamente os emails após primeiro login
-            try {
-              const { data: { session } } = await supabase.auth.getSession();
-              
-              if (session) {
-                console.log('Processando emails após primeiro login para o usuário:', user.id);
-                
-                // Chamar API para processar emails de primeiro login específicos para este usuário
-                const response = await fetch(`${EMAIL_SERVER_URL}/api/email/process-first-login`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`
-                  },
-                  body: JSON.stringify({ userId: user.id })
-                });
-                
-                if (!response.ok) {
-                  console.error('Erro ao processar emails após primeiro login:', response.status, response.statusText);
-                } else {
-                  const result = await response.json();
-                  console.log('Resultado do processamento de emails após primeiro login:', result);
-                }
-              }
-            } catch (processError) {
-              console.error('Erro ao processar emails após primeiro login:', processError);
-            }
           }
         }
       }
@@ -550,9 +402,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       let trialDaysRemaining = null;
       if (dbUser.status === 'TRIAL') {
         const createdAt = new Date(dbUser.created_at);
-        const now = new Date();
-        const diffTime = Math.abs(now.getTime() - createdAt.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        // Resetar as horas para comparar apenas as datas
+        const createdAtDate = new Date(createdAt.getFullYear(), createdAt.getMonth(), createdAt.getDate());
+        const today = new Date();
+        const currentDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        
+        // Calcular diferença em dias sem considerar horas
+        const timeDiff = currentDate.getTime() - createdAtDate.getTime();
+        const diffDays = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
         trialDaysRemaining = Math.max(0, 14 - diffDays);
         
         if (trialDaysRemaining <= 0) {
@@ -671,28 +528,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           console.log('Registro do usuário criado/atualizado com sucesso na tabela users');
         }
         
-        try {
-          // Sincronizar o usuário diretamente com o Brevo
-          console.log('Sincronizando novo usuário TRIAL com o Brevo');
-          
-          const brevoResult = await syncUserWithBrevo({
-            id: data.user.id,
-            email: email,
-            name: fullName || '',
-            whatsapp: whatsapp || '',
-            status: 'TRIAL'
-          });
-          
-          if (brevoResult.success) {
-            console.log('Usuário TRIAL sincronizado com sucesso com o Brevo:', brevoResult.message);
-          } else {
-            console.error('Erro ao sincronizar usuário TRIAL com o Brevo:', brevoResult.error);
-          }
-        } catch (brevoError) {
-          console.error('Exceção ao sincronizar com o Brevo:', brevoError);
-          // Não impedir o fluxo principal se falhar a criação do contato no Brevo
-        }
-        
         // Retornar sucesso, mas sem fazer logout automaticamente
         return { 
           error: null,
@@ -761,8 +596,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     updateUserStatus,
     refreshUserStatus,
     signUp,
-    updateFavoriteRadios,
-    sendWelcomeEmail
+    updateFavoriteRadios
   };
 
   return (
