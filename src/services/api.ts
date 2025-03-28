@@ -1,6 +1,12 @@
 import { supabase } from '../lib/supabase-client';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const MAX_RETRIES = 5;
+const RETRY_DELAY = 1000;
+const CRITICAL_ENDPOINTS = ['/api/radios/status', '/api/dashboard', '/api/ranking'];
+
+// Função para delay com Promessa
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
  * Obtém os cabeçalhos de autenticação para as requisições à API
@@ -23,9 +29,9 @@ export const getAuthHeaders = async () => {
 };
 
 /**
- * Função para fazer requisições GET à API
+ * Função para fazer requisições GET à API com retry
  */
-export const apiGet = async (endpoint: string, params?: Record<string, any>) => {
+export const apiGet = async <T = any>(endpoint: string, params?: Record<string, any>, retryCount = 0): Promise<T> => {
   try {
     const headers = await getAuthHeaders();
     const url = new URL(`${API_BASE_URL}${endpoint}`);
@@ -40,21 +46,128 @@ export const apiGet = async (endpoint: string, params?: Record<string, any>) => 
       });
     }
     
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers,
-      credentials: 'include',
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Falha na requisição: ${response.status}`);
+    // Log para endpoints críticos
+    const isCritical = CRITICAL_ENDPOINTS.some(criticalEndpoint => endpoint.includes(criticalEndpoint));
+    if (isCritical) {
+      console.log(`Requisição para endpoint crítico ${endpoint}, tentativa ${retryCount + 1}/${MAX_RETRIES + 1}`);
     }
     
-    return await response.json();
+    // Adicionar timeout para evitar que a requisição fique pendurada
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 segundos de timeout
+    
+    try {
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers,
+        credentials: 'include',
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      // Tratar especificamente erros 503 (Service Unavailable)
+      if (response.status === 503) {
+        console.warn(`Serviço indisponível (503) para ${endpoint}. Tentativa ${retryCount + 1}/${MAX_RETRIES}`);
+        
+        // Se for um endpoint crítico e ainda não excedemos o número máximo de tentativas
+        if (retryCount < MAX_RETRIES) {
+          // Backoff exponencial para evitar sobrecarregar ainda mais o servidor
+          const backoffDelay = RETRY_DELAY * Math.pow(2, retryCount);
+          console.log(`Aguardando ${backoffDelay}ms antes da próxima tentativa...`);
+          await delay(backoffDelay);
+          return apiGet(endpoint, params, retryCount + 1);
+        }
+        
+        // Se for um endpoint crítico e já tentamos o máximo, podemos retornar um fallback
+        if (isCritical) {
+          console.warn(`Todas as tentativas falharam para ${endpoint}, verificando fallback`);
+          
+          if (endpoint === '/api/radios/status') {
+            // O fallback para o status das rádios está implementado mais abaixo
+            // Deixar o código continuar para chegar lá
+          } else {
+            // Para outros endpoints críticos, lançar erro para que seja tratado no nível da aplicação
+            throw new Error(`Serviço indisponível após ${MAX_RETRIES} tentativas: ${endpoint}`);
+          }
+        }
+      }
+      
+      if (!response.ok) {
+        // Verificar se o endpoint é crítico e merece retry
+        if (isCritical && retryCount < MAX_RETRIES) {
+          console.warn(`Falha na requisição para ${endpoint}: ${response.status}. Tentando novamente em ${RETRY_DELAY}ms...`);
+          const backoffDelay = RETRY_DELAY * Math.pow(2, retryCount);
+          await delay(backoffDelay); // Exponential backoff
+          return apiGet(endpoint, params, retryCount + 1);
+        }
+        
+        // Se não for crítico ou já tentou suficiente, lança o erro
+        throw new Error(`Falha na requisição: ${response.status} para ${endpoint}`);
+      }
+      
+      return await response.json();
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      
+      // Erro de timeout ou conexão
+      if (fetchError.name === 'AbortError') {
+        console.error(`Timeout na requisição para ${endpoint}`);
+        
+        // Para endpoints críticos, tentar novamente
+        if (isCritical && retryCount < MAX_RETRIES) {
+          console.warn(`Timeout na requisição para ${endpoint}. Tentando novamente...`);
+          const backoffDelay = RETRY_DELAY * Math.pow(2, retryCount);
+          await delay(backoffDelay);
+          return apiGet(endpoint, params, retryCount + 1);
+        }
+        
+        throw new Error(`Timeout na requisição para ${endpoint}`);
+      }
+      
+      // Para outros erros de rede em endpoints críticos
+      if (isCritical && retryCount < MAX_RETRIES) {
+        console.warn(`Erro na requisição para ${endpoint}: ${fetchError.message}. Tentando novamente...`);
+        const backoffDelay = RETRY_DELAY * Math.pow(2, retryCount);
+        await delay(backoffDelay);
+        return apiGet(endpoint, params, retryCount + 1);
+      }
+      
+      throw fetchError;
+    }
   } catch (error: any) {
     console.error(`Erro na requisição GET para ${endpoint}:`, error);
+    
+    // Implementação de fallback para endpoints críticos quando todas as retentativas falharem
+    if (endpoint === '/api/radios/status' && retryCount >= MAX_RETRIES) {
+      console.warn('Todas as tentativas falharam para /api/radios/status, retornando dados de fallback');
+      
+      try {
+        // Tentar obter as rádios favoritas do usuário
+        const { data: { user } } = await supabase.auth.getUser();
+        const favoriteRadios = user?.user_metadata?.favorite_radios || [];
+        
+        // Retornar um fallback com status offline para todas as rádios favoritas
+        return favoriteRadios.map((name: string) => ({
+          name,
+          status: 'OFFLINE',
+          lastUpdate: new Date().toISOString(),
+          isFavorite: true
+        }));
+      } catch (fallbackError) {
+        console.error('Erro ao criar dados de fallback:', fallbackError);
+      }
+    }
+    
+    // Para outros endpoints críticos, propagamos o erro para ser tratado pelos componentes
+    if (CRITICAL_ENDPOINTS.some(criticalEndpoint => endpoint.includes(criticalEndpoint)) && retryCount >= MAX_RETRIES) {
+      throw new Error(`Falha no endpoint crítico ${endpoint} após ${MAX_RETRIES} tentativas: ${error.message}`);
+    }
+    
     if (error?.code === 'auth/requires-recent-login') {
-      alert('Sua sessão expirou. Por favor, faça login novamente.');
+      console.warn('Sessão expirada, redirecionando para login...');
+      // Ao invés de usar alert que bloqueia a UI
+      window.location.href = '/login';
     }
     throw error;
   }

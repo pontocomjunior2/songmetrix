@@ -4,6 +4,7 @@ import EmailTemplates from './EmailTemplates';
 import EmailSequences from './EmailSequences';
 import EmailLogs from './EmailLogs';
 import EmailTester from './EmailTester';
+import SendPulseManager from './SendPulseManager';
 
 function classNames(...classes: string[]) {
   return classes.filter(Boolean).join(' ');
@@ -70,6 +71,19 @@ function EmailManager() {
             >
               Testar Envio
             </Tab>
+            <Tab
+              className={({ selected }) =>
+                classNames(
+                  'w-full rounded-lg py-2.5 text-sm font-medium leading-5 transition-colors',
+                  'ring-white/60 ring-offset-2 ring-offset-blue-400 focus:outline-none focus:ring-2',
+                  selected
+                    ? 'bg-white text-blue-700 shadow'
+                    : 'text-gray-600 hover:bg-white/[0.12] hover:text-blue-600'
+                )
+              }
+            >
+              SendPulse
+            </Tab>
           </Tab.List>
           <Tab.Panels className="mt-4">
             <Tab.Panel>
@@ -83,6 +97,9 @@ function EmailManager() {
             </Tab.Panel>
             <Tab.Panel>
               <EmailTester />
+            </Tab.Panel>
+            <Tab.Panel>
+              <SendPulseManager />
             </Tab.Panel>
           </Tab.Panels>
         </Tab.Group>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import { FiSend } from 'react-icons/fi';
 import { supabase } from '../../lib/supabase-client';
+import { sendTestEmail } from '../../utils/brevo-email-service';
 
 type EmailTemplate = {
   id: string;
@@ -11,9 +12,6 @@ type EmailTemplate = {
   active: boolean;
   created_at: string;
 };
-
-// Constante para a URL do servidor de email
-const EMAIL_SERVER_URL = import.meta.env.VITE_EMAIL_SERVER_URL || 'http://localhost:3002';
 
 function EmailTester() {
   const [email, setEmail] = useState('');
@@ -85,45 +83,14 @@ function EmailTester() {
         setDebug(prev => prev + message + '\n');
       };
       
-      debugLog('Obtendo sessão do Supabase...');
-      const sessionData = await supabase.auth.getSession();
-      const accessToken = sessionData.data.session?.access_token;
+      debugLog('Iniciando envio de email com Brevo...');
       
-      if (!accessToken) {
-        throw new Error('Sessão expirada. Faça login novamente.');
-      }
+      // Usar a função sendTestEmail do Brevo
+      const result = await sendTestEmail(email, selectedTemplate);
       
-      debugLog('Enviando requisição para servidor de email...');
-      // Usar a constante EMAIL_SERVER_URL para a API
-      const apiUrl = `${EMAIL_SERVER_URL}/api/email/send-test`;
+      debugLog(`Resultado do envio: ${JSON.stringify(result)}`);
       
-      debugLog(`URL da API: ${apiUrl}`);
-      
-      // Adicionar logs detalhados para depuração
-      const reqBody = { email, templateId: selectedTemplate };
-      debugLog(`Corpo da requisição: ${JSON.stringify(reqBody)}`);
-      
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`
-        },
-        body: JSON.stringify(reqBody)
-      });
-      
-      debugLog(`Resposta recebida: status ${response.status}`);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        debugLog(`Erro no servidor: ${response.status}\n${errorText}`);
-        throw new Error(`Erro no servidor: ${response.status}\n${errorText}`);
-      }
-      
-      const data = await response.json();
-      debugLog(`Dados da resposta: ${JSON.stringify(data)}`);
-      
-      if (data.success) {
+      if (result.success) {
         toast.success('Email de teste enviado com sucesso!', {
           position: "top-right",
           autoClose: 5000,
@@ -133,7 +100,7 @@ function EmailTester() {
           draggable: true,
         });
       } else {
-        toast.error(`Erro ao enviar email: ${data.message || 'Verifique os logs para mais detalhes'}`, {
+        toast.error(`Erro ao enviar email: ${result.error || 'Verifique os logs para mais detalhes'}`, {
           position: "top-right",
           autoClose: 5000,
           hideProgressBar: false,
@@ -218,7 +185,7 @@ function EmailTester() {
         
         <div className="mt-4 text-sm text-gray-500">
           <p className="mb-2">
-            <strong>Nota:</strong> Este teste enviará um email real para o endereço informado.
+            <strong>Nota:</strong> Este teste enviará um email real para o endereço informado usando o Brevo SMTP.
           </p>
           <p>
             As variáveis do template serão substituídas por valores de teste.

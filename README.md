@@ -203,6 +203,21 @@ Este script preencherá o campo `last_sign_in_at` para todos os usuários existe
 
 Essa alteração permite rastrear o último acesso de cada usuário e exibir essa informação na tela de administração.
 
+## Desenvolvimento
+
+Para iniciar o ambiente de desenvolvimento completo:
+
+```bash
+npm run dev:all
+```
+
+Este comando iniciará:
+- O frontend (Vite)
+- O servidor principal
+- O servidor de email SendPulse
+
+Para mais detalhes sobre o ambiente de desenvolvimento, consulte [README-DESENVOLVIMENTO.md](README-DESENVOLVIMENTO.md).
+
 ---
 
 <p align="center">

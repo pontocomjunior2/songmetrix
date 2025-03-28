@@ -82,12 +82,12 @@ export default function PendingApproval() {
           </div>
 
           <h2 className="text-4xl font-bold text-white mb-6 text-center">
-            Parabéns! Você ganhou 7 dias de teste grátis! 🎉
+            Parabéns! Você ganhou 14 dias de teste grátis! 🎉
           </h2>
 
           <div className="bg-gradient-to-r from-blue-500/20 to-indigo-500/20 p-6 rounded-xl mb-8 border border-blue-400/30">
             <p className="text-2xl text-white/90 mb-4 text-center">
-              Sua conta foi criada com sucesso! Para ativar seus 7 dias gratuitos, basta confirmar seu email.
+              Sua conta foi criada com sucesso! Para ativar seus 14 dias gratuitos, basta confirmar seu email.
             </p>
             <p className="text-xl text-white/90 text-center font-semibold">
               ✉️ Verifique sua caixa de entrada agora!

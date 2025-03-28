@@ -4,7 +4,7 @@ import { UserStatus } from '../../lib/user-status';
 import Loading from '../Common/Loading';
 import { ErrorAlert } from '../Common/Alert';
 import UserAvatar from '../Common/UserAvatar';
-import { toast as reactToast } from 'react-toastify'; // Importing toast for notifications
+import { toast as reactToast, TypeOptions } from 'react-toastify'; // Adicionando TypeOptions
 import { Trash2, Clock, RefreshCw, MailCheck, Database, Calendar } from 'lucide-react';
 import { supabase } from '../../lib/supabase-client';
 import { FaEdit } from 'react-icons/fa';
@@ -56,6 +56,42 @@ interface SyncEventData {
 }
 
 export default function UserList() {
+  // Injetar CSS para o efeito de linha sincronizando
+  useEffect(() => {
+    // Criar um elemento de estilo
+    const styleEl = document.createElement('style');
+    // Definir o CSS para o efeito pulsante
+    styleEl.innerHTML = `
+      .syncing-row {
+        position: relative;
+        animation: pulseBackground 2s infinite ease-in-out;
+      }
+      
+      @keyframes pulseBackground {
+        0% { background-color: rgba(59, 130, 246, 0.05); }
+        50% { background-color: rgba(59, 130, 246, 0.2); }
+        100% { background-color: rgba(59, 130, 246, 0.05); }
+      }
+      
+      .dark .syncing-row {
+        animation: pulseBackgroundDark 2s infinite ease-in-out;
+      }
+      
+      @keyframes pulseBackgroundDark {
+        0% { background-color: rgba(30, 64, 175, 0.1); }
+        50% { background-color: rgba(30, 64, 175, 0.3); }
+        100% { background-color: rgba(30, 64, 175, 0.1); }
+      }
+    `;
+    // Adicionar ao cabeçalho do documento
+    document.head.appendChild(styleEl);
+    
+    // Limpar ao desmontar
+    return () => {
+      document.head.removeChild(styleEl);
+    };
+  }, []);
+
   const [users, setUsers] = useState<User[]>([]);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
@@ -72,6 +108,8 @@ export default function UserList() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const { updateUserStatus, currentUser, userStatus } = useAuth();
   const [syncingUsers, setSyncingUsers] = useState<string[]>([]);
+  // Adicionar novo estado para armazenar resultados de sincronização individual
+  const [syncResults2, setSyncResults2] = useState<{[key: string]: {success: boolean, message?: string, error?: string} | null}>({});
 
   useEffect(() => {
     loadUsers();
@@ -194,13 +232,25 @@ export default function UserList() {
         })
       });
       
-      const result = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(result.error || 'Erro ao atualizar status');
+      // Verificar se a resposta tem um corpo JSON válido
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        const result = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(result.error || `Erro ao atualizar status: ${response.statusText}`);
+        }
+        
+        console.log('Resposta do servidor:', result);
+      } else {
+        // Se a resposta não contém JSON, lemos como texto
+        const textResponse = await response.text();
+        console.log('Resposta do servidor (não-JSON):', textResponse);
+        
+        if (!response.ok) {
+          throw new Error(`Erro ao atualizar status: ${response.status} ${response.statusText}`);
+        }
       }
-      
-      console.log('Resposta do servidor:', result);
       
       // Atualizar a lista de usuários localmente
       setUsers(users.map(user => 
@@ -231,13 +281,18 @@ export default function UserList() {
       setSyncResults(null);
       setError(null);
       
+      // Obter a sessão atual para incluir o token de autenticação
+      const session = await supabase.auth.getSession();
+      if (!session.data.session) {
+        throw new Error('Sessão não encontrada');
+      }
+      
       // Usar o novo endpoint do SendPulse
       const response = await fetch('/api/sendpulse/sync-users', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-User-Id': localStorage.getItem('userId') || '',
-          'X-User-Role': localStorage.getItem('userRole') || ''
+          'Authorization': `Bearer ${session.data.session.access_token}`
         }
       });
       
@@ -333,7 +388,41 @@ export default function UserList() {
 
   const handleSyncUserWithSendPulse = async (user: User) => {
     try {
+      // Limpar resultados anteriores para este usuário
+      setSyncResults2(prev => ({
+        ...prev,
+        [user.id]: null
+      }));
+      
+      // Marcar usuário como em processo de sincronização
       setSyncingUsers((prev) => [...prev, user.id]);
+      
+      // Adicionar classe visual à linha da tabela (será manipulado via CSS)
+      const userRow = document.getElementById(`user-row-${user.id}`);
+      if (userRow) {
+        userRow.classList.add('syncing-row');
+      }
+      
+      // Mostrar toast de progresso claro e com ícone
+      const toastId = reactToast.loading(
+        <div className="flex items-center gap-2">
+          <span className="flex-shrink-0">
+            <MailCheck className="w-5 h-5 text-blue-500 animate-pulse" />
+          </span>
+          <div>
+            <p className="font-medium">Sincronizando usuário</p>
+            <p className="text-sm text-gray-500">{user.email}</p>
+          </div>
+        </div>, 
+        {
+          position: "top-right",
+          autoClose: false,
+          hideProgressBar: false,
+          closeOnClick: false,
+          pauseOnHover: true,
+          draggable: false,
+        }
+      );
       
       const syncData = {
         id: user.id,
@@ -343,34 +432,77 @@ export default function UserList() {
         whatsapp: user.whatsapp || ''
       };
       
+      console.log('Enviando dados para sincronização:', syncData);
+      
       // Usar o método do SendPulse
       const result = await syncUserWithSendPulse(syncData);
       
+      // Atualizar com o resultado (corrigido para evitar undefined)
+      setSyncResults2(prev => ({
+        ...prev,
+        [user.id]: {
+          success: result.success,
+          message: result.message,
+          error: result.error
+        }
+      }));
+      
+      // Atualizar o toast com o resultado e informações mais detalhadas
       if (result.success) {
-        reactToast.success(`Usuário ${user.email} sincronizado com o SendPulse com sucesso.`, {
-          position: "top-right",
+        reactToast.update(toastId, {
+          render: (
+            <div className="flex items-center gap-2">
+              <span className="flex-shrink-0">
+                <MailCheck className="w-5 h-5 text-green-500" />
+              </span>
+              <div>
+                <p className="font-medium">Sincronização concluída</p>
+                <p className="text-sm text-gray-500">{user.email}</p>
+                <p className="text-xs text-green-600 mt-1">
+                  {result.message || 'Usuário sincronizado com sucesso!'}
+                </p>
+              </div>
+            </div>
+          ),
+          type: 'success' as TypeOptions,
           autoClose: 5000,
           hideProgressBar: false,
           closeOnClick: true,
           pauseOnHover: true,
           draggable: true,
-          progress: undefined,
-          theme: "light",
+          isLoading: false
         });
+        
+        console.log('Resposta de sucesso:', result);
       } else {
-        reactToast.error(`Erro ao sincronizar usuário ${user.email} com SendPulse: ${result.error || 'Erro desconhecido'}`, {
-          position: "top-right",
-          autoClose: 5000,
+        reactToast.update(toastId, {
+          render: (
+            <div className="flex items-center gap-2">
+              <span className="flex-shrink-0">
+                <MailCheck className="w-5 h-5 text-red-500" />
+              </span>
+              <div>
+                <p className="font-medium">Erro na sincronização</p>
+                <p className="text-sm text-gray-500">{user.email}</p>
+                <p className="text-xs text-red-600 mt-1">
+                  {result.error || 'Erro desconhecido'}
+                </p>
+              </div>
+            </div>
+          ),
+          type: 'error' as TypeOptions,
+          autoClose: 8000,
           hideProgressBar: false,
           closeOnClick: true,
           pauseOnHover: true,
           draggable: true,
-          progress: undefined,
-          theme: "light",
+          isLoading: false
         });
+        
+        console.error('Erro na sincronização:', result.error);
       }
     } catch (error) {
-      console.error('Erro ao sincronizar usuário com SendPulse:', error);
+      console.error('Exceção ao sincronizar usuário com SendPulse:', error);
       reactToast.error(`Erro ao sincronizar usuário ${user.email} com SendPulse: ${error instanceof Error ? error.message : 'Erro desconhecido'}`, {
         position: "top-right",
         autoClose: 5000,
@@ -378,11 +510,23 @@ export default function UserList() {
         closeOnClick: true,
         pauseOnHover: true,
         draggable: true,
-        progress: undefined,
-        theme: "light",
       });
+      
+      // Corrigir para uso de objeto explícito em vez de undefined
+      setSyncResults2(prev => ({
+        ...prev,
+        [user.id]: {
+          success: false,
+          error: error instanceof Error ? error.message : 'Erro desconhecido'
+        }
+      }));
     } finally {
+      // Limpar sincronização e remover classe visual
       setSyncingUsers((prev) => prev.filter(id => id !== user.id));
+      const userRow = document.getElementById(`user-row-${user.id}`);
+      if (userRow) {
+        userRow.classList.remove('syncing-row');
+      }
     }
   };
 
@@ -563,6 +707,28 @@ export default function UserList() {
     );
   };
 
+  // Modificar o estilo da linha quando estiver sincronizando
+  const getRowClassName = (user: User) => {
+    let baseClass = "bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600";
+    
+    // Adicionar classe para usuário em sincronização
+    if (syncingUsers.includes(user.id)) {
+      baseClass += " bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800";
+    }
+    
+    // Adicionar classe baseada no resultado da sincronização
+    const syncResult = syncResults2[user.id];
+    if (syncResult) {
+      if (syncResult.success) {
+        baseClass += " bg-green-50 dark:bg-green-900/20";
+      } else {
+        baseClass += " bg-red-50 dark:bg-red-900/20";
+      }
+    }
+    
+    return baseClass;
+  };
+
   if (loading) {
     return <Loading size="large" message="Carregando usuários..." />;
   }
@@ -710,7 +876,8 @@ export default function UserList() {
               {filteredUsers.map(user => (
                 <tr 
                   key={user.id} 
-                  className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
+                  id={`user-row-${user.id}`}
+                  className={getRowClassName(user)}
                 >
                   <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
                     <div className="flex items-center">
@@ -835,15 +1002,45 @@ export default function UserList() {
                         </button>
                       )}
                       
-                      {/* Botão para sincronizar usuário individual com SendPulse */}
+                      {/* Botão para sincronizar usuário individual com SendPulse - com indicação de estado */}
                       <button
                         onClick={() => handleSyncUserWithSendPulse(user)}
                         disabled={syncingUsers.includes(user.id)}
-                        className="p-1 sm:p-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md"
-                        title="Sincronizar com SendPulse"
+                        className={`p-1 sm:p-2 rounded-md flex items-center justify-center ${
+                          syncingUsers.includes(user.id)
+                            ? 'text-white bg-blue-500 animate-pulse'
+                            : syncResults2[user.id]?.success 
+                              ? 'text-white bg-green-500'
+                              : syncResults2[user.id] && !syncResults2[user.id]?.success
+                                ? 'text-white bg-red-500'
+                                : 'text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30'
+                        }`}
+                        title={
+                          syncingUsers.includes(user.id) 
+                            ? "Sincronizando com SendPulse..." 
+                            : syncResults2[user.id]?.success 
+                              ? "Sincronizado com sucesso" 
+                              : syncResults2[user.id]?.error 
+                                ? `Erro: ${syncResults2[user.id]?.error}` 
+                                : "Sincronizar com SendPulse"
+                        }
                       >
-                        <MailCheck className="w-4 h-4 sm:w-5 sm:h-5" />
+                        <MailCheck className={`w-4 h-4 sm:w-5 sm:h-5 ${syncingUsers.includes(user.id) ? 'animate-pulse' : ''}`} />
+                        {syncingUsers.includes(user.id) && (
+                          <span className="ml-1 text-xs hidden sm:inline">Sincronizando...</span>
+                        )}
                       </button>
+                      
+                      {/* Exibir um ícone de status após a sincronização */}
+                      {!syncingUsers.includes(user.id) && syncResults2[user.id] && (
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          syncResults2[user.id]?.success 
+                            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+                            : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                        }`}>
+                          {syncResults2[user.id]?.success ? 'Sincronizado' : 'Falhou'}
+                        </span>
+                      )}
                     </div>
                   </td>
                 </tr>
