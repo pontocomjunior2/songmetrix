@@ -17,6 +17,7 @@ import RadioAbbreviations from './components/Admin/RadioAbbreviations';
 import StreamsManager from './components/Admin/StreamsManager';
 import RelayStreamsManager from './components/Admin/RelayStreamsManager';
 import EmailManager from './components/Admin/EmailManager';
+import RadioSuggestionsAdmin from './components/Admin/RadioSuggestions';
 import PaymentSuccess from './components/Payment/PaymentSuccess';
 import PaymentCanceled from './components/Payment/PaymentCanceled';
 import Relatorios from './components/Relatorios';
@@ -72,6 +73,11 @@ function App() {
             <Route path="admin/relay-streams" element={
               <AdminRoute>
                 <RelayStreamsManager />
+              </AdminRoute>
+            } />
+            <Route path="admin/radio-suggestions" element={
+              <AdminRoute>
+                <RadioSuggestionsAdmin />
               </AdminRoute>
             } />
             <Route path="admin/emails" element={

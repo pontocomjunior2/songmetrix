@@ -6,6 +6,7 @@ import { CustomUser } from '../../types/customUser';
 import { useNavigate, Outlet } from 'react-router-dom';
 import SidebarFixed from './SidebarFixed';
 import UserAvatar from '../Common/UserAvatar';
+import SuggestRadioForm from '../Radios/SuggestRadioForm';
 
 interface LayoutProps {
   currentView: string;
@@ -116,6 +117,11 @@ const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
             </div>
 
             <div className="flex items-center gap-2">
+              {/* Suggest Radio Button */}
+              <div className="hidden md:block">
+                <SuggestRadioForm />
+              </div>
+
               <button
                 onClick={toggleTheme}
                 className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200"
@@ -150,6 +156,14 @@ const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
                             {currentUser.email}
                           </div>
                         )}
+                        
+                        {/* Mobile Only: Suggest Radio */}
+                        {isMobile && (
+                          <div className="px-3 py-2">
+                            <SuggestRadioForm />
+                          </div>
+                        )}
+                        
                         <button 
                           onClick={handleLogout}
                           className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-red-600 dark:text-red-400"
