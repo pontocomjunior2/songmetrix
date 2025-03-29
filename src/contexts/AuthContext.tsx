@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase-client';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { syncUserWithBrevo } from '../utils/brevo-service';
+import { getAuthRedirectOptions } from '../lib/supabase-redirect';
 
 // Custom error type that includes both Auth and Postgrest errors
 class CustomAuthError extends AuthError {
@@ -643,17 +644,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return { error: { message: 'Email e senha são obrigatórios' } };
       }
 
+      // Obter opções de redirecionamento e incluir dados do usuário
+      const authOptions = getAuthRedirectOptions({
+        fullName: fullName,
+        whatsapp: whatsapp,
+        status: 'TRIAL'
+      });
+
+      console.log('Opções de autenticação para signUp:', authOptions);
+
       // Realizar cadastro no Supabase
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          data: {
-            fullName: fullName,
-            whatsapp: whatsapp,
-            status: 'TRIAL'
-          }
-        }
+        options: authOptions
       });
 
       if (error) throw error;

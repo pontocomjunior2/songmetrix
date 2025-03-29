@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { EmailInput, PasswordInput } from '../Common/Input';
@@ -18,6 +18,29 @@ export default function Register() {
   const [loading, setLoading] = useState(false);
   const { signUp } = useAuth();
   const navigate = useNavigate();
+
+  // Função para verificar a configuração do projeto no Supabase
+  const checkSupabaseConfig = async () => {
+    try {
+      const { data: configData, error: configError } = await supabase.functions.invoke('get-site-config', {
+        body: { check: 'redirect_url' }
+      });
+      
+      if (configError) {
+        console.error('Erro ao verificar configuração do Supabase:', configError);
+        return;
+      }
+      
+      console.log('Configuração do site no Supabase:', configData);
+    } catch (error) {
+      console.error('Erro ao chamar função Edge:', error);
+    }
+  };
+
+  // Verificar configuração ao montar o componente
+  useEffect(() => {
+    checkSupabaseConfig().catch(console.error);
+  }, []);
 
   const validatePassword = (password: string): boolean => {
     // Pelo menos 6 caracteres, 1 caractere especial e 1 letra maiúscula
@@ -49,11 +72,17 @@ export default function Register() {
     try {
       setError('');
       setLoading(true);
+      
+      console.log('Iniciando processo de cadastro de usuário...');
+      console.log('Email:', email);
+      console.log('URL de redirecionamento configurada para:', 'https://songmetrix.com.br/login');
 
       // Usar a função signUp do AuthContext
       const { error: signUpError, message } = await signUp(email, password, fullName, whatsapp);
 
       if (signUpError) throw signUpError;
+
+      console.log('Cadastro realizado com sucesso no Supabase. Usuário receberá email com link para https://songmetrix.com.br/login');
 
       // O registro na tabela users já foi criado pelo AuthContext.signUp
       
