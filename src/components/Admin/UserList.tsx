@@ -164,6 +164,7 @@ export default function UserList() {
   
       setLoading(true);
       setUpdatingUserId(userId); // Desabilitar o controle durante a atualização
+      setError(null);
       
       // Encontrar o usuário atual para referência
       const userToUpdate = users.find(u => u.id === userId);
@@ -194,10 +195,39 @@ export default function UserList() {
         })
       });
       
-      const result = await response.json();
-      
+      // Verificar se a resposta é válida antes de tentar fazer parse do JSON
       if (!response.ok) {
-        throw new Error(result.error || 'Erro ao atualizar status');
+        const errorText = await response.text();
+        console.error('Resposta de erro do servidor:', response.status, errorText);
+        
+        let errorMessage = `Erro do servidor: ${response.status}`;
+        try {
+          // Tentar extrair mensagem de erro do JSON, se existir
+          const errorData = JSON.parse(errorText);
+          if (errorData.error) {
+            errorMessage = errorData.error;
+          }
+        } catch (parseError) {
+          // Se não conseguir fazer parse do JSON, usar o texto original
+          errorMessage = errorText || `Erro ${response.status}`;
+        }
+        
+        throw new Error(errorMessage);
+      }
+      
+      // Verificar se há conteúdo antes de fazer parse do JSON
+      const responseText = await response.text();
+      if (!responseText || responseText.trim() === '') {
+        console.warn('Resposta do servidor está vazia');
+        throw new Error('Resposta vazia do servidor');
+      }
+      
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (jsonError) {
+        console.error('Erro ao processar resposta JSON:', jsonError, 'Texto da resposta:', responseText);
+        throw new Error('Erro ao processar resposta do servidor');
       }
       
       console.log('Resposta do servidor:', result);
