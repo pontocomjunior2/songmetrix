@@ -7,15 +7,6 @@ import { ErrorAlert } from '../Common/Alert';
 import Loading from '../Common/Loading';
 import { supabase } from '../../lib/supabase-client';
 import Input from '../Common/Input';
-import { FiLoader } from 'react-icons/fi';
-import { CgAsterisk } from 'react-icons/cg';
-
-// Função para validar senha
-const validatePassword = (password: string): boolean => {
-  // Pelo menos 6 caracteres, 1 caractere especial e 1 letra maiúscula
-  const passwordRegex = /^(?=.*[A-Z])(?=.*[!@#$%^&*])(?=.{6,})/;
-  return passwordRegex.test(password);
-};
 
 export default function Register() {
   const [email, setEmail] = useState('');
@@ -25,10 +16,14 @@ export default function Register() {
   const [whatsapp, setWhatsapp] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
   const { signUp } = useAuth();
   const navigate = useNavigate();
+
+  const validatePassword = (password: string): boolean => {
+    // Pelo menos 6 caracteres, 1 caractere especial e 1 letra maiúscula
+    const passwordRegex = /^(?=.*[A-Z])(?=.*[!@#$%^&*])(?=.{6,})/;
+    return passwordRegex.test(password);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,36 +51,47 @@ export default function Register() {
       setLoading(true);
 
       // Usar a função signUp do AuthContext
-      const { error: signUpError, should_redirect, message } = await signUp(email, password, fullName, whatsapp);
+      const { error: signUpError, message } = await signUp(email, password, fullName, whatsapp);
 
       if (signUpError) throw signUpError;
 
-      // Atualizar os metadados do usuário explicitamente para garantir o status TRIAL
-      const { error: updateError } = await supabase.auth.updateUser({
-        data: { status: 'TRIAL' }
-      });
+      // O registro na tabela users já foi criado pelo AuthContext.signUp
       
-      if (updateError) {
-        console.error('Erro ao atualizar metadados do usuário:', updateError);
-        // Continuar mesmo com erro, pois o usuário foi criado
+      try {
+        // Atualizar os metadados do usuário explicitamente para garantir o status TRIAL
+        const { error: updateError } = await supabase.auth.updateUser({
+          data: { status: 'TRIAL' }
+        });
+        
+        if (updateError) {
+          console.error('Erro ao atualizar metadados do usuário:', updateError);
+          // Continuar mesmo com erro, pois o usuário foi criado
+        }
+      } catch (metadataError) {
+        console.error('Erro ao atualizar metadados:', metadataError);
+        // Continuar mesmo com erro
       }
+      
+      // Não fazer logout após o cadastro, isso interrompe o fluxo
+      // O usuário será direcionado para confirmar o email e então fazer login
 
-      // Só fazer logout se should_redirect não for explicitamente false
-      if (should_redirect !== false) {
-        // Deslogar o usuário após o registro
-        await supabase.auth.signOut();
-      }
-      
       // Personalizar a mensagem se fornecida
       const customMessage = message || 'Por favor, verifique seu email para confirmar seu cadastro. Após a confirmação, você terá acesso ao sistema com 14 dias gratuitos para testar todas as funcionalidades. Se não encontrar o email, verifique sua caixa de spam.';
       
-      // Navigate to pending-approval
+      setLoading(false); // Desativar o loading antes de navegar
+      
+      console.log('Redirecionando para pending-approval após cadastro bem-sucedido');
+      
+      // Navigate to pending-approval imediatamente
       navigate('/pending-approval', { 
         state: { 
           message: customMessage 
         },
         replace: true  // Isso garante que o usuário não possa voltar para a página anterior
       });
+      
+      console.log(`Redirecionamento executado para: /pending-approval`);
+      
     } catch (error: any) {
       console.error('Erro no registro:', error);
       let errorMessage = 'Falha ao criar conta. Por favor, tente novamente.';
@@ -119,14 +125,9 @@ export default function Register() {
       }
 
       setError(errorMessage);
-    } finally {
       setLoading(false);
     }
   };
-
-  if (loading) {
-    return <Loading size="large" message="Criando sua conta..." />;
-  }
 
   return (
     <div className="min-h-screen flex">

@@ -76,20 +76,7 @@ export const authenticateBasicUser = async (req, res, next) => {
       const diffTime = Math.abs(now.getTime() - createdAt.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       const isNewUser = diffDays <= 14;
-      
-      // Verificar se o usuário já tem um status nos metadados
-      // Novos usuários sempre entram como TRIAL, exceto se já tiverem um status
-      // definido nos metadados (possivelmente pelo ADMIN)
-      let initialStatus = 'INATIVO';
-      
-      if (isNewUser) {
-        initialStatus = 'TRIAL';
-      }
-      
-      // Status predefinido nos metadados tem prioridade (pode ter sido definido pelo ADMIN)
-      if (userStatus === 'ADMIN' || userStatus === 'ATIVO') {
-        initialStatus = userStatus;
-      }
+      const initialStatus = isNewUser ? 'TRIAL' : 'INATIVO';
       
       console.log(`Criando usuário com status ${initialStatus} (dias desde criação: ${diffDays})`);
       
@@ -156,20 +143,12 @@ export const authenticateBasicUser = async (req, res, next) => {
     
     console.log(`User ${user.id} created ${diffDays} days ago. Is new user: ${isNewUser}`);
 
+    // Determinar o status final
     let finalStatus;
     
-    // Se o usuário é ADMIN em qualquer lugar, deve permanecer ADMIN (prioridade máxima)
-    if (userStatus === 'ADMIN' || dbUser?.status === 'ADMIN') {
-      finalStatus = 'ADMIN';
-      console.log('Usuário é ADMIN, status mantido:', user.id);
-    }
-    // Se o usuário é ATIVO em qualquer lugar, deve permanecer ATIVO (decisão do ADMIN deve ser respeitada)
-    else if (userStatus === 'ATIVO' || dbUser?.status === 'ATIVO') {
-      finalStatus = 'ATIVO';
-      console.log('Usuário é ATIVO (definido pelo ADMIN), status mantido:', user.id);
-    }
-    // Verificar se o usuário é novo (< 14 dias) e não tem status específico, deve ser TRIAL
-    else if (isNewUser && (!userStatus || userStatus === 'TRIAL' || userStatus === 'INATIVO')) {
+    // Verificar se o usuário é novo (< 14 dias) e não é ADMIN/ATIVO, deve ser TRIAL
+    // Essa condição agora tem precedência sobre as condições de INATIVO
+    if (isNewUser && (!userStatus || userStatus === 'TRIAL' || userStatus === 'INATIVO')) {
       finalStatus = 'TRIAL';
       console.log('Novo usuário detectado. Definindo status como TRIAL:', user.id);
       console.log('Detalhes do usuário novo:', {
@@ -371,20 +350,7 @@ export const authenticateUser = async (req, res, next) => {
       const diffTime = Math.abs(now.getTime() - createdAt.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       const isNewUser = diffDays <= 14;
-      
-      // Verificar se o usuário já tem um status nos metadados
-      // Novos usuários sempre entram como TRIAL, exceto se já tiverem um status
-      // definido nos metadados (possivelmente pelo ADMIN)
-      let initialStatus = 'INATIVO';
-      
-      if (isNewUser) {
-        initialStatus = 'TRIAL';
-      }
-      
-      // Status predefinido nos metadados tem prioridade (pode ter sido definido pelo ADMIN)
-      if (userStatus === 'ADMIN' || userStatus === 'ATIVO') {
-        initialStatus = userStatus;
-      }
+      const initialStatus = isNewUser ? 'TRIAL' : 'INATIVO';
       
       console.log(`Criando usuário com status ${initialStatus} (dias desde criação: ${diffDays})`);
       
@@ -431,26 +397,25 @@ export const authenticateUser = async (req, res, next) => {
     // Determinar o status correto
     let correctStatus;
 
-    // Se o usuário é ADMIN em qualquer lugar, manter como ADMIN (prioridade máxima)
-    if (userStatus === 'ADMIN' || dbUser?.status === 'ADMIN') {
+    // Se o usuário é novo, deve ser TRIAL (prioridade máxima)
+    if (isNewUser) {
+      correctStatus = 'TRIAL';
+      console.log('Usuário novo, definindo status como TRIAL');
+    } 
+    // Se o usuário é ADMIN em qualquer lugar, manter como ADMIN
+    else if (userStatus === 'ADMIN' || dbUser?.status === 'ADMIN') {
       correctStatus = 'ADMIN';
       console.log('Usuário é ADMIN, mantendo status');
     }
-    // Se o usuário é ATIVO em qualquer lugar, manter como ATIVO (decisão do ADMIN deve ser respeitada)
+    // Se o usuário é ATIVO em qualquer lugar, manter como ATIVO
     else if (userStatus === 'ATIVO' || dbUser?.status === 'ATIVO') {
       correctStatus = 'ATIVO';
-      console.log('Usuário é ATIVO, mantendo status (definido pelo ADMIN)');
+      console.log('Usuário é ATIVO, mantendo status');
     }
-    // Se o usuário é novo e não tem status definido, ou é TRIAL e ainda está no período válido
-    else if ((isNewUser && (!userStatus || !dbUser?.status)) || 
-             ((userStatus === 'TRIAL' || dbUser?.status === 'TRIAL') && isNewUser)) {
+    // Se o usuário tem status TRIAL em qualquer lugar e ainda está no período de trial, manter como TRIAL
+    else if ((userStatus === 'TRIAL' || dbUser?.status === 'TRIAL') && isNewUser) {
       correctStatus = 'TRIAL';
-      console.log('Usuário está no período TRIAL válido');
-    }
-    // Se o usuário tem status TRIAL mas o período expirou, mudar para INATIVO
-    else if ((userStatus === 'TRIAL' || dbUser?.status === 'TRIAL') && !isNewUser) {
-      correctStatus = 'INATIVO';
-      console.log('Período TRIAL expirou, alterando para INATIVO');
+      console.log('Usuário está no período TRIAL, mantendo status');
     }
     // Em todos os outros casos, o usuário é INATIVO
     else {

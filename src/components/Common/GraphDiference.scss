@@ -1,0 +1,87 @@
+.graph-container {
+  width: 100%;
+  background: var(--background);
+  border-radius: 12px;
+  padding: 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  margin-top: 1rem;
+  transition: all 0.3s ease;
+  overflow: hidden;
+
+  &:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+
+  .recharts-cartesian-grid-horizontal line,
+  .recharts-cartesian-grid-vertical line {
+    stroke: var(--border);
+    stroke-opacity: 0.2;
+  }
+
+  .recharts-xAxis .recharts-cartesian-axis-tick-value,
+  .recharts-yAxis .recharts-cartesian-axis-tick-value {
+    fill: var(--muted-foreground);
+    font-size: 0.75rem;
+  }
+}
+
+.custom-tooltip {
+  background-color: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+
+  .label {
+    margin: 0;
+    font-weight: 500;
+    font-size: 0.75rem;
+    color: var(--popover-foreground);
+  }
+
+  .value {
+    margin: 0.25rem 0 0;
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--popover-foreground);
+  }
+}
+
+.graph-empty {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 300px;
+  width: 100%;
+  background: var(--background);
+  border-radius: 12px;
+  padding: 1rem;
+  border: 1px dashed var(--border);
+  
+  p {
+    color: var(--muted-foreground);
+    font-size: 0.875rem;
+  }
+}
+
+/* Dark mode adjustments */
+[data-theme="dark"] {
+  .graph-container {
+    background: var(--card);
+    
+    .recharts-cartesian-grid-horizontal line,
+    .recharts-cartesian-grid-vertical line {
+      stroke-opacity: 0.1;
+    }
+  }
+  
+  .custom-tooltip {
+    background-color: var(--card);
+    border-color: var(--border);
+  }
+  
+  .graph-empty {
+    background: var(--card);
+    border-color: var(--border);
+  }
+} 

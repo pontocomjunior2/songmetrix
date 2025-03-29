@@ -4,7 +4,6 @@ import { UserStatus } from '../../lib/auth';
 import { Home, BarChart3, FileText, Users, Type, Radio, LogOut, Clock, X, ChevronDown, Mail } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
-import WhatsAppContact from '../Common/WhatsAppContact';
 
 interface SidebarProps {
   currentView: string;
@@ -80,10 +79,6 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
         {
           name: 'Relay',
           view: 'admin/relay-streams'
-        },
-        {
-          name: 'Sugestões',
-          view: 'admin/radio-suggestions'
         }
       ]
     },
@@ -203,17 +198,9 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
         ))}
       </nav>
 
-      {/* WhatsApp Contact */}
-      <div className="px-4 py-3 mt-auto border-t border-white/10">
-        <div className="mb-2 text-white/70 text-xs uppercase tracking-wider px-4">
-          Precisa de ajuda?
-        </div>
-        <WhatsAppContact className="px-4" />
-      </div>
-
       {/* User Profile and Logout - Only on Mobile */}
       {isMobile && currentUser && (
-        <div className="relative z-20 px-4 py-4 border-t border-white/10">
+        <div className="relative z-20 px-4 py-4 mt-auto border-t border-white/10">
           <button
             onClick={async () => {
               try {

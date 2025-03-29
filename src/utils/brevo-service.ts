@@ -54,4 +54,43 @@ export async function syncUserWithSendPulse(userData: UserData): Promise<SyncRes
 }
 
 // Alias para compatibilidade com o código existente
-export const syncUserWithBrevo = syncUserWithSendPulse; 
+export const syncUserWithBrevo = async (userData: {
+  id: string;
+  email: string;
+  name?: string;
+  whatsapp?: string;
+  status?: string;
+}) => {
+  // Verificar se o processo está rodando no navegador
+  if (typeof window !== 'undefined') {
+    // Executar de forma assíncrona e não bloqueante
+    setTimeout(async () => {
+      try {
+        console.log('Tentando sincronizar com Brevo em segundo plano:', userData.email);
+        
+        // Tentar fazer a sincronização em segundo plano sem bloquear o fluxo principal
+        const response = await fetch('/api/brevo/sync-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(userData)
+        });
+        
+        if (response.ok) {
+          console.log('Usuário sincronizado com Brevo em segundo plano:', userData.email);
+        } else {
+          console.error('Falha ao sincronizar com Brevo em segundo plano:', await response.text());
+        }
+      } catch (error) {
+        console.error('Erro ao sincronizar com Brevo em segundo plano:', error);
+      }
+    }, 100);
+  }
+  
+  // Retornar sucesso imediato, não bloqueando o fluxo principal
+  return {
+    success: true,
+    message: 'Sincronização iniciada em background'
+  };
+}; 
