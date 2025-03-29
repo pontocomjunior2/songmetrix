@@ -6,6 +6,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import executionsRoutes from './routes/executions.js';
 import radiosRoutes from './routes/radios.js';
 import relayStreamsRoutes from './routes/relay-streams.js';
+import usersRoutes from './routes/users.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import pkg from 'pg';
@@ -44,6 +45,9 @@ export default function registerRoutes(app) {
 
   // Registrar as rotas de relay streams
   app.use('/api/relay-streams', relayStreamsRoutes);
+  
+  // Registrar as rotas de usuários
+  app.use('/api/users', usersRoutes);
   
   // Rota de diagnóstico para verificar a conexão com o banco de dados
   app.get('/api/diagnostico', async (req, res) => {

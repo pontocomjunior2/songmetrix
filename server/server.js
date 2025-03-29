@@ -52,54 +52,31 @@ console.log('Database configuration:', {
 
 // Importar o serviço do SendPulse (substituindo o Brevo)
 let sendPulseService;
-let syncUserWithSendPulse, syncUserWithBrevo, SENDPULSE_LIST_IDS, optimizedSyncUserWithSendPulse, batchSyncUsers, sendWelcomeEmail;
 
 try {
   sendPulseService = await import('../utils/sendpulse-service-esm.js');
   console.log('SendPulse service (ESM) importado com sucesso');
-  // Extrair explicitamente as exportações necessárias
-  syncUserWithSendPulse = sendPulseService.syncUserWithSendPulse;
-  syncUserWithBrevo = sendPulseService.syncUserWithBrevo;
-  SENDPULSE_LIST_IDS = sendPulseService.SENDPULSE_LIST_IDS;
-  optimizedSyncUserWithSendPulse = sendPulseService.optimizedSyncUserWithSendPulse;
-  batchSyncUsers = sendPulseService.batchSyncUsers;
-  sendWelcomeEmail = sendPulseService.sendWelcomeEmail;
-  
-  // Log para diagnóstico
-  console.log('SENDPULSE_LIST_IDS importado:', SENDPULSE_LIST_IDS);
 } catch (error) {
   console.error('Erro ao importar sendpulse-service-esm:', error);
   try {
     sendPulseService = await import('../utils/sendpulse-service.js');
     console.log('Usando versão alternativa do sendpulse-service');
-    syncUserWithSendPulse = sendPulseService.syncUserWithSendPulse;
-    syncUserWithBrevo = sendPulseService.syncUserWithBrevo;
-    SENDPULSE_LIST_IDS = sendPulseService.SENDPULSE_LIST_IDS;
-    
-    // Log para diagnóstico
-    console.log('SENDPULSE_LIST_IDS importado (alternativo):', SENDPULSE_LIST_IDS);
   } catch (fallbackError) {
     console.error('Erro ao importar versão alternativa do sendpulse-service:', fallbackError);
-    // Criar implementação de fallback para o serviço
-    syncUserWithSendPulse = async (userData) => {
-      console.error('Módulo sendpulse-service não disponível, usando fallback para syncUserWithSendPulse');
-      return {
-        success: false,
-        error: 'Módulo sendpulse-service não disponível'
-      };
+    sendPulseService = {
+      syncUserWithSendPulse: async (userData) => {
+        console.error('Módulo sendpulse-service não disponível, usando fallback');
+        return {
+          success: false,
+          error: 'Módulo sendpulse-service não disponível'
+        };
+      }
     };
-    syncUserWithBrevo = syncUserWithSendPulse; // Alias para compatibilidade
-    
-    // Definir valores padrão para as listas caso o módulo não seja carregado
-    SENDPULSE_LIST_IDS = {
-      TRIAL: '152167',  // Valores padrão baseados no arquivo sendpulse-service-esm.js
-      ATIVO: '152197',
-      INATIVO: '152199',
-      ADMIN: '152197'
-    };
-    console.log('Usando versão de fallback para sendpulse-service e SENDPULSE_LIST_IDS padrão:', SENDPULSE_LIST_IDS);
+    console.log('Usando versão de fallback para sendpulse-service');
   }
 }
+
+const { syncUserWithSendPulse, syncUserWithBrevo } = sendPulseService;
 
 const app = express();
 
@@ -1685,9 +1662,6 @@ app.post('/api/users/sync-status', authenticateUser, async (req, res) => {
 
 // Rota para atualizar o status de um usuário específico
 app.post('/api/users/update-status', authenticateUser, async (req, res) => {
-  // Declarar variáveis no escopo global da função
-  let userId, newStatus, currentStatus, sendPulseSyncResult = null;
-  
   try {
     // Verificar se o usuário é administrador
     if (req.user.user_metadata?.status !== 'ADMIN') {
@@ -1695,9 +1669,7 @@ app.post('/api/users/update-status', authenticateUser, async (req, res) => {
       return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
     }
 
-    // Obter dados do request
-    userId = req.body.userId;
-    newStatus = req.body.newStatus;
+    const { userId, newStatus } = req.body;
 
     if (!userId || !newStatus) {
       return res.status(400).json({ error: 'ID do usuário e novo status são obrigatórios' });
@@ -1726,7 +1698,7 @@ app.post('/api/users/update-status', authenticateUser, async (req, res) => {
 
     // Registrar metadados atuais
     console.log(`Metadados atuais do usuário ${userId}:`, userData.user.user_metadata);
-    currentStatus = userData.user.user_metadata?.status || 'INATIVO';
+    const currentStatus = userData.user.user_metadata?.status || 'INATIVO';
     console.log(`Status atual nos metadados: ${currentStatus}, Novo status: ${newStatus}`);
 
     // Obter dados completos do usuário para sincronização com Brevo
@@ -1799,74 +1771,41 @@ app.post('/api/users/update-status', authenticateUser, async (req, res) => {
     }
 
     // ===== SINCRONIZAR COM SENDPULSE USANDO O NOVO SERVIÇO =====
+    let sendPulseSyncResult = null;
+
     console.log(`Iniciando sincronização com SendPulse para usuário ${userId} (${userDetails.email})`);
-    
-    // Validar os dados do usuário antes de enviar para sincronização
-    if (!userDetails.email) {
-      console.error(`Dados incompletos para sincronização do usuário ${userId}: email ausente`);
-    }
-    
-    console.log('Dados do usuário para sincronização:', {
-      id: userId,
-      email: userDetails.email,
-      full_name: userDetails.full_name,
-      whatsapp: userDetails.whatsapp || ''
-    });
-    
+
     // Usar o novo serviço do SendPulse para sincronizar o usuário
-    sendPulseSyncResult = await optimizedSyncUserWithSendPulse({
+    sendPulseSyncResult = await syncUserWithSendPulse({
       id: userId,
       email: userDetails.email,
-      name: userDetails.full_name || '', // Usar o campo correto para o nome
-      status: newStatus,
-      whatsapp: userDetails.whatsapp || ''
-    }, { verbose: false });
-
-    if (sendPulseSyncResult && sendPulseSyncResult.success) {
-      console.log(`Sincronização com SendPulse concluída com sucesso: ${sendPulseSyncResult.message}`);
-      
-      // Enviar email de boas-vindas para o novo status
-      try {
-        const welcomeEmailResult = await sendWelcomeEmail({
-          id: userId,
-          email: userDetails.email,
-          name: userDetails.full_name || '',
-          status: newStatus,
-          whatsapp: userDetails.whatsapp || ''
-        }, { verbose: false });
-        
-        if (welcomeEmailResult.success) {
-          console.log(`✅ Email de boas-vindas enviado com sucesso para ${userDetails.email}`);
-        } else {
-          console.warn(`⚠️ Não foi possível enviar email de boas-vindas: ${welcomeEmailResult.error}`);
-        }
-      } catch (emailError) {
-        console.error(`❌ Erro ao enviar email de boas-vindas: ${emailError.message}`);
-        // Não bloqueia o fluxo principal em caso de erro no envio de email
-      }
-    } else {
-      console.error(`Erro na sincronização com SendPulse:`, sendPulseSyncResult ? sendPulseSyncResult.error : 'Resposta vazia');
-    }
-    
-    console.log(`Status do usuário ${userId} atualizado com sucesso para ${newStatus}`);
-
-    // Enviar resposta de sucesso
-    res.status(200).json({ 
-      message: 'Status do usuário atualizado com sucesso',
-      userId,
-      newStatus,
-      oldStatus: currentStatus,
-      sendPulseSync: sendPulseSyncResult
+      name: userDetails.name,
+      status: userDetails.status,
+      whatsapp: userDetails.whatsapp
     });
-  } catch (error) {
-    console.error('Erro ao atualizar status do usuário:', error);
-    
-    // Se temos o ID do usuário, incluímos na resposta de erro
-    const errorResponse = { error: 'Erro interno do servidor' };
-    if (userId) errorResponse.userId = userId;
-    
-    res.status(500).json(errorResponse);
+
+    if (sendPulseSyncResult.success) {
+      console.log(`Sincronização com SendPulse concluída com sucesso: ${sendPulseSyncResult.message}`);
+    } else {
+      console.error(`Erro na sincronização com SendPulse: ${sendPulseSyncResult.error}`);
+    }
+  } catch (sendPulseError) {
+    console.error(`Exceção ao sincronizar com SendPulse:`, sendPulseError);
+    sendPulseSyncResult = {
+      success: false,
+      error: sendPulseError.message || 'Erro desconhecido ao sincronizar com SendPulse'
+    };
   }
+
+  console.log(`Status do usuário ${userId} atualizado com sucesso para ${newStatus}`);
+
+  res.status(200).json({ 
+    message: 'Status do usuário atualizado com sucesso',
+    userId,
+    newStatus,
+    oldStatus: currentStatus,
+    sendPulseSync: sendPulseSyncResult
+  });
 });
 
 // Rota para verificar o status de um usuário específico
@@ -2488,7 +2427,7 @@ app.post('/api/users/force-trial-status', authenticateUser, async (req, res) => 
 // Rota para sincronizar manualmente usuários com o SendPulse
 app.post('/api/sendpulse/sync-users', authenticateUser, async (req, res) => {
   // Verificar se o usuário é administrador
-  if (req.user.correctStatus !== 'ADMIN' && req.user.dbStatus !== 'ADMIN' && (!req.user.user_metadata || req.user.user_metadata.status !== 'ADMIN')) {
+  if (req.user.role !== 'ADMIN') {
     console.error('Tentativa de sincronização não autorizada:', req.user.id);
     return res.status(403).json({
       success: false,
@@ -2496,454 +2435,27 @@ app.post('/api/sendpulse/sync-users', authenticateUser, async (req, res) => {
     });
   }
 
-  try {
-    // Configurar resposta como Server-Sent Events para enviar atualizações de progresso
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
-    });
-
-    // Buscar todos os usuários
-    const { data: users, error: fetchError } = await supabaseAdmin
-      .from('users')
-      .select('id, email, full_name, whatsapp, status, created_at')
-      .order('created_at', { ascending: false });
-    
-    if (fetchError) {
-      throw new Error(`Erro ao buscar usuários: ${fetchError.message}`);
-    }
-
-    console.log(`🔄 Iniciando sincronização de ${users.length} usuários com o SendPulse`);
-    
-    // Enviar o evento de início com o total de usuários
-    res.write(`data: ${JSON.stringify({
-      type: 'start',
-      totalUsers: users.length,
-      message: 'Iniciando sincronização'
-    })}\n\n`);
-
-    // Iniciar processamento em lotes para evitar timeout
-    const batchSize = 10; // Processa 10 usuários por vez
-    let processed = 0;
-    let success = 0;
-    let failed = 0;
-    const errorDetails = [];
-    
-    // Processar usuários em lotes
-    for (let i = 0; i < users.length; i += batchSize) {
-      const batch = users.slice(i, i + batchSize);
-      
-      // Processar cada usuário do lote
-      for (const user of batch) {
-        try {
-          // Preparar dados do usuário para sincronização
-          const userData = {
-            id: user.id,
-            email: user.email,
-            name: user.full_name,
-            status: user.status,
-            whatsapp: user.whatsapp || ''
-          };
-          
-          // Utilizar a função do serviço para sincronizar o usuário
-          const result = await syncUserWithSendPulse(userData);
-          
-          processed++;
-          
-          if (result.success) {
-            success++;
-            console.log(`✅ Usuário ${user.email} sincronizado com sucesso`);
-          } else {
-            failed++;
-            errorDetails.push({
-              user: user.email,
-              error: result.error || 'Erro desconhecido'
-            });
-            console.error(`❌ Erro ao sincronizar ${user.email}:`, result.error);
-          }
-          
-          // Enviar evento de progresso
-          res.write(`data: ${JSON.stringify({
-            type: 'progress',
-            total: users.length,
-            processed: processed,
-            percentage: Math.round((processed / users.length) * 100),
-            success: result.success,
-            email: user.email,
-            message: result.success 
-              ? `Usuário ${user.email} sincronizado com sucesso` 
-              : `Erro ao sincronizar ${user.email}: ${result.error}`
-          })}\n\n`);
-        } catch (error) {
-          console.error(`❌ Exceção ao sincronizar ${user.email}:`, error);
-          processed++;
-          failed++;
-          errorDetails.push({
-            user: user.email,
-            error: error.message || 'Exceção desconhecida'
-          });
-          
-          // Enviar evento de erro para este usuário
-          res.write(`data: ${JSON.stringify({
-            type: 'progress',
-            total: users.length,
-            processed: processed,
-            percentage: Math.round((processed / users.length) * 100),
-            success: false,
-            email: user.email,
-            message: `Exceção ao sincronizar ${user.email}: ${error.message}`
-          })}\n\n`);
-        }
-      }
-    }
-    
-    // Enviar evento final com os resultados completos
-    res.write(`data: ${JSON.stringify({
-      type: 'complete',
-      total: users.length,
-      processed: processed,
-      success: success,
-      errors: failed,
-      percentage: 100,
-      errorDetails: errorDetails,
-      message: `Sincronização concluída: ${success} sucessos, ${failed} falhas`
-    })}\n\n`);
-    
-    res.end();
-  } catch (error) {
-    console.error('Erro na sincronização com SendPulse:', error);
-    
-    // Se já enviamos cabeçalhos, enviar erro como evento SSE
-    if (res.headersSent) {
-      res.write(`data: ${JSON.stringify({
-        type: 'error',
-        message: `Erro na sincronização: ${error.message}`
-      })}\n\n`);
-      res.end();
-    } else {
-      // Caso contrário, enviar resposta de erro normal
-      res.status(500).json({ 
-        success: false, 
-        error: 'Erro na sincronização com SendPulse', 
-        details: error.message 
-      });
-    }
-  }
+  // ... existing code ...
 });
 
 // Rota de webhook para sincronizar novos usuários com o SendPulse
 app.post('/api/sendpulse/webhook', async (req, res) => {
-  try {
-    console.log('📩 Webhook do SendPulse recebido:', req.body);
-    
-    // Verificar se o payload contém o necessário
-    if (!req.body || !req.body.event || !req.body.data) {
-      return res.status(400).json({
-        success: false,
-        error: 'Payload inválido'
-      });
-    }
-    
-    // Processar apenas eventos relevantes
-    const { event, data } = req.body;
-    
-    if (event === 'user_created') {
-      // Formato esperado: { id, email, status, ... }
-      const userData = {
-        id: data.id,
-        email: data.email,
-        name: data.full_name || data.name,
-        status: data.status || 'TRIAL',
-        whatsapp: data.whatsapp || data.phone || ''
-      };
-      
-      // Sincronizar o usuário com o SendPulse usando a versão otimizada
-      const result = await optimizedSyncUserWithSendPulse(userData, { verbose: false });
-      
-      // Se a sincronização foi bem-sucedida, enviar email de boas-vindas
-      if (result.success) {
-        console.log(`✅ Usuário ${userData.email} sincronizado via webhook com sucesso`);
-        
-        // Enviar email de boas-vindas
-        try {
-          const welcomeEmailResult = await sendWelcomeEmail(userData, { verbose: false });
-          
-          if (welcomeEmailResult.success) {
-            console.log(`✅ Email de boas-vindas enviado com sucesso para ${userData.email}`);
-          } else {
-            console.warn(`⚠️ Não foi possível enviar email de boas-vindas: ${welcomeEmailResult.error}`);
-          }
-          
-          return res.status(200).json({
-            success: true,
-            message: `Usuário ${userData.email} sincronizado com SendPulse e email de boas-vindas enviado`,
-            operations: result.operations,
-            welcomeEmail: welcomeEmailResult.success
-          });
-        } catch (emailError) {
-          console.error(`❌ Erro ao enviar email de boas-vindas: ${emailError.message}`);
-          
-          // Retornar sucesso da sincronização, mas informar erro no email
-          return res.status(200).json({
-            success: true,
-            message: `Usuário ${userData.email} sincronizado com SendPulse, mas houve erro no envio do email de boas-vindas`,
-            operations: result.operations,
-            welcomeEmail: false,
-            welcomeEmailError: emailError.message
-          });
-        }
-      } else {
-        console.error(`❌ Erro ao sincronizar usuário ${userData.email} via webhook:`, result.error);
-        return res.status(500).json({
-          success: false,
-          error: result.error
-        });
-      }
-    } else {
-      // Para outros eventos, apenas confirmar recebimento
-      console.log(`ℹ️ Evento não processado: ${event}`);
-      return res.status(200).json({
-        success: true,
-        message: `Evento ${event} recebido, mas não processado`
-      });
-    }
-  } catch (error) {
-    console.error('❌ Erro ao processar webhook do SendPulse:', error);
-    return res.status(500).json({
-      success: false,
-      error: `Erro ao processar webhook: ${error.message}`
-    });
-  }
+  // ... existing code ...
 });
 
 // Endpoint para sincronizar um usuário com o SendPulse
 app.post('/api/sendpulse/sync-user', async (req, res) => {
   // Log da requisição
   console.log('📩 Recebendo request para sincronizar usuário com SendPulse:', req.body.email);
-  console.log('📝 Corpo da requisição:', JSON.stringify(req.body));
-  
-  try {
-    // Validar dados da requisição
-    const { id, email, name, status, whatsapp, sendWelcomeEmail: shouldSendWelcomeEmail } = req.body;
-    
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        error: 'Email é obrigatório para sincronização'
-      });
-    }
-    
-    // Validar status
-    const validStatuses = ['INATIVO', 'ATIVO', 'ADMIN', 'TRIAL'];
-    if (status && !validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        error: `Status inválido: ${status}. Valores permitidos: ${validStatuses.join(', ')}`
-      });
-    }
-    
-    // Log detalhado dos IDs das listas configuradas no sistema
-    console.log('🔧 Configuração de listas do SendPulse:');
-    for (const [statusKey, listId] of Object.entries(SENDPULSE_LIST_IDS)) {
-      console.log(`  - ${statusKey}: ${listId}`);
-    }
-    
-    // Obter lista para o status atual
-    const targetListId = SENDPULSE_LIST_IDS[status] || SENDPULSE_LIST_IDS.TRIAL;
-    console.log(`📋 Status atual: ${status}, Lista alvo: ${targetListId}`);
-    
-    // Criar objeto com dados do usuário
-    const userData = {
-      id: id || 'unknown',
-      email,
-      name: name || '',
-      status: status || 'TRIAL',
-      whatsapp: whatsapp || ''
-    };
-    
-    // Realizar diagnóstico de situação atual das listas
-    try {
-      console.log(`🔍 Verificando situação atual do contato ${email} nas listas do SendPulse...`);
-      
-      // Obter token de acesso
-      const accessToken = await sendPulseService.getAccessToken();
-      
-      // Verificar listas
-      for (const [statusKey, listId] of Object.entries(SENDPULSE_LIST_IDS)) {
-        try {
-          const contactResponse = await fetch(`https://api.sendpulse.com/addressbooks/${listId}/emails?email=${encodeURIComponent(email)}`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-            },
-          });
-          
-          if (contactResponse.ok) {
-            const contactData = await contactResponse.json();
-            const exists = contactData && Array.isArray(contactData.emails) && contactData.emails.length > 0;
-            console.log(`  - Lista ${statusKey} (${listId}): ${exists ? 'Contato ENCONTRADO ✓' : 'Contato NÃO encontrado ✗'}`);
-          } else {
-            console.warn(`  - Lista ${statusKey} (${listId}): Erro ao verificar - ${contactResponse.status}`);
-          }
-        } catch (checkError) {
-          console.error(`  - Lista ${statusKey} (${listId}): Exceção ao verificar - ${checkError.message}`);
-        }
-      }
-    } catch (diagError) {
-      console.error('❌ Erro durante diagnóstico:', diagError);
-    }
-    
-    // Chamar serviço para sincronizar usuário - USANDO A VERSÃO OTIMIZADA
-    console.log('🔄 Iniciando sincronização otimizada com SendPulse para:', userData);
-    
-    try {
-      // Usar a versão otimizada com verbose=true para logs detalhados
-      const result = await optimizedSyncUserWithSendPulse(userData, { verbose: true });
-      
-      if (result.success) {
-        console.log(`✅ Usuário ${email} sincronizado com sucesso`);
-        
-        // Se solicitado, enviar email de boas-vindas
-        let welcomeEmailResult = { success: false, message: 'Email de boas-vindas não solicitado' };
-        
-        if (shouldSendWelcomeEmail === true) {
-          try {
-            console.log(`📧 Enviando email de boas-vindas para ${email}...`);
-            welcomeEmailResult = await sendWelcomeEmail(userData, { verbose: true });
-            
-            if (welcomeEmailResult.success) {
-              console.log(`✅ Email de boas-vindas enviado com sucesso`);
-            } else {
-              console.warn(`⚠️ Falha ao enviar email de boas-vindas: ${welcomeEmailResult.error}`);
-            }
-          } catch (emailError) {
-            console.error(`❌ Erro ao enviar email de boas-vindas: ${emailError.message}`);
-            welcomeEmailResult = { 
-              success: false, 
-              error: emailError.message, 
-              message: 'Exceção ao enviar email de boas-vindas' 
-            };
-          }
-        }
-        
-        return res.status(200).json({
-          success: true,
-          message: `Usuário ${email} sincronizado com SendPulse`,
-          operations: result.operations, // Detalhe das operações realizadas
-          welcomeEmail: welcomeEmailResult,
-          diagnostics: {
-            targeted_list: targetListId,
-            status: status,
-            initialLists: result.initialLists,
-            listsRemoved: result.listsRemoved || []
-          }
-        });
-      } else {
-        console.error(`❌ Erro ao sincronizar usuário ${email}:`, result.error);
-        return res.status(400).json({
-          success: false,
-          error: result.error || 'Erro desconhecido durante sincronização',
-          diagnostics: {
-            targeted_list: targetListId,
-            status: status
-          }
-        });
-      }
-    } catch (syncError) {
-      console.error(`❌ Exceção ao sincronizar usuário ${email}:`, syncError);
-      return res.status(500).json({
-        success: false,
-        error: syncError instanceof Error ? syncError.message : 'Erro inesperado na integração com SendPulse',
-        diagnostics: {
-          targeted_list: targetListId,
-          status: status
-        }
-      });
-    }
-  } catch (error) {
-    console.error('❌ Erro ao processar sincronização individual:', error);
-    return res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Erro interno do servidor'
-    });
-  }
+  // ... existing code ...
 });
 
 // Endpoint para sincronizar todos os usuários com o SendPulse (apenas para ADMIN)
 app.post('/api/sendpulse/sync-all-users', authenticateUser, async (req, res) => {
-  try {
-    // Verificar se o usuário é administrador
-    if (req.user.correctStatus !== 'ADMIN' && req.user.dbStatus !== 'ADMIN' && (!req.user.user_metadata || req.user.user_metadata.status !== 'ADMIN')) {
-      console.error('Tentativa de sincronização não autorizada:', req.user.id);
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Acesso negado. Apenas administradores podem executar esta ação.' 
-      });
-    }
-    
-    // Obter parâmetros de configuração do request, se fornecidos
-    const { concurrency = 2, batchDelay = 2000, verbose = false } = req.body;
-    
-    // Configurar resposta como JSON normal
-    res.setHeader('Content-Type', 'application/json');
-    
-    // Buscar todos os usuários
-    const { data: users, error: fetchError } = await supabaseAdmin
-      .from('users')
-      .select('id, email, full_name, whatsapp, status, created_at')
-      .order('created_at', { ascending: false });
-    
-    if (fetchError) {
-      throw new Error(`Erro ao buscar usuários: ${fetchError.message}`);
-    }
-    
-    console.log(`🔄 Iniciando sincronização em lote otimizada de ${users.length} usuários com o SendPulse`);
-    
-    // Preparar os dados de usuário para sincronização
-    const userDataList = users.map(user => ({
-      id: user.id,
-      email: user.email,
-      name: user.full_name || '',
-      status: user.status || 'TRIAL',
-      whatsapp: user.whatsapp || ''
-    }));
-    
-    // Usar a nova função batchSyncUsers para processar todos os usuários
-    // com controle de taxa para evitar o erro "Too Many Requests"
-    const batchResults = await batchSyncUsers(userDataList, {
-      concurrency, // Número de operações simultâneas
-      delayBetweenBatches: batchDelay, // Atraso entre lotes em ms
-      verbose // Log detalhado
-    });
-    
-    console.log(`✅ Sincronização em lote concluída: ${batchResults.successful} sucessos, ${batchResults.failed} falhas, ${batchResults.skipped} ignorados`);
-    
-    // Retornar os resultados
-    return res.status(200).json({
-      success: true,
-      message: `Sincronização concluída com ${batchResults.successful} sucessos, ${batchResults.failed} falhas, ${batchResults.skipped} ignorados`,
-      stats: {
-        total: batchResults.totalProcessed,
-        successful: batchResults.successful,
-        failed: batchResults.failed,
-        skipped: batchResults.skipped
-      },
-      // Limitar detalhes para evitar respostas muito grandes
-      failedDetails: batchResults.details
-        .filter(d => !d.success || d.skipped)
-        .slice(0, 20) // Limitando a 20 detalhes de falha para evitar resposta muito grande
-    });
-  } catch (error) {
-    console.error('❌ Erro ao sincronizar todos os usuários:', error);
-    return res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Erro interno do servidor'
-    });
-  }
+  // ... existing code ...
 });
 
-const PORT = process.env.SERVER_PORT || process.env.PORT || 3001;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });

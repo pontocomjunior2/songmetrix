@@ -284,7 +284,7 @@ export default function Plans() {
           {/* Plano Trial */}
           <div className="bg-white rounded-lg shadow-md p-8">
             <h3 className="text-xl font-bold text-gray-900 mb-4">Trial</h3>
-            <p className="text-gray-600 mb-6">Experimente por 14 dias</p>
+            <p className="text-gray-600 mb-6">Experimente por 7 dias</p>
             <ul className="space-y-4">
               <li className="flex items-start">
                 <CheckCircle className="h-6 w-6 text-green-500 flex-shrink-0" />

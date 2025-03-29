@@ -16,21 +16,6 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5173,
       proxy: {
-        '/api/email': {
-          target: isProduction ? env.VITE_API_BASE_URL || 'https://songmetrix.com.br' : 'http://localhost:3003',
-          changeOrigin: true,
-          secure: false,
-          ws: true,
-          rewrite: (path) => path,
-          configure: (proxy, _options) => {
-            proxy.on('error', (err, _req, _res) => {
-              console.log('Erro no proxy de email:', err);
-            });
-            proxy.on('proxyReq', (proxyReq, req, _res) => {
-              console.log(`Proxy request (email): ${req.method} ${req.url} -> ${proxyReq.path}`);
-            });
-          }
-        },
         '/api': {
           target: isProduction ? env.VITE_API_BASE_URL || 'https://songmetrix.com.br' : 'http://localhost:3001',
           changeOrigin: true,
