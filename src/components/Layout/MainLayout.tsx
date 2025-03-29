@@ -6,6 +6,7 @@ import { CustomUser } from '../../types/customUser';
 import { useNavigate, Outlet } from 'react-router-dom';
 import SidebarFixed from './SidebarFixed';
 import UserAvatar from '../Common/UserAvatar';
+import SuggestRadioModal from '../Radios/SuggestRadioModal';
 
 interface LayoutProps {
   currentView: string;
@@ -128,6 +129,10 @@ const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
             </div>
 
             <div className="flex items-center gap-2">
+              {currentUser && (
+                <SuggestRadioModal buttonClassName="mr-3 rounded-full font-medium" />
+              )}
+              
               <button
                 onClick={toggleTheme}
                 className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200"

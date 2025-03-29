@@ -15,6 +15,7 @@ export interface RadioSuggestion {
   stream_url?: string;
   city: string;
   state: string;
+  country?: string;
   contact_email?: string;
   additional_info?: string;
   created_at?: string;
@@ -83,6 +84,23 @@ export const saveRadioSuggestion = async (data: Omit<RadioSuggestion, 'id' | 'cr
     
     console.log('Ambiente de desenvolvimento?', isDevelopment ? 'Sim' : 'Não');
 
+    // Extrair informações do campo additional_info se estiver em formato JSON
+    let country = data.country;
+    let additionalInfo = data.additional_info;
+    
+    // Se não houver país explícito, tentar extrair do additional_info
+    if (!country && typeof additionalInfo === 'string') {
+      try {
+        const parsedInfo = JSON.parse(additionalInfo);
+        if (parsedInfo.country) {
+          country = parsedInfo.country;
+        }
+      } catch (e) {
+        // Se não for um JSON válido, mantem o valor original
+        console.log("additional_info não é um JSON válido");
+      }
+    }
+
     // Solução temporária: Se estivermos em desenvolvimento, simulamos o sucesso
     if (BYPASS_RLS) {
       console.log('Usando solução temporária para evitar problemas de RLS ao salvar');
@@ -94,6 +112,7 @@ export const saveRadioSuggestion = async (data: Omit<RadioSuggestion, 'id' | 'cr
         stream_url: data.stream_url,
         city: data.city,
         state: data.state,
+        country: country || 'BR',
         contact_email: data.contact_email,
         additional_info: data.additional_info,
         user_id: userId,
@@ -112,6 +131,7 @@ export const saveRadioSuggestion = async (data: Omit<RadioSuggestion, 'id' | 'cr
           stream_url: data.stream_url || null,
           city: data.city,
           state: data.state,
+          country: country || 'BR',
           contact_email: data.contact_email || null,
           additional_info: data.additional_info || null,
           user_id: userId,

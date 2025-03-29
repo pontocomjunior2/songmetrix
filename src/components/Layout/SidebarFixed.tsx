@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserStatus } from '../../lib/auth';
-import { Home, BarChart3, FileText, Users, Type, Radio, LogOut, Clock, X, ChevronDown, Mail } from 'lucide-react';
+import { Home, BarChart3, FileText, Users, Type, Radio, LogOut, Clock, X, ChevronDown, Mail, MessageSquare } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
+import WhatsAppContact from '../Common/WhatsAppContact';
 
 interface SidebarProps {
   currentView: string;
@@ -79,6 +80,10 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
         {
           name: 'Relay',
           view: 'admin/relay-streams'
+        },
+        {
+          name: 'Sugestões',
+          view: 'admin/suggestions'
         }
       ]
     },
@@ -197,6 +202,12 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
           </div>
         ))}
       </nav>
+
+      {/* Contact Links */}
+      <div className="px-4 py-3 border-t border-white/10">
+        <div className="text-white/70 text-xs font-medium px-4 pb-2">Precisa de Ajuda?</div>
+        <WhatsAppContact className="px-2" />
+      </div>
 
       {/* User Profile and Logout - Only on Mobile */}
       {isMobile && currentUser && (

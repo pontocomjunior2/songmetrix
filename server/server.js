@@ -1670,6 +1670,8 @@ app.post('/api/users/update-status', authenticateUser, async (req, res) => {
     }
 
     const { userId, newStatus } = req.body;
+    let currentStatus = 'INATIVO';
+    let sendPulseSyncResult = null;
 
     if (!userId || !newStatus) {
       return res.status(400).json({ error: 'ID do usuário e novo status são obrigatórios' });
@@ -1698,7 +1700,7 @@ app.post('/api/users/update-status', authenticateUser, async (req, res) => {
 
     // Registrar metadados atuais
     console.log(`Metadados atuais do usuário ${userId}:`, userData.user.user_metadata);
-    const currentStatus = userData.user.user_metadata?.status || 'INATIVO';
+    currentStatus = userData.user.user_metadata?.status || 'INATIVO';
     console.log(`Status atual nos metadados: ${currentStatus}, Novo status: ${newStatus}`);
 
     // Obter dados completos do usuário para sincronização com Brevo
@@ -1771,41 +1773,48 @@ app.post('/api/users/update-status', authenticateUser, async (req, res) => {
     }
 
     // ===== SINCRONIZAR COM SENDPULSE USANDO O NOVO SERVIÇO =====
-    let sendPulseSyncResult = null;
+    try {
+      console.log(`Iniciando sincronização com SendPulse para usuário ${userId} (${userDetails.email})`);
 
-    console.log(`Iniciando sincronização com SendPulse para usuário ${userId} (${userDetails.email})`);
+      // Usar o novo serviço do SendPulse para sincronizar o usuário
+      sendPulseSyncResult = await syncUserWithSendPulse({
+        id: userId,
+        email: userDetails.email,
+        name: userDetails.full_name,
+        status: newStatus,
+        whatsapp: userDetails.whatsapp
+      });
 
-    // Usar o novo serviço do SendPulse para sincronizar o usuário
-    sendPulseSyncResult = await syncUserWithSendPulse({
-      id: userId,
-      email: userDetails.email,
-      name: userDetails.name,
-      status: userDetails.status,
-      whatsapp: userDetails.whatsapp
+      if (sendPulseSyncResult.success) {
+        console.log(`Sincronização com SendPulse concluída com sucesso: ${sendPulseSyncResult.message}`);
+      } else {
+        console.error(`Erro na sincronização com SendPulse: ${sendPulseSyncResult.error}`);
+      }
+    } catch (sendPulseError) {
+      console.error(`Exceção ao sincronizar com SendPulse:`, sendPulseError);
+      sendPulseSyncResult = {
+        success: false,
+        error: sendPulseError.message || 'Erro desconhecido ao sincronizar com SendPulse'
+      };
+    }
+
+    console.log(`Status do usuário ${userId} atualizado com sucesso para ${newStatus}`);
+
+    return res.status(200).json({ 
+      message: 'Status do usuário atualizado com sucesso',
+      userId,
+      newStatus,
+      oldStatus: currentStatus,
+      sendPulseSync: sendPulseSyncResult
     });
 
-    if (sendPulseSyncResult.success) {
-      console.log(`Sincronização com SendPulse concluída com sucesso: ${sendPulseSyncResult.message}`);
-    } else {
-      console.error(`Erro na sincronização com SendPulse: ${sendPulseSyncResult.error}`);
-    }
-  } catch (sendPulseError) {
-    console.error(`Exceção ao sincronizar com SendPulse:`, sendPulseError);
-    sendPulseSyncResult = {
-      success: false,
-      error: sendPulseError.message || 'Erro desconhecido ao sincronizar com SendPulse'
-    };
+  } catch (error) {
+    console.error('Erro ao processar atualização de status:', error);
+    return res.status(500).json({ 
+      error: 'Erro interno ao processar atualização de status',
+      message: error.message
+    });
   }
-
-  console.log(`Status do usuário ${userId} atualizado com sucesso para ${newStatus}`);
-
-  res.status(200).json({ 
-    message: 'Status do usuário atualizado com sucesso',
-    userId,
-    newStatus,
-    oldStatus: currentStatus,
-    sendPulseSync: sendPulseSyncResult
-  });
 });
 
 // Rota para verificar o status de um usuário específico

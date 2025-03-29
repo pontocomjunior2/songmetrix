@@ -16,10 +16,11 @@ function WhatsAppContact({ onClick, className = '' }: ContactProps) {
   };
 
   return (
-    <div className={`flex flex-col gap-2 ${className}`}>
+    <div className={`flex flex-col gap-3 ${className}`}>
       <button 
         onClick={handleWhatsAppClick}
-        className="flex items-center justify-center gap-2 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors w-full"
+        className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-full bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition-colors w-full shadow-sm"
+        aria-label="Contato via WhatsApp"
       >
         <MessageCircle className="w-4 h-4" />
         <span>WhatsApp</span>
@@ -27,7 +28,8 @@ function WhatsAppContact({ onClick, className = '' }: ContactProps) {
       
       <button 
         onClick={handleEmailClick}
-        className="flex items-center justify-center gap-2 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors w-full"
+        className="flex items-center justify-center gap-2 py-2.5 px-4 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors w-full shadow-sm"
+        aria-label="Contato via Email"
       >
         <Mail className="w-4 h-4" />
         <span>Email</span>
