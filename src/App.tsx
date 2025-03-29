@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
@@ -24,6 +24,44 @@ import Relatorios from './components/Relatorios';
 import Plans from './components/Plans';
 import Spotify from './components/Spotify';
 
+// Componente para redirecionar após confirmação de email
+// Deve ser usado dentro do Router
+function RedirectHandler() {
+  const location = useLocation();
+  
+  useEffect(() => {
+    // Verificar se estamos na raiz e se a URL tem parâmetros de confirmação de email
+    if (location.pathname === '/' && 
+        (location.search.includes('type=email_confirmation') || 
+         location.search.includes('type=signup') ||
+         location.hash.includes('type=email_confirmation') ||
+         location.hash.includes('type=signup'))) {
+      // Redirecionar para página de login
+      window.location.href = '/login';
+    }
+  }, [location]);
+  
+  return null;
+}
+
+// Interface para as props do RootRoute
+interface RootRouteProps {
+  currentView: string;
+  onNavigate: (view: string) => void;
+}
+
+// Componente específico para raiz que verifica se precisa redirecionar
+function RootRoute({ currentView, onNavigate }: RootRouteProps) {
+  return (
+    <>
+      <RedirectHandler />
+      <ProtectedRoute>
+        <MainLayout currentView={currentView} onNavigate={onNavigate} />
+      </ProtectedRoute>
+    </>
+  );
+}
+
 function App() {
   const [currentView, setCurrentView] = useState('dashboard');
 
@@ -43,11 +81,8 @@ function App() {
           <Route path="/first-access" element={<FirstAccessRoute />} />
           <Route path="/plans" element={<Plans />} />
           
-          <Route path="/" element={
-            <ProtectedRoute>
-              <MainLayout currentView={currentView} onNavigate={handleNavigate} />
-            </ProtectedRoute>
-          }>
+          {/* Rota raiz com verificação de redirecionamento */}
+          <Route path="/" element={<RootRoute currentView={currentView} onNavigate={handleNavigate} />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="ranking" element={<Ranking />} />

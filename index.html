@@ -15,6 +15,20 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <!-- Script para redirecionamento após confirmação de email -->
+    <script>
+      (function() {
+        // Verificar se estamos na raiz e se a URL tem parâmetros de confirmação de email
+        if (window.location.pathname === '/' && 
+            (window.location.search.includes('type=email_confirmation') || 
+             window.location.search.includes('type=signup') ||
+             window.location.hash.includes('type=email_confirmation') ||
+             window.location.hash.includes('type=signup'))) {
+          // Redirecionar para página de login
+          window.location.href = '/login';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
