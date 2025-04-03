@@ -88,7 +88,7 @@ const reportTypes = [
 ];
 
 const RelatoriosWizard: React.FC = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, userStatus } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedReportType, setSelectedReportType] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -977,11 +977,11 @@ const RelatoriosWizard: React.FC = () => {
         </div>
       )}
       
-      {process.env.NODE_ENV === 'development' && apiResponse && (
+      {userStatus === 'ADMIN' && apiResponse && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden mt-4">
           <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border-b border-yellow-200 dark:border-yellow-800">
-            <h3 className="text-lg font-medium text-yellow-800 dark:text-yellow-200">Dados da API (Debug)</h3>
-            <p className="text-sm text-yellow-600 dark:text-yellow-300">Esta seção só aparece em ambiente de desenvolvimento</p>
+            <h3 className="text-lg font-medium text-yellow-800 dark:text-yellow-200">Dados da API (Debug - Admin)</h3>
+            <p className="text-sm text-yellow-600 dark:text-yellow-300">Esta seção só aparece para administradores.</p>
           </div>
           <div className="p-4 overflow-auto max-h-96">
             <pre className="text-xs text-gray-800 dark:text-gray-200">
