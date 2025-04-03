@@ -153,7 +153,7 @@ export default function Ranking() {
       }
       
       // Mapear dados para o formato esperado pelo componente
-      const radioOptions = data.map((radio) => ({
+      const radioOptions = data.map((radio: { name: string }) => ({
         value: radio.name,
         label: radio.name,
       }));
@@ -394,18 +394,13 @@ export default function Ranking() {
                 <tr key={item.id}>
                   <td className="rank-column">{index + 1}º</td>
                   <td className="image-column">
-                    {artistImages[item.artist] ? (
-                      <LazyLoadImage
-                        src={artistImages[item.artist]}
-                        alt={item.artist}
-                        effect="blur"
-                        width={50}
-                        height={50}
-                        style={{ borderRadius: "50%" }}
-                      />
-                    ) : (
-                      <div style={{ width: "50px", height: "50px", backgroundColor: "#ddd", borderRadius: "50%" }}></div>
-                    )}
+                    <LazyLoadImage
+                      alt={`${item.artist} cover`}
+                      src={artistImages[item.artist] || '/placeholder-image.webp'}
+                      effect="blur"
+                      className="ranking-artist-image rounded-full w-12 h-12 object-cover"
+                      placeholderSrc="/placeholder-image-small.webp"
+                    />
                   </td>
                   <td className="artist-column">{item.artist}</td>
                   <td className="title-column">{item.song_title}</td>
