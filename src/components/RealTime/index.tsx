@@ -38,6 +38,7 @@ export default function RealTime() {
   const { currentUser } = useAuth();
   const { theme } = useTheme();
   const isDarkMode = theme === 'dark';
+
   const today = format(new Date(), 'yyyy-MM-dd');
   
   const [filters, setFilters] = useState<Filters>({
@@ -97,7 +98,6 @@ export default function RealTime() {
   };
 
   const handleSaveFavorites = (favorites: string[]) => {
-    // Implementação do salvamento dos favoritos
     console.log('Saving favorites:', favorites);
   };
 
@@ -153,8 +153,6 @@ export default function RealTime() {
       fetchExecutions();
     }
   }, [currentUser]);
-
-  // ... (keep all the existing functions)
 
   return (
     <div className={`realtime-container ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'}`}>
@@ -260,7 +258,6 @@ export default function RealTime() {
         </form>
       </div>
 
-      {/* Keep the existing table section */}
       <div className={`flex-1 overflow-auto rounded-lg shadow-sm ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'}`}>
         {/* ... (keep all the existing table code) ... */}
       </div>

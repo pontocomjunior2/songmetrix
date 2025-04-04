@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import Select from 'react-select';
 import moment from 'moment';
@@ -10,13 +10,22 @@ import { fetchSpotifyToken, fetchArtistImageFromSpotify } from './services/spoti
 import { RankingItem, SpotifyTokenData, ArtistImages, RankingFilters, RadioStatus } from './types';
 import { MultiValue } from 'react-select';
 import { Loader2 } from 'lucide-react';
+import { useTheme } from '../../hooks/useTheme';
+import { Search } from 'lucide-react';
+
+interface SelectOption {
+  value: string;
+  label: string;
+}
 
 export default function Ranking() {
   const { currentUser } = useAuth();
+  const { theme } = useTheme();
+  const isDarkMode = theme === 'dark';
   const [loading, setLoading] = useState(false);
   const [rankingData, setRankingData] = useState<RankingItem[]>([]);
-  const [selectedRadios, setSelectedRadios] = useState<Array<{ value: string; label: string }>>([]);
-  const [radiosOptions, setRadiosOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [selectedRadios, setSelectedRadios] = useState<SelectOption[]>([]);
+  const [radiosOptions, setRadiosOptions] = useState<SelectOption[]>([]);
   const [filters, setFilters] = useState<RankingFilters>({
     rankingSize: '10',
     startDate: moment().subtract(10, 'days').format('YYYY-MM-DD'),
@@ -38,6 +47,11 @@ export default function Ranking() {
     return null;
   });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const multiSelectRadioOptions = useMemo(() => 
+    radiosOptions.filter(option => option.value !== 'Todas as Rádios'), 
+    [radiosOptions]
+  );
 
   const loadSpotifyToken = useCallback(async () => {
     if (spotifyTokenData && spotifyTokenData.expiresAt > Date.now()) {
@@ -277,94 +291,182 @@ export default function Ranking() {
   };
 
   return (
-    <div className="ranking-container">
-      <div className="ranking-filters">
-        <div className="ranking-filter-row">
-          <div className="ranking-filter-group">
-            <label htmlFor="ranking-size">Ranking:</label>
-            <select
-              id="ranking-size"
-              value={filters.rankingSize}
-              onChange={(e) => setFilters({ ...filters, rankingSize: e.target.value })}
-            >
-              <option value="10">TOP 10</option>
-              <option value="20">TOP 20</option>
-              <option value="40">TOP 40</option>
-              <option value="100">TOP 100</option>
-              <option value="200">TOP 200</option>
-            </select>
-          </div>
-
-          <div className="ranking-filter-group">
-            <label htmlFor="radio-select">Rádios:</label>
-            <Select
-              id="radio-select"
-              options={radiosOptions}
-              isMulti
-              value={selectedRadios}
-              onChange={(newValue: MultiValue<{ value: string; label: string }>) => {
-                const selectedValues = newValue as { value: string; label: string }[];
-                setSelectedRadios(selectedValues);
-                setFilters({
-                  ...filters,
-                  selectedRadios: selectedValues.map(item => item.value)
-                });
-              }}
-              placeholder="Selecione as rádios"
-              className="react-select-container"
-              classNamePrefix="react-select"
-            />
-          </div>
+    <div className="p-4 space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700">
+        <div className="col-span-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Rádios</label>
+          <Select<SelectOption, true>
+            options={multiSelectRadioOptions}
+            isMulti
+            value={selectedRadios}
+            onChange={(newValue: MultiValue<SelectOption>) => setSelectedRadios(newValue as SelectOption[])}
+            placeholder="Selecione as rádios..."
+            className="react-select-container"
+            classNamePrefix="react-select"
+            isDisabled={radiosOptions.length <= 1}
+            styles={{
+              control: (base, state) => ({
+                ...base,
+                backgroundColor: isDarkMode ? '#374151' : base.backgroundColor,
+                borderColor: state.isFocused ? '#2563eb' : (isDarkMode ? '#4B5563' : '#D1D5DB'),
+                borderRadius: '0.375rem',
+                boxShadow: state.isFocused ? '0 0 0 1px #2563eb' : base.boxShadow,
+                minHeight: '38px',
+                height: 'auto',
+                boxSizing: 'border-box',
+                transition: base.transition,
+                '&:hover': {
+                    borderColor: state.isFocused ? '#2563eb' : (isDarkMode ? '#6B7280' : '#9CA3AF'),
+                }
+              }),
+              valueContainer: (base) => ({
+                  ...base,
+                  padding: '2px 0.6rem',
+              }),
+              input: (base) => ({
+                ...base,
+                color: isDarkMode ? '#D1D5DB' : base.color,
+                margin: '0px',
+                paddingTop: '0px',
+                paddingBottom: '0px',
+              }),
+              placeholder: (base) => ({
+                ...base,
+                color: isDarkMode ? '#6B7280' : '#9CA3AF',
+              }),
+              multiValue: (base) => ({
+                  ...base,
+                  backgroundColor: isDarkMode ? '#4B5563' : '#E5E7EB',
+              }),
+              multiValueLabel: (base) => ({ 
+                  ...base,
+                  color: isDarkMode ? '#D1D5DB' : '#374151',
+              }),
+              multiValueRemove: (base) => ({
+                  ...base,
+                  color: isDarkMode ? '#9CA3AF' : '#6B7280',
+                  ':hover': {
+                      backgroundColor: isDarkMode ? '#EF4444' : '#EF4444',
+                      color: 'white',
+                  },
+              }),
+              menu: (base) => ({
+                ...base,
+                backgroundColor: isDarkMode ? '#374151' : base.backgroundColor,
+                zIndex: 9999,
+              }),
+              option: (base, state) => ({
+                ...base,
+                backgroundColor: state.isSelected ? (isDarkMode ? '#2563eb' : '#2563eb') : state.isFocused ? (isDarkMode ? '#4B5563' : '#E5E7EB') : (isDarkMode ? '#374151' : base.backgroundColor),
+                color: state.isSelected ? '#FFFFFF' : (isDarkMode ? '#D1D5DB' : base.color),
+                ':active': {
+                  ...base[':active'],
+                  backgroundColor: !state.isDisabled ? (state.isSelected ? base.backgroundColor : (isDarkMode ? '#5A6679' : base[':active']?.backgroundColor)) : undefined,
+                },
+              }),
+            }}
+          />
         </div>
 
-        <div className="ranking-filter-row-datetime">
-          <div className="ranking-filter-group">
-            <label htmlFor="date-start">Data Início:</label>
-            <input
-              type="date"
-              id="date-start"
-              value={filters.startDate}
-              onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-            />
-          </div>
-
-          <div className="ranking-filter-group">
-            <label htmlFor="date-end">Data Fim:</label>
-            <input
-              type="date"
-              id="date-end"
-              value={filters.endDate}
-              onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-            />
-          </div>
-
-          <div className="ranking-filter-group">
-            <label htmlFor="hour-start">Hora Início:</label>
-            <input
-              type="time"
-              id="hour-start"
-              value={filters.hourStart}
-              onChange={(e) => setFilters({ ...filters, hourStart: e.target.value })}
-            />
-          </div>
-
-          <div className="ranking-filter-group">
-            <label htmlFor="hour-end">Hora Fim:</label>
-            <input
-              type="time"
-              id="hour-end"
-              value={filters.hourEnd}
-              onChange={(e) => setFilters({ ...filters, hourEnd: e.target.value })}
-            />
-          </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tamanho</label>
+          <Select<SelectOption>
+             options={[
+               { value: '10', label: 'Top 10' },
+               { value: '20', label: 'Top 20' },
+               { value: '50', label: 'Top 50' },
+               { value: '100', label: 'Top 100' },
+             ]}
+             value={{ value: filters.rankingSize, label: `Top ${filters.rankingSize}` }}
+             onChange={(option) => setFilters({ ...filters, rankingSize: option!.value })}
+             className="react-select-container"
+             classNamePrefix="react-select"
+             styles={{
+                control: (base, state) => ({
+                    ...base,
+                    backgroundColor: isDarkMode ? '#374151' : base.backgroundColor,
+                    borderColor: state.isFocused ? '#2563eb' : (isDarkMode ? '#4B5563' : '#D1D5DB'),
+                    borderRadius: '0.375rem',
+                    boxShadow: state.isFocused ? '0 0 0 1px #2563eb' : base.boxShadow,
+                    minHeight: '38px',
+                    height: '38px',
+                    boxSizing: 'border-box',
+                    transition: base.transition,
+                    '&:hover': {
+                        borderColor: state.isFocused ? '#2563eb' : (isDarkMode ? '#6B7280' : '#9CA3AF'),
+                    }
+                }),
+                valueContainer: (base) => ({ ...base, padding: '2px 0.6rem' }),
+                input: (base) => ({ ...base, color: isDarkMode ? '#D1D5DB' : base.color, margin: '0px', paddingTop: '0px', paddingBottom: '0px' }),
+                placeholder: (base) => ({ ...base, color: isDarkMode ? '#6B7280' : '#9CA3AF' }),
+                singleValue: (base) => ({ ...base, color: isDarkMode ? '#D1D5DB' : base.color, position: 'relative', top: '50%', transform: 'translateY(-50%)' }),
+                menu: (base) => ({ ...base, backgroundColor: isDarkMode ? '#374151' : base.backgroundColor, zIndex: 9999 }),
+                option: (base, state) => ({
+                    ...base,
+                    backgroundColor: state.isSelected ? (isDarkMode ? '#2563eb' : '#2563eb') : state.isFocused ? (isDarkMode ? '#4B5563' : '#E5E7EB') : (isDarkMode ? '#374151' : base.backgroundColor),
+                    color: state.isSelected ? '#FFFFFF' : (isDarkMode ? '#D1D5DB' : base.color),
+                    ':active': { ...base[':active'], backgroundColor: !state.isDisabled ? (state.isSelected ? base.backgroundColor : (isDarkMode ? '#5A6679' : base[':active']?.backgroundColor)) : undefined },
+                }),
+             }}
+          />
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Data Início</label>
+          <input
+            type="date"
+            value={filters.startDate}
+            onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+            className="w-full px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
+          />
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Data Fim</label>
+          <input
+            type="date"
+            value={filters.endDate}
+            onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+            className="w-full px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
+          />
         </div>
 
-        <div className="ranking-filter-buttons">
-          <button className="ranking-btn-primary" onClick={handleSearch} disabled={loading}>
-            {loading ? "Carregando..." : "Pesquisar"}
-          </button>
-          <button className="ranking-btn-secondary" onClick={clearFilters}>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hora Início</label>
+          <input
+            type="time"
+            value={filters.hourStart}
+            onChange={(e) => setFilters({ ...filters, hourStart: e.target.value })}
+            className="w-full px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
+          />
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hora Fim</label>
+          <input
+            type="time"
+            value={filters.hourEnd}
+            onChange={(e) => setFilters({ ...filters, hourEnd: e.target.value })}
+            className="w-full px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-sm"
+          />
+        </div>
+
+        <div className="col-span-1 md:col-span-2 flex justify-end items-center gap-4 mt-2">
+          <button 
+            type="button" 
+            onClick={clearFilters} 
+            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 dark:focus:ring-offset-gray-800 transition-colors duration-150 ease-in-out"
+          >
             Limpar Filtros
+          </button>
+          <button 
+            type="submit" 
+            onClick={handleSearch}
+            className="inline-flex items-center justify-center gap-x-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150 ease-in-out"
+            disabled={loading}
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />} 
+            Buscar
           </button>
         </div>
       </div>
