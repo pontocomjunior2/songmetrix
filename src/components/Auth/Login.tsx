@@ -120,6 +120,15 @@ export default function Login() {
           </form>
 
           <div className="text-sm text-center">
+            <Link
+              to="/reset-password"
+              className="font-medium text-gray-600 hover:text-gray-800"
+            >
+              Esqueceu a senha?
+            </Link>
+          </div>
+
+          <div className="text-sm text-center">
             <span className="text-gray-600">Não tem uma conta?</span>{' '}
             <Link
               to="/register"

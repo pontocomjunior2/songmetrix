@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    /* Base Options */
+    "esModuleInterop": true, // Enables compatibility with CommonJS modules
+    "skipLibCheck": true, // Skip type checking of declaration files
+    "target": "ES2022", // Target modern Node.js versions
+    "allowJs": true, // Allow JavaScript files to be compiled
+    "resolveJsonModule": true, // Include modules imported with .json extension
+    "moduleDetection": "force", // Treat files as modules even if no imports/exports
+    "isolatedModules": true, // Unconditionally emit imports for unresolved files
+
+    /* Strictness */
+    "strict": true, // Enable all strict type-checking options
+    "noUnusedLocals": true, // Report errors on unused locals
+    "noUnusedParameters": true, // Report errors on unused parameters
+    "noFallthroughCasesInSwitch": true, // Report errors for fallthrough cases in switch statement
+
+    /* Module Resolution */
+    "module": "NodeNext", // Use Node.js ECMAScript module support
+    "moduleResolution": "NodeNext", // Use Node.js module resolution strategy
+    "baseUrl": ".", // Base directory to resolve non-relative module names
+    "paths": {
+      "@repo/lib/*": ["../packages/lib/src/*"], // Alias for shared lib (adjust path relative to server/ dir)
+      "@/*": ["./*"] // Alias for server root (optional, adjust as needed)
+    },
+
+    /* Output */
+    "outDir": "dist", // Redirect output structure to the directory
+    "sourceMap": true, // Generate corresponding '.map' file
+    "declaration": true // Generate corresponding '.d.ts' file
+
+    // Add other options as needed, e.g., "types": ["node"]
+  },
+  "include": ["./**/*.ts", "./**/*.js"], // Include all .ts and .js files within server/
+  "exclude": ["node_modules", "dist"] // Exclude node_modules and the output directory
+} 
