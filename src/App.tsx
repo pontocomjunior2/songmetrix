@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'r
 import { AuthProvider } from './contexts/AuthContext';
 import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
+import RequestPasswordReset from './components/Auth/RequestPasswordReset';
+import ResetPassword from './components/Auth/ResetPassword';
 import ProtectedRoute from './components/Auth/ProtectedRoute';
 import AdminRoute from './components/Auth/AdminRoute';
 import FirstAccessRoute from './components/Auth/FirstAccessRoute';
@@ -75,6 +77,8 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/reset-password" element={<RequestPasswordReset />} />
+          <Route path="/update-password" element={<ResetPassword />} />
           <Route path="/pending-approval" element={<PendingApproval />} />
           <Route path="/payment/success" element={<PaymentSuccess />} />
           <Route path="/payment/canceled" element={<PaymentCanceled />} />
