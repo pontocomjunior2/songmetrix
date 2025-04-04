@@ -514,14 +514,9 @@ export default function Ranking() {
                       alt={`${item.artist} cover`}
                       src={artistImages[item.artist] || '/placeholder-image.webp'}
                       effect="blur"
-                      className="ranking-artist-image"
                       placeholderSrc="/placeholder-image-small.webp"
-                      style={{
-                        width: '50px',
-                        height: '50px',
-                        borderRadius: '50%',
-                        objectFit: 'cover'
-                      }}
+                      wrapperClassName="w-[50px] h-[50px] rounded-full overflow-hidden inline-block align-middle"
+                      className="w-full h-full object-cover"
                     />
                   </td>
                   <td className="artist-column">{item.artist}</td>
