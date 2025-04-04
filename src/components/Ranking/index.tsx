@@ -78,22 +78,36 @@ export default function Ranking() {
     }
 
     const newImages: ArtistImages = {};
-    for (const item of data) {
-      if (!artistImages[item.artist]) {
+    // Usar Promise.all para buscar imagens em paralelo
+    const imagePromises = data.map(async (item) => {
+      // Só busca se ainda não tiver a imagem (usando chave original)
+      if (!artistImages[item.artist]) { 
         try {
-          const spotifyImageUrl = await fetchArtistImageFromSpotify(item.artist, token);
+          // Substituir " & " por " e " no nome do artista ANTES de buscar
+          const artistNameToSearch = item.artist.includes(' & ') 
+            ? item.artist.replace(' & ', ' e ') 
+            : item.artist;
+            
+          const spotifyImageUrl = await fetchArtistImageFromSpotify(artistNameToSearch, token);
+          
           if (spotifyImageUrl) {
-            newImages[item.artist] = spotifyImageUrl;
+            // Armazenar usando o nome ORIGINAL do artista como chave
+            newImages[item.artist] = spotifyImageUrl; 
           }
         } catch (error) {
           console.error(`Erro ao carregar a imagem para ${item.artist}:`, error);
         }
       }
-    }
+    });
+    
+    await Promise.all(imagePromises);
 
-    const updatedImages = { ...artistImages, ...newImages };
-    setArtistImages(updatedImages);
-    localStorage.setItem('artistImages', JSON.stringify(updatedImages));
+    // Atualizar estado apenas se novas imagens foram encontradas
+    if (Object.keys(newImages).length > 0) {
+        const updatedImages = { ...artistImages, ...newImages };
+        setArtistImages(updatedImages); 
+        // O useEffect separado cuida de salvar no localStorage
+    }
   }, [artistImages, loadSpotifyToken]);
 
   const getAuthHeaders = async () => {
@@ -500,8 +514,14 @@ export default function Ranking() {
                       alt={`${item.artist} cover`}
                       src={artistImages[item.artist] || '/placeholder-image.webp'}
                       effect="blur"
-                      className="ranking-artist-image rounded-full w-12 h-12 object-cover"
+                      className="ranking-artist-image"
                       placeholderSrc="/placeholder-image-small.webp"
+                      style={{
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '50%',
+                        objectFit: 'cover'
+                      }}
                     />
                   </td>
                   <td className="artist-column">{item.artist}</td>
