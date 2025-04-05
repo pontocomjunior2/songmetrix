@@ -30,7 +30,7 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
 
   const baseMenuItems: MenuItem[] = [
     {
-      name: 'Painel',
+      name: 'Dashboard',
       icon: Home,
       view: 'dashboard'
     },

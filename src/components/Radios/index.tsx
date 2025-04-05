@@ -170,7 +170,7 @@ export default function Radios() {
   return (
     <div className="space-y-4 p-6">
       <div className="flex flex-col sm:flex-row justify-between gap-4 mb-6">
-        <h2 className="text-2xl font-bold tracking-tight">Rádios Monitoradas</h2>
+        <div></div>
         <div className="relative w-full sm:w-64">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input

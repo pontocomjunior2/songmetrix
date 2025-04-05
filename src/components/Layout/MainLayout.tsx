@@ -62,7 +62,7 @@ const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
   };
 
   const getPageTitle = () => {
-    if (currentView === 'dashboard') return 'Painel';
+    if (currentView === 'dashboard') return 'Dashboard';
     if (currentView === 'ranking') return 'Ranking';
     if (currentView === 'realtime') return 'Tempo Real';
     if (currentView === 'radios') return 'Rádios';
