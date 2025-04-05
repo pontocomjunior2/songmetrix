@@ -13,6 +13,7 @@ import { PlusCircle, Radio, AlertTriangle } from 'lucide-react';
 import { saveRadioSuggestion } from '../../services/radioSuggestionService';
 import { useAuth } from '../../contexts/AuthContext';
 import { Alert } from '../ui/alert';
+import { toast } from 'sonner';
 
 // Lista de países mais comuns para o dropdown
 const paises = [
@@ -219,6 +220,13 @@ export default function SuggestRadioModal({
         contact_email: currentUser.email || undefined,
         additional_info: JSON.stringify(additionalInfo)
       });
+      
+      // Buscar o nome do estado completo para a notificação
+      const estadoSelecionado = availableStates.find(s => s.value === formValues.state);
+      const nomeEstado = estadoSelecionado ? estadoSelecionado.label : formValues.state; // Fallback para o código se não encontrar
+      
+      // Disparar notificação de sucesso
+      toast.success(`Adicionada Rádio ${formValues.radio_name} - ${formValues.city} - ${nomeEstado}`);
       
       setIsSuccess(true);
       setFormValues({

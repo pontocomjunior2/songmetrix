@@ -7,6 +7,7 @@ import { useNavigate, Outlet } from 'react-router-dom';
 import SidebarFixed from './SidebarFixed';
 import UserAvatar from '../Common/UserAvatar';
 import SuggestRadioModal from '../Radios/SuggestRadioModal';
+import { Toaster } from 'sonner';
 
 interface LayoutProps {
   currentView: string;
@@ -82,6 +83,7 @@ const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
 
   return (
     <div className={`min-h-screen ${theme === 'dark' ? 'dark' : ''}`}>
+      <Toaster position="top-right" richColors />
       {/* Mobile Menu Overlay */}
       {isMobile && isMobileMenuOpen && (
         <div 
