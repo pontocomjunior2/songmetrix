@@ -460,7 +460,7 @@ const Dashboard = () => {
       )}
 
       <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
+        <div></div>
         <div className="flex items-center gap-2">
           {lastUpdated && (
             <span className="text-sm text-gray-500 dark:text-gray-400">
