@@ -257,31 +257,38 @@ export default function SuggestRadioModal({
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button 
-          className={`flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full h-10 px-4 py-2 ${buttonClassName}`}
-        >
-          <PlusCircle className="w-4 h-4" />
-          {buttonText}
+        <Button variant="default" className={`flex items-center ${buttonClassName}`}>
+          <PlusCircle className="mr-2 h-4 w-4" />
+          <span className="hidden sm:inline">{buttonText}</span>
         </Button>
       </DialogTrigger>
       
-      <DialogContent className="sm:max-w-md">
-        {!isSuccess ? (
+      <DialogContent className="sm:max-w-[525px] dark:bg-gray-800">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 dark:text-white">
+            <Radio className="w-5 h-5" /> Sugerir uma Nova Rádio
+          </DialogTitle>
+          <DialogDescription className="dark:text-gray-400">
+            Ajude-nos a expandir nossa cobertura! Preencha os detalhes da rádio abaixo.
+          </DialogDescription>
+        </DialogHeader>
+        
+        {isSuccess ? (
+          <div className="p-4 bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-md text-center">
+            <h3 className="text-lg font-medium text-green-800 dark:text-green-200 mb-2">Sugestão Enviada com Sucesso!</h3>
+            <p className="text-sm text-green-700 dark:text-green-300 mb-4">Obrigado por sua contribuição. Analisaremos sua sugestão em breve.</p>
+            <Button onClick={handleCloseSuccess} variant="outline">Fechar</Button>
+          </div>
+        ) : (
           <>
-            <DialogHeader>
-              <DialogTitle className="text-xl">Sugerir Nova Rádio</DialogTitle>
-              <DialogDescription>
-                Preencha os dados da rádio que você gostaria que fosse monitorada pelo SongMetrix.
-                Nossa equipe irá analisar sua sugestão.
-              </DialogDescription>
-            </DialogHeader>
-            
             {error && (
-              <Alert className="bg-red-100 text-red-800 border-red-200 my-4">
-                <AlertTriangle className="w-4 h-4 mr-2" />
-                <div>
-                  <h4 className="font-medium">{error.message}</h4>
-                  {error.details && <p className="text-sm mt-1">{error.details}</p>}
+              <Alert className="mb-4 bg-red-50 dark:bg-red-900 border-red-200 dark:border-red-700">
+                <div className="flex items-start">
+                  <AlertTriangle className="h-5 w-5 text-red-500 dark:text-red-400 mr-3 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium text-red-800 dark:text-red-200">{error.message}</p>
+                    {error.details && <p className="text-sm text-red-700 dark:text-red-300">{error.details}</p>}
+                  </div>
                 </div>
               </Alert>
             )}
@@ -453,16 +460,6 @@ export default function SuggestRadioModal({
               </DialogFooter>
             </form>
           </>
-        ) : (
-          <div className="text-center py-4">
-            <div className="bg-green-100 text-green-800 p-4 rounded-lg mb-4">
-              <h3 className="text-lg font-medium">Sugestão enviada com sucesso!</h3>
-              <p className="mt-2">
-                Obrigado pela sua sugestão. Nossa equipe irá analisar e entraremos em contato se necessário.
-              </p>
-            </div>
-            <Button onClick={handleCloseSuccess} className="bg-indigo-600 hover:bg-indigo-700 text-white">OK</Button>
-          </div>
         )}
       </DialogContent>
     </Dialog>
