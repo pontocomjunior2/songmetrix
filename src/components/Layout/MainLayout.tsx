@@ -130,9 +130,9 @@ const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
               </h2>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2">
               {currentUser && (
-                <SuggestRadioModal buttonClassName="mr-3 rounded-full font-medium" />
+                <SuggestRadioModal buttonClassName="rounded-full font-medium" />
               )}
               
               <NotificationBell />
