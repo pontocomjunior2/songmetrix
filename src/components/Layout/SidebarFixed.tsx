@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserStatus } from '../../lib/auth';
-import { Home, BarChart3, FileText, Users, Type, Radio, LogOut, Clock, X, ChevronDown, Mail, MessageSquare } from 'lucide-react';
+import { Home, BarChart3, FileText, Users, Type, Radio, LogOut, Clock, X, ChevronDown, Mail, MessageSquare, Bell } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import WhatsAppContact from '../Common/WhatsAppContact';
@@ -91,6 +91,11 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
       name: 'Gerenciar Emails',
       icon: Mail,
       view: 'admin/emails'
+    },
+    {
+      name: 'Notificações',
+      icon: Bell,
+      view: 'admin/notifications'
     }
   ];
 

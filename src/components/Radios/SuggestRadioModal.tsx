@@ -13,7 +13,6 @@ import { PlusCircle, Radio, AlertTriangle } from 'lucide-react';
 import { saveRadioSuggestion } from '../../services/radioSuggestionService';
 import { useAuth } from '../../contexts/AuthContext';
 import { Alert } from '../ui/alert';
-import { toast } from 'sonner';
 
 // Lista de países mais comuns para o dropdown
 const paises = [
@@ -212,6 +211,7 @@ export default function SuggestRadioModal({
         country: formValues.country
       };
       
+      console.log('[SuggestRadioModal] Tentando salvar sugestão...');
       await saveRadioSuggestion({
         radio_name: formValues.radio_name,
         city: formValues.city,
@@ -222,11 +222,12 @@ export default function SuggestRadioModal({
       });
       
       // Buscar o nome do estado completo para a notificação
-      const estadoSelecionado = availableStates.find(s => s.value === formValues.state);
-      const nomeEstado = estadoSelecionado ? estadoSelecionado.label : formValues.state; // Fallback para o código se não encontrar
+      // const estadoSelecionado = availableStates.find(s => s.value === formValues.state);
+      // const nomeEstado = estadoSelecionado ? estadoSelecionado.label : formValues.state; // Fallback para o código se não encontrar
       
-      // Disparar notificação de sucesso
-      toast.success(`Adicionada Rádio ${formValues.radio_name} - ${formValues.city} - ${nomeEstado}`);
+      // Remover chamada toast.success
+      console.log('[SuggestRadioModal] Sugestão salva com sucesso.'); // Ajustar log
+      // console.log('[SuggestRadioModal] Notificação disparada.'); // Remover log
       
       setIsSuccess(true);
       setFormValues({
@@ -238,7 +239,7 @@ export default function SuggestRadioModal({
         website: ''
       });
     } catch (err: any) {
-      console.error('Erro ao enviar sugestão de rádio:', err);
+      console.error('[SuggestRadioModal] Erro ao enviar sugestão:', err);
       setError({
         message: err.message || 'Erro ao enviar sugestão',
         details: err.details || 'Tente novamente mais tarde'
