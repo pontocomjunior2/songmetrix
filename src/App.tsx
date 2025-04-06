@@ -20,6 +20,7 @@ import StreamsManager from './components/Admin/StreamsManager';
 import RelayStreamsManager from './components/Admin/RelayStreamsManager';
 import RadioSuggestions from './components/Admin/RadioSuggestions';
 import EmailManager from './components/Admin/EmailManager';
+import NotificationsPage from './pages/Admin/NotificationsPage';
 import PaymentSuccess from './components/Payment/PaymentSuccess';
 import PaymentCanceled from './components/Payment/PaymentCanceled';
 import Relatorios from './components/Relatorios';
@@ -122,6 +123,11 @@ function App() {
             <Route path="admin/emails" element={
               <AdminRoute>
                 <EmailManager />
+              </AdminRoute>
+            } />
+            <Route path="admin/notifications" element={
+              <AdminRoute>
+                <NotificationsPage />
               </AdminRoute>
             } />
           </Route>

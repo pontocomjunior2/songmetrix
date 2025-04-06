@@ -7,7 +7,7 @@ import { useNavigate, Outlet } from 'react-router-dom';
 import SidebarFixed from './SidebarFixed';
 import UserAvatar from '../Common/UserAvatar';
 import SuggestRadioModal from '../Radios/SuggestRadioModal';
-import { Toaster } from 'sonner';
+import NotificationBell from '../Notifications/NotificationBell';
 
 interface LayoutProps {
   currentView: string;
@@ -74,6 +74,7 @@ const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
     if (currentView === 'admin/streams') return 'Gerenciar Streams';
     if (currentView === 'admin/relay-streams') return 'Gerenciar Relay Streams';
     if (currentView === 'admin/emails') return 'Gerenciar Emails';
+    if (currentView === 'admin/notifications') return 'Gerenciar Notificações';
     return '';
   };
 
@@ -83,7 +84,6 @@ const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
 
   return (
     <div className={`min-h-screen ${theme === 'dark' ? 'dark' : ''}`}>
-      <Toaster position="top-right" richColors />
       {/* Mobile Menu Overlay */}
       {isMobile && isMobileMenuOpen && (
         <div 
@@ -135,6 +135,8 @@ const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
                 <SuggestRadioModal buttonClassName="mr-3 rounded-full font-medium" />
               )}
               
+              <NotificationBell />
+
               <button
                 onClick={toggleTheme}
                 className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200"
