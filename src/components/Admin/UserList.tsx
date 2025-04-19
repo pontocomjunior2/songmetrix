@@ -151,6 +151,8 @@ export default function UserList() {
 
   const handlePlanChange = async (userId: string, newPlanId: string) => {
     setUpdatingUserId(userId);
+    setLoading(true);
+    setError(null);
     try {
       const { error: updateError } = await supabase
         .from('users')
@@ -161,17 +163,16 @@ export default function UserList() {
         throw updateError;
       }
 
-      setUsers(prevUsers =>
-        prevUsers.map(user =>
-          user.id === userId ? { ...user, plan_id: newPlanId } : user
-        )
-      );
+      await loadUsers();
       reactToast.success(`Plano do usuário atualizado para ${PLAN_DISPLAY_NAMES[newPlanId] || newPlanId}`);
+
     } catch (error: any) {
       console.error("Erro ao atualizar plano do usuário:", error);
+      setError("Falha ao atualizar plano do usuário: " + error.message);
       reactToast.error("Falha ao atualizar plano do usuário: " + error.message);
     } finally {
       setUpdatingUserId(null);
+      setLoading(false);
     }
   };
 
@@ -317,14 +318,12 @@ export default function UserList() {
       try {
         setError('');
         setLoading(true);
-        
-        // Obter a sessão atual
+
         const session = await supabase.auth.getSession();
         if (!session.data.session) {
           throw new Error('Sessão não encontrada');
         }
-        
-        // Chamar a API para remover o usuário
+
         const response = await fetch('/api/users/remove', {
           method: 'POST',
           headers: {
@@ -333,19 +332,25 @@ export default function UserList() {
           },
           body: JSON.stringify({ userId })
         });
-        
+
+        const result = await response.json(); // Ler o JSON independentemente do status ok
+
         if (!response.ok) {
-          const result = await response.json();
-          throw new Error(result.error || 'Erro ao remover usuário');
+          // Usar a mensagem de erro específica da API, se disponível
+          const errorMessage = result.details || result.error || 'Erro desconhecido ao remover usuário';
+          console.error('API Error:', result); // Logar o erro completo da API
+          throw new Error(errorMessage);
         }
-        
-        // Recarregar a lista de usuários
+
         await loadUsers();
         reactToast.success('Usuário removido com sucesso');
+
       } catch (error: any) {
-        setError('Erro ao remover usuário: ' + error.message);
-        console.error('Erro ao remover usuário:', error);
-        reactToast.error('Erro ao remover usuário: ' + error.message);
+        // Exibir a mensagem de erro capturada
+        const displayMessage = error.message || 'Erro ao remover usuário';
+        setError('Erro ao remover usuário: ' + displayMessage);
+        console.error('Erro ao remover usuário (Frontend Catch):', error); // Logar o erro no frontend
+        reactToast.error('Erro ao remover usuário: ' + displayMessage);
       } finally {
         setLoading(false);
       }
