@@ -2249,11 +2249,11 @@ app.post('/api/users/sync-new-users', authenticateUser, async (req, res) => {
 });
 
 // Rota para remover um usuário
-app.post('/api/users/remove', authenticateUser, async (req, res) => {
+app.post('/api/users/remove', authenticateBasicUser, async (req, res) => {
   try {
-    // Verificar se o usuário é administrador
-    if (req.user.user_metadata?.status !== 'ADMIN') {
-      console.log('Tentativa não autorizada de remover usuário:', req.user.id);
+    // Mudança 2: Verificar usando planId
+    if (req.user?.planId !== 'ADMIN') {
+      console.log('Tentativa não autorizada de remover usuário:', req.user.id, 'Plan ID:', req.user?.planId); // Log extra
       return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
     }
 
@@ -2272,22 +2272,21 @@ app.post('/api/users/remove', authenticateUser, async (req, res) => {
 
     // Remover o usuário do Auth primeiro
     const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(userId);
-    
+
     if (deleteAuthError) {
       console.error(`Erro ao remover usuário ${userId} do Auth:`, deleteAuthError);
-      return res.status(500).json({ 
-        error: 'Erro ao remover usuário do Auth', 
-        details: deleteAuthError
+      return res.status(500).json({
+        error: 'Erro ao remover usuário do Auth', // Mensagem genérica
+        details: deleteAuthError.message // Enviar a mensagem do erro
       });
     }
 
-    // Depois remover da tabela users - isso deve acontecer automaticamente via CASCADE,
-    // mas vamos garantir que os registros sejam removidos
+    // Tentativa de remover da tabela users (pode ser ignorado se CASCADE estiver OK)
     const { error: deleteDbError } = await supabaseAdmin
       .from('users')
       .delete()
       .eq('id', userId);
-      
+
     if (deleteDbError) {
       console.error(`Erro ao remover usuário ${userId} do banco:`, deleteDbError);
       console.log('Este erro pode ser ignorado se o CASCADE do Auth já removeu o registro');
@@ -2295,12 +2294,13 @@ app.post('/api/users/remove', authenticateUser, async (req, res) => {
 
     console.log(`Usuário ${userId} removido com sucesso`);
 
-    res.status(200).json({ 
+    res.status(200).json({
       message: 'Usuário removido com sucesso',
       userId
     });
-  } catch (error) {
+  } catch (error: any) { // Especificar 'any' ou um tipo mais específico se disponível
     console.error('Erro ao remover usuário:', error);
+    // Incluir a mensagem do erro no details
     res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
   }
 });

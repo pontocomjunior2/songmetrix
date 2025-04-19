@@ -22,6 +22,8 @@
     "uuid": "^11.1.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.1",
     "nodemon": "^2.0.22"
   }
 }
