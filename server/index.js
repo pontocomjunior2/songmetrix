@@ -8,6 +8,7 @@ import radiosRoutes from './routes/radios.js';
 import relayStreamsRoutes from './routes/relay-streams.js';
 import usersRoutes from './routes/users.js';
 import rankingRoutes from './ranking.js';
+import paymentsRoutes from './routes/payments.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 // Remover import de pg e Pool
@@ -54,6 +55,9 @@ export default function registerRoutes(app) {
   
   // Registrar as rotas de ranking
   app.use('/api/ranking', rankingRoutes);
+  
+  // Registrar as rotas de pagamentos
+  app.use('/api/payments', paymentsRoutes);
   
   // Rota de diagnóstico para verificar a conexão com o banco de dados
   app.get('/api/diagnostico', async (req, res) => {

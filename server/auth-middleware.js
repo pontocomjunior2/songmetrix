@@ -334,7 +334,22 @@ export const authenticateUser = async (req, res, next) => {
       }
     }
 
-    // Verificar se o usuário tem permissão para acessar (ADMIN, ATIVO ou TRIAL válido)
+    // Permitir acesso à rota de criação de cobrança independentemente do status
+    if (req.originalUrl === '/api/payments/create-charge' && req.method === 'POST') {
+        console.log(`[AuthMiddleware] Access GRANTED for specific route ${req.method} ${req.originalUrl} for user ${user.id} with status ${correctStatus}`);
+        // Adicionar informações ao objeto user ANTES de chamar next()
+        req.user = {
+          id: user.id, 
+          email: user.email,
+          planId: correctStatus, // Usar o status determinado
+          user_metadata: user.user_metadata // Incluir metadata original
+        };
+        return next(); 
+    }
+
+    // Verificar se o usuário tem permissão para acessar
+
+    // --- Verificações de Status para OUTRAS rotas ---
     if (correctStatus === 'INATIVO') {
       console.log('Acesso negado para usuário inativo:', user.id);
       return res.status(403).json({ 
@@ -379,10 +394,14 @@ export const authenticateUser = async (req, res, next) => {
     }
     
     // Adicionar informações ao objeto user para a solicitação
+    // (Movido para DENTRO da condição de permissão específica ou AQUI se outras rotas precisarem)
     req.user = {
-      ...user,
-      dbStatus: dbUser?.status,
-      correctStatus: correctStatus
+      id: user.id, 
+      email: user.email,
+      planId: correctStatus, // Usar o status determinado
+      user_metadata: user.user_metadata, // Incluir metadata original
+      dbStatus: dbUser?.status, // Incluir status do DB se necessário para outras rotas
+      correctStatus: correctStatus // Incluir status final se necessário para outras rotas
     };
     
     // Adicionar dias restantes do trial se aplicável
@@ -390,6 +409,7 @@ export const authenticateUser = async (req, res, next) => {
       req.user.trial_days_remaining = Math.max(0, 14 - diffDays);
     }
     
+    console.log(`[AuthMiddleware] Access GRANTED (passed status checks) for user ${user.id} to ${req.originalUrl}`);
     next();
   } catch (error) {
     console.error('Erro de autenticação:', error);

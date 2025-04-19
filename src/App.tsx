@@ -23,7 +23,7 @@ import NotificationsPage from './pages/Admin/NotificationsPage';
 import PaymentSuccess from './components/Payment/PaymentSuccess';
 import PaymentCanceled from './components/Payment/PaymentCanceled';
 import Relatorios from './components/Relatorios';
-import Plans from './components/Plans';
+import Plans from './components/Plans/index';
 import Spotify from './components/Spotify';
 // import TrialRestricted from './components/Auth/TrialRestricted'; // Comentar ou remover se não for mais usado
 
