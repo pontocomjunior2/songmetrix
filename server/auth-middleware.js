@@ -134,32 +134,57 @@ export const authenticateBasicUser = async (req, res, next) => {
     console.log(`[AuthMiddleware] User: ${user.id}, Determined Plan ID: ${userPlanId}`);
 
     // --- DECISÃO DE ACESSO --- 
-    // Permitir acesso se plano for ADMIN, ATIVO ou TRIAL (não expirado)
-    const allowedPlans = ['ADMIN', 'ATIVO', 'TRIAL'];
+    const allowedPlans = ['ADMIN', 'ATIVO', 'TRIAL']; // TRIAL means non-expired trial
+    const expiredTrialAllowedRoutes = [
+        '/api/dashboard',          // Allow dashboard GET
+        '/api/ranking',            // Allow ranking GET
+        '/api/radios/status',      // Allow radio status GET
+        '/api/cities',             // Allow cities GET for filters
+        '/api/states',             // Allow states GET for filters
+        '/api/radio-abbreviations' // <<< ADICIONAR ESTA ROTA
+        // Adicionar outras rotas GET permitidas para trial expirado, se necessário
+    ];
+
+    // Anexar informações úteis ao request ANTES da decisão final
+    req.user = { 
+      id: user.id, 
+      email: user.email,
+      planId: userPlanId, // Passar o planId determinado (pode ser 'expired_trial')
+      user_metadata: user.user_metadata || {},
+      // Adicionar outros dados do dbUserData se necessário
+    };
+
+    // 1. Permitir acesso se plano for ADMIN, ATIVO ou TRIAL (não expirado)
     if (userPlanId && allowedPlans.includes(userPlanId)) {
-      // Anexar informações úteis ao request para uso nas rotas
-      req.user = { 
-        id: user.id, 
-        email: user.email,
-        planId: userPlanId, // Passar o planId determinado
-        // Adicionar outros dados do dbUserData se necessário
-      };
-      console.log(`[AuthMiddleware] Access GRANTED for user ${user.id} with plan ${userPlanId}`);
+      console.log(`[AuthMiddleware] Access GRANTED for user ${user.id} with plan ${userPlanId} to ${req.originalUrl}`);
       return next(); // Permitir acesso
-    } else {
-      // Negar acesso para outros casos (expired_trial, null, etc.)
-      console.log(`[AuthMiddleware] Access DENIED for user ${user.id} with plan ${userPlanId}`);
-      return res.status(403).json({ error: 'Acesso negado. Plano inválido ou expirado.' });
     }
 
-    // --- REMOVER LÓGICA ANTIGA DE STATUS --- 
-    /*
-    console.log('User status from database:', dbUser?.status);
-    // ... (verificação de inconsistência, fila de sync)
-    // ... (lógica de isNewUser)
-    // ... (lógica complexa de finalStatus)
-    // ... (atualização de status para TRIAL)
-    */
+    // 2. Se for trial expirado, verificar rotas específicas permitidas (apenas GET)
+    if (userPlanId === 'expired_trial') {
+        const isAllowedRoute = expiredTrialAllowedRoutes.some(route => req.originalUrl.startsWith(route));
+
+        if (isAllowedRoute && req.method === 'GET') {
+            console.log(`[AuthMiddleware] Access GRANTED (read-only) for expired trial user ${user.id} to ${req.originalUrl}`);
+            return next(); // Permitir acesso GET a rotas específicas
+        } else {
+            // Negar acesso a outras rotas ou métodos para trial expirado
+            console.log(`[AuthMiddleware] Access DENIED for expired trial user ${user.id} to ${req.method} ${req.originalUrl} (Route/Method not allowed)`);
+            return res.status(403).json({ 
+                error: 'Assinatura expirada', 
+                code: 'TRIAL_EXPIRED',
+                planId: userPlanId
+            });
+        }
+    }
+    
+    // 3. Negar acesso para outros casos (INATIVO, null, etc.)
+    console.log(`[AuthMiddleware] Access DENIED for user ${user.id} with invalid/inactive plan ${userPlanId} to ${req.originalUrl}`);
+    return res.status(403).json({ 
+        error: 'Acesso negado. Plano inválido ou inativo.', 
+        code: 'ACCESS_DENIED',
+        planId: userPlanId 
+    });
 
   } catch (error) {
     console.error('[AuthMiddleware] Unexpected error:', error);

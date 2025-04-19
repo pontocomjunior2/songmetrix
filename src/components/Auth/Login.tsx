@@ -64,10 +64,10 @@ export default function Login() {
       </div>
 
       {/* Lado Direito - Formulário de Login */}
-      <div className="flex-1 flex items-center justify-center p-8">
-        <div className="max-w-md w-full space-y-6">
+      <div className="flex-1 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+        <div className="max-w-md w-full space-y-4 md:space-y-6">
           <div className="text-center">
-            <h2 className="text-3xl font-bold text-gray-900">
+            <h2 className="text-2xl md:text-3xl font-bold text-gray-900">
               Vamos começar
             </h2>
             <p className="mt-2 text-sm text-gray-600">
