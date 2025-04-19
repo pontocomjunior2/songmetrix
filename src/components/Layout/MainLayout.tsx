@@ -142,6 +142,11 @@ const MainLayout: React.FC = () => {
                             Free
                           </Badge>
                         )}
+                        {planId === 'trial' && (
+                          <Badge variant="default" className="ml-2 px-1.5 py-0.5 text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                            Trial
+                          </Badge>
+                        )}
                       </span>
                     )}
                   </button>
@@ -152,11 +157,18 @@ const MainLayout: React.FC = () => {
                         {isMobile && currentUser.email && (
                           <div className="px-4 py-2 text-sm text-gray-700 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
                             <span>{currentUser.email}</span>
-                            {planId === 'expired_trial' && (
-                              <Badge variant="secondary" className="px-1.5 py-0.5 text-xs">
-                                Free
-                              </Badge>
-                            )}
+                            <div>
+                              {planId === 'expired_trial' && (
+                                <Badge variant="secondary" className="px-1.5 py-0.5 text-xs">
+                                  Free
+                                </Badge>
+                              )}
+                              {planId === 'trial' && (
+                                <Badge variant="default" className="px-1.5 py-0.5 text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                                  Trial
+                                </Badge>
+                              )}
+                            </div>
                           </div>
                         )}
                         <button 

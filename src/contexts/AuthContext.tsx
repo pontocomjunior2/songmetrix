@@ -41,6 +41,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [planId, setPlanId] = useState<string | null>(null);
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
+  const [favoriteSegments, setFavoriteSegments] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isRefreshing = useRef(false);
@@ -48,6 +49,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const isMounted = useRef(true);
   const hasWelcomeEmailBeenSent = useRef(false);
   const navigate = useNavigate();
+  const migrationAttempted = useRef(false); // Ref para controlar a tentativa de migração
 
   // Memoizar funções que não dependem de estados internos mutáveis (ou usar useCallback)
   // Exemplo: checkSessionActive geralmente não depende de estado interno.
@@ -74,6 +76,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           setCurrentUser(null);
           setPlanId(null);
           setTrialEndsAt(null);
+          setFavoriteSegments(null);
           setError(null);
         }
         success = false;
@@ -87,6 +90,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             setCurrentUser(null);
             setPlanId(null);
             setTrialEndsAt(null);
+            setFavoriteSegments(null);
             setError(authError?.message || 'Falha ao obter usuário.');
           }
           success = false;
@@ -95,6 +99,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           const userMetadata = user.user_metadata || {};
           const dbPlanId = userMetadata.plan_id; // Ler plan_id do metadata
           const dbTrialEndsAt = userMetadata.trial_ends_at; // Ler trial_ends_at do metadata
+          const dbFavoriteSegments = userMetadata.favorite_segments as string[] | undefined; // Ler segmentos
 
           console.log('[AuthContext] User metadata:', userMetadata); 
 
@@ -116,6 +121,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             setCurrentUser(user); // user já contém user_metadata atualizado
             setPlanId(currentPlanId); // Definir planId determinado
             setTrialEndsAt(dbTrialEndsAt); // Definir trialEndsAt do metadata
+            setFavoriteSegments(dbFavoriteSegments || null); // Definir estado dos segmentos
             setError(null); // Clear error on success
           }
           success = true;
@@ -127,6 +133,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setCurrentUser(null);
         setPlanId(null);
         setTrialEndsAt(null);
+        setFavoriteSegments(null);
         setError('Erro inesperado ao carregar dados.');
       }
       success = false;
@@ -186,6 +193,47 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [currentUser]); // Depende de currentUser
 
+  // Nova função para atualizar segmentos (MOVIDA PARA CIMA)
+  const updateFavoriteSegments = useCallback(async (segments: string[]) => {
+    if (!currentUser) {
+      console.error("Tentativa de atualizar segmentos preferidos sem usuário logado.");
+      toast.error("Você precisa estar logado para salvar preferências.");
+      return;
+    }
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        data: { // Atualiza user_metadata
+          favorite_segments: segments
+          // Opcional: limpar favorite_radios aqui? Talvez melhor na migração.
+          // favorite_radios: null
+        }
+      });
+      if (error) {
+        toast.error("Não foi possível salvar seus formatos preferidos.");
+        throw error;
+      }
+      if (data.user && isMounted.current) {
+        console.log("Metadados de segmentos atualizados no Auth.");
+        setCurrentUser(prevUser => prevUser ? { ...prevUser, user_metadata: data.user!.user_metadata } : null);
+        setFavoriteSegments(segments);
+        toast.success("Formatos preferidos salvos!");
+      }
+    } catch (error) {
+      console.error("Erro em updateFavoriteSegments:", error);
+      throw error;
+    }
+  }, [currentUser]);
+
+  // Nova função para verificar preferências (MOVIDA PARA CIMA)
+  const userHasPreferences = useCallback(async (): Promise<boolean> => {
+    if (!currentUser) return false;
+    const metadata = currentUser.user_metadata || {};
+    const hasSegments = metadata.favorite_segments && Array.isArray(metadata.favorite_segments) && metadata.favorite_segments.length > 0;
+    const hasRadios = metadata.favorite_radios && Array.isArray(metadata.favorite_radios) && metadata.favorite_radios.length > 0;
+    console.log(`[userHasPreferences] Has Segments: ${hasSegments}, Has Radios: ${hasRadios}`);
+    return hasSegments || hasRadios;
+  }, [currentUser]);
+
   // Efeito para inicializar autenticação e configurar listeners
   useEffect(() => {
     // Chamar refreshUserData incondicionalmente na montagem inicial
@@ -216,6 +264,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           setCurrentUser(null);
           setPlanId(null);
           setTrialEndsAt(null);
+          setFavoriteSegments(null);
           setError(null);
           setLoading(false);
           // Resetar isInitialized pode ser necessário dependendo do fluxo desejado pós-logout
@@ -230,6 +279,87 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       isMounted.current = false;
     };
   }, []); // Array vazio aqui
+
+  // Efeito para tentar migração de rádios para segmentos (EXISTENTE, AGORA APÓS AS FUNÇÕES QUE USA)
+  useEffect(() => {
+    const attemptMigration = async () => {
+      if (!currentUser || !isInitialized || migrationAttempted.current) {
+        // Só roda se inicializado, com usuário e se ainda não tentou
+        return;
+      }
+
+      const metadata = currentUser.user_metadata || {};
+      const needsMigration = !metadata.favorite_segments?.length && metadata.favorite_radios?.length > 0;
+
+      if (needsMigration) {
+        migrationAttempted.current = true; // Marca que a tentativa foi feita
+        console.log(`[AuthContext Migration] Usuário ${currentUser.id} precisa de migração. Rádios antigas:`, metadata.favorite_radios);
+
+        try {
+          // 1. Chamar a API para buscar os segmentos
+          const response = await fetch('/api/radios/segments-map', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              // Adicionar token de autorização se a API exigir (authenticateBasicUser faz isso no backend?
+              // Assumindo que o middleware de autenticação cuida disso no backend
+              // 'Authorization': `Bearer ${session?.access_token}`
+            },
+            body: JSON.stringify({ radioNames: metadata.favorite_radios })
+          });
+
+          if (!response.ok) {
+            const errorBody = await response.json();
+            throw new Error(`Erro na API de mapeamento: ${response.statusText} - ${errorBody.message || 'Erro desconhecido'}`);
+          }
+
+          const mappedSegments: string[] = await response.json();
+          console.log('[AuthContext Migration] Segmentos mapeados:', mappedSegments);
+
+          if (mappedSegments.length > 0) {
+            // 2. Atualizar os metadados com os novos segmentos
+            await updateFavoriteSegments(mappedSegments);
+            console.log('[AuthContext Migration] Segmentos salvos com sucesso.');
+
+            // 3. Opcional: Limpar favorite_radios antigos
+            try {
+              const { error: cleanupError } = await supabase.auth.updateUser({
+                data: { favorite_radios: null }
+              });
+              if (cleanupError) {
+                console.warn('[AuthContext Migration] Falha ao limpar favorite_radios antigos:', cleanupError);
+              } else {
+                console.log('[AuthContext Migration] favorite_radios antigos removidos.');
+                // Atualiza currentUser localmente para refletir a remoção
+                setCurrentUser(prevUser => {
+                  if (!prevUser) return null;
+                  const newMeta = { ...prevUser.user_metadata };
+                  delete newMeta.favorite_radios;
+                  return { ...prevUser, user_metadata: newMeta };
+                });
+              }
+            } catch(cleanupCatchError) {
+               console.warn('[AuthContext Migration] Exceção ao limpar favorite_radios antigos:', cleanupCatchError);
+            }
+          } else {
+            console.log('[AuthContext Migration] Nenhum segmento encontrado para as rádios antigas. Nenhuma atualização necessária.');
+          }
+        } catch (migrationError) {
+          console.error('[AuthContext Migration] Falha durante o processo de migração:', migrationError);
+          toast.error('Houve um problema ao atualizar suas preferências antigas.');
+          // Não re-tenta automaticamente para evitar loops
+        }
+      } else {
+         // Se não precisa de migração, marca como tentado para não verificar de novo
+         if (currentUser && isInitialized && !migrationAttempted.current) {
+            migrationAttempted.current = true;
+         }
+      }
+    };
+
+    attemptMigration();
+
+  }, [currentUser, isInitialized, updateFavoriteSegments]); // Correto
 
   // Envolver login em useCallback
   const login = useCallback(async (email: string, password: string): Promise<{ error: CustomAuthError | null }> => {
@@ -429,6 +559,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     currentUser,
     planId,
     trialEndsAt,
+    favoriteSegments,
     loading,
     error,
     isInitialized,
@@ -437,11 +568,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     refreshUserData,
     signUp,
     updateFavoriteRadios,
+    updateFavoriteSegments,
+    userHasPreferences,
     sendWelcomeEmail
   }), [
     currentUser,
     planId,
     trialEndsAt,
+    favoriteSegments,
     loading,
     error,
     isInitialized,
@@ -450,6 +584,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     refreshUserData,
     signUp,
     updateFavoriteRadios,
+    updateFavoriteSegments,
+    userHasPreferences,
     sendWelcomeEmail
   ]);
 

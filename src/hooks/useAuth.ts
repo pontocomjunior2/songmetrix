@@ -16,6 +16,7 @@ export interface AuthContextType {
   currentUser: User | null;
   planId: string | null;
   trialEndsAt: string | null;
+  favoriteSegments?: string[] | null;
   loading: boolean;
   error: string | null;
   isInitialized: boolean;
@@ -29,6 +30,8 @@ export interface AuthContextType {
     message?: string
   }>;
   updateFavoriteRadios: (radios: string[]) => Promise<void>;
+  updateFavoriteSegments: (segments: string[]) => Promise<void>;
+  userHasPreferences: () => Promise<boolean>;
   sendWelcomeEmail: () => Promise<boolean>;
 }
 

@@ -1,64 +1,71 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase-client';
-import FavoriteRadios from '../Radios/FavoriteRadios';
+import SegmentSelector from '../FirstAccess/SegmentSelector';
 import Loading from '../Common/Loading';
-import { PrimaryButton } from '../Common/Button';
 import { toast } from 'react-toastify';
 
 export default function FirstAccessRoute() {
-  const { currentUser, updateFavoriteRadios } = useAuth();
-  const [hasFavorites, setHasFavorites] = useState<boolean | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { currentUser, updateFavoriteSegments, userHasPreferences } = useAuth();
+  const [hasPreferencesChecked, setHasPreferencesChecked] = useState<boolean>(false);
+  const [loadingCheck, setLoadingCheck] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (currentUser?.user_metadata?.favorite_radios?.length > 0) {
-      setHasFavorites(true);
+    const checkPreferences = async () => {
+      setLoadingCheck(true);
+      const hasPrefs = await userHasPreferences();
+      setHasPreferencesChecked(hasPrefs);
+      setLoadingCheck(false);
+    };
+    if (currentUser) {
+      checkPreferences();
     } else {
-      setHasFavorites(false);
+      setLoadingCheck(false);
     }
-    setLoading(false);
-  }, [currentUser]);
+  }, [userHasPreferences, currentUser]);
 
-  const handleSaveFavorites = async (selectedRadios: string[]) => {
-    console.log("Salvando favoritas...");
+  const handleSaveSegments = useCallback(async (selectedSegments: string[]) => {
+    console.log("Salvando segmentos preferidos:", selectedSegments);
+    if (selectedSegments.length === 0) {
+      toast.info("Selecione pelo menos um formato de rádio para continuar.");
+      return;
+    }
+
     try {
-      if (selectedRadios.length === 0) {
-        toast.info("Selecione pelo menos uma rádio favorita para continuar.");
-        return;
-      }
+      await updateFavoriteSegments(selectedSegments);
 
-      await updateFavoriteRadios(selectedRadios);
-
-      console.log('Rádios favoritas salvas com sucesso, redirecionando para dashboard...');
+      console.log('Segmentos preferidos salvos com sucesso, redirecionando para dashboard...');
       toast.success('Preferências salvas!');
       navigate('/dashboard');
     } catch (error) {
-      console.error("Erro ao salvar favoritas:", error);
+      console.error("Erro ao salvar segmentos preferidos:", error);
       toast.error("Erro ao salvar suas preferências. Tente novamente.");
+      throw error;
     }
-  };
+  }, [updateFavoriteSegments, navigate]);
 
-  if (loading) {
+  if (loadingCheck) {
     return <Loading />;
   }
 
-  if (hasFavorites === true) {
-    console.log('Usuário já tem favoritas, redirecionando...');
+  if (hasPreferencesChecked) {
+    console.log('Usuário já tem preferências, redirecionando para dashboard...');
     return <Navigate to="/dashboard" replace />;
   }
 
-  if (hasFavorites === false) {
+  if (!loadingCheck && !hasPreferencesChecked) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-900 p-4">
-        <div className="max-w-2xl w-full bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8">
+        <div className="max-w-4xl w-full bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8">
           <h1 className="text-2xl font-bold text-center mb-4 text-gray-800 dark:text-gray-100">Bem-vindo ao SongMetrix!</h1>
-          <p className="text-center text-gray-600 dark:text-gray-300 mb-6">Para começar, selecione algumas das suas rádios favoritas. Isso nos ajuda a personalizar sua experiência.</p>
-          <FavoriteRadios />
+          <p className="text-center text-gray-600 dark:text-gray-300 mb-6">
+            Para começar, selecione seus formatos de rádio preferidos. Isso nos ajuda a personalizar seu Dashboard e suas análises.
+          </p>
+          <SegmentSelector onSave={handleSaveSegments} />
           <p className="mt-6 text-xs text-center text-gray-500 dark:text-gray-400">
-            Você poderá alterar suas favoritas a qualquer momento no seu perfil.
+            Você poderá alterar suas preferências a qualquer momento no seu perfil.
           </p>
         </div>
       </div>
