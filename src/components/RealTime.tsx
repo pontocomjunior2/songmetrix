@@ -8,6 +8,7 @@ import { RadioStatus } from '../types/components';
 import './RealTime/styles/RealTime.css';
 import Select from 'react-select';
 import { SingleValue } from 'react-select';
+import { UpgradePrompt } from './Common/UpgradePrompt';
 
 interface SelectOption {
   value: string;
@@ -41,7 +42,7 @@ interface Execution {
 }
 
 export default function RealTime() {
-  const { currentUser } = useAuth();
+  const { currentUser, planId } = useAuth();
   const { theme } = useTheme();
   const isDarkMode = theme === 'dark';
   const today = format(new Date(), 'yyyy-MM-dd');
@@ -248,6 +249,15 @@ export default function RealTime() {
   const toggleRadio = (id: number) => {
     setExpandedRadio(expandedRadio === id ? null : id);
   };
+
+  if (planId === 'expired_trial') {
+    return (
+      <UpgradePrompt
+        isBlocking={true}
+        message="A visualização de dados em Tempo Real é uma funcionalidade exclusiva para assinantes Premium. Atualize seu plano para obter acesso."
+      />
+    );
+  }
 
   return (
     <div className={`realtime-container ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'}`}>

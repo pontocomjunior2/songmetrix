@@ -25,7 +25,7 @@ import PaymentCanceled from './components/Payment/PaymentCanceled';
 import Relatorios from './components/Relatorios';
 import Plans from './components/Plans';
 import Spotify from './components/Spotify';
-import TrialRestricted from './components/Auth/TrialRestricted';
+// import TrialRestricted from './components/Auth/TrialRestricted'; // Comentar ou remover se não for mais usado
 
 // Componente para redirecionar após confirmação de email
 // Deve ser usado dentro do Router
@@ -79,10 +79,10 @@ function App() {
         {/* Outras rotas protegidas */}
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="ranking" element={<Ranking />} />
-        <Route path="realtime" element={<TrialRestricted><RealTime /></TrialRestricted>} />
+        <Route path="realtime" element={<RealTime />} />
         <Route path="radios" element={<Radios />} />
-        <Route path="relatorios" element={<TrialRestricted><Relatorios /></TrialRestricted>} />
-        <Route path="spotify" element={<TrialRestricted><Spotify /></TrialRestricted>} />
+        <Route path="relatorios" element={<Relatorios />} />
+        <Route path="spotify" element={<Spotify />} />
         {/* Rotas Admin */}
         <Route path="admin/users" element={<AdminRoute><UserList /></AdminRoute>} />
         <Route path="admin/abbreviations" element={<AdminRoute><RadioAbbreviations /></AdminRoute>} />
