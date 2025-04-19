@@ -55,80 +55,29 @@ export const authenticateBasicUser = async (req, res, next) => {
       return res.status(401).json({ error: 'Token inválido ou usuário não encontrado' });
     }
 
-    // Buscar usuário da tabela users usando plan_id
-    const { data: dbUserData, error: dbError } = await supabaseAdmin
-      .from('users')
-      // Selecionar plan_id e outros campos necessários, remover status antigo
-      .select('id, email, plan_id, trial_ends_at, created_at, updated_at') 
-      .eq('id', user.id)
-      .maybeSingle(); // Usar maybeSingle para tratar usuário não encontrado sem erro
+    // Obter dados diretamente do user_metadata retornado por getUser
+    const userMetadata = user.user_metadata || {};
+    let userPlanId = userMetadata.plan_id; 
+    let userTrialEndsAt = userMetadata.trial_ends_at;
+    console.log('[AuthMiddleware] User metadata from Auth:', userMetadata);
 
-    if (dbError) {
-      // Logar erro mas não necessariamente bloquear, pode ser perfil não criado ainda
-      console.error('[AuthMiddleware] Error fetching user profile from DB:', dbError);
-      // Se for erro de permissão, etc., retornar erro.
-      // Se for 'PGRST116' (not found), dbUserData será null.
-      // Por enquanto, vamos permitir continuar e tratar dbUserData nulo.
-      // return res.status(500).json({ error: 'Erro ao buscar perfil do usuário' });
-    }
-
-    let userPlanId = dbUserData?.plan_id; // Obter plan_id do banco
-    let userTrialEndsAt = dbUserData?.trial_ends_at;
-
-    // --- LÓGICA SIMPLIFICADA --- 
-    // Se o perfil não existe no DB, tenta criar.
-    if (!dbUserData) {
-       console.warn(`[AuthMiddleware] User profile not found in DB for user ${user.id}. Attempting to create...`);
-       try {
-           const createdAt = new Date(user.created_at);
-           const trialEndDate = new Date(createdAt); // Basear trial na data de criação do auth
-           trialEndDate.setDate(trialEndDate.getDate() + 14);
-
-           const { error: insertError } = await supabaseAdmin
-             .from('users')
-             .insert({
-               id: user.id,
-               email: user.email,
-               plan_id: 'TRIAL', // Começa como TRIAL
-               trial_ends_at: trialEndDate.toISOString(),
-               created_at: user.created_at || new Date().toISOString(),
-               updated_at: new Date().toISOString()
-               // Adicionar full_name, whatsapp dos metadados se disponíveis e desejado
-               // full_name: user.user_metadata?.full_name,
-               // whatsapp: user.user_metadata?.whatsapp,
-             });
-
-           if (insertError) {
-             console.error(`[AuthMiddleware] Failed to create profile for ${user.id}:`, insertError);
-             // Continuar mesmo assim? Ou negar acesso? Vamos negar por enquanto.
-             return res.status(500).json({ error: 'Falha ao inicializar perfil do usuário.' });
-           } else {
-             console.log(`[AuthMiddleware] Profile created successfully for ${user.id}.`);
-             // Define os valores para continuar a verificação de acesso
-             userPlanId = 'TRIAL'; 
-             userTrialEndsAt = trialEndDate.toISOString();
-             // Não precisa recarregar dbUserData, já temos os valores
-           }
-       } catch (creationError) {
-           console.error(`[AuthMiddleware] Exception during profile creation for ${user.id}:`, creationError);
-           return res.status(500).json({ error: 'Erro interno ao criar perfil do usuário.' });
-       }
-    } else {
-       // Se perfil existe, usar os dados do banco
-       userPlanId = dbUserData.plan_id;
-       userTrialEndsAt = dbUserData.trial_ends_at;
-    }
-    
-    // Verificar se o trial expirou (lógica movida para depois da criação/leitura)
-    if (userPlanId === 'TRIAL' && userTrialEndsAt) {
+    // Verificar se o trial expirou (usando dados do metadata)
+    if (userPlanId === 'trial' && userTrialEndsAt) { // <<< Usar 'trial' como string
       const now = new Date();
       const trialEnd = new Date(userTrialEndsAt);
       if (trialEnd < now) {
         console.log(`[AuthMiddleware] Trial expired for user ${user.id}. Treating as expired_trial.`);
         userPlanId = 'expired_trial';
-        // Opcional: Atualizar no banco (pode ser feito por job agendado)
-        // supabaseAdmin.from('users').update({ plan_id: 'expired_trial' }).eq('id', user.id).then(...);
+        // Opcional: Atualizar metadados via updateUser? Talvez não aqui para evitar escritas em cada request.
       }
+    }
+
+    // Garantir que userPlanId não seja null/undefined se metadados não existirem
+    if (!userPlanId) {
+        // Se não há plan_id nos metadados, assumir TRIAL (ou INATIVO se for antigo?)
+        // Por segurança, vamos tratar como INATIVO se não houver plan_id.
+        console.warn(`[AuthMiddleware] plan_id not found in user_metadata for ${user.id}. Treating as INATIVO.`);
+        userPlanId = 'INATIVO'; 
     }
 
     console.log(`[AuthMiddleware] User: ${user.id}, Determined Plan ID: ${userPlanId}`);
@@ -150,13 +99,13 @@ export const authenticateBasicUser = async (req, res, next) => {
       id: user.id, 
       email: user.email,
       planId: userPlanId, // Passar o planId determinado (pode ser 'expired_trial')
-      user_metadata: user.user_metadata || {},
-      // Adicionar outros dados do dbUserData se necessário
+      user_metadata: userMetadata // Passar o metadata completo
     };
 
     // 1. Permitir acesso se plano for ADMIN, ATIVO ou TRIAL (não expirado)
-    if (userPlanId && allowedPlans.includes(userPlanId)) {
+    if (allowedPlans.includes(userPlanId)) { // Note: 'expired_trial' não está em allowedPlans
       console.log(`[AuthMiddleware] Access GRANTED for user ${user.id} with plan ${userPlanId} to ${req.originalUrl}`);
+      console.log(`[${new Date().toISOString()}] [AuthMiddleware] Chamando next() para rota permitida (ADMIN/ATIVO/TRIAL).`);
       return next(); // Permitir acesso
     }
 
@@ -166,6 +115,7 @@ export const authenticateBasicUser = async (req, res, next) => {
 
         if (isAllowedRoute && req.method === 'GET') {
             console.log(`[AuthMiddleware] Access GRANTED (read-only) for expired trial user ${user.id} to ${req.originalUrl}`);
+            console.log(`[${new Date().toISOString()}] [AuthMiddleware] Chamando next() para rota permitida (Trial Expirado GET).`);
             return next(); // Permitir acesso GET a rotas específicas
         } else {
             // Negar acesso a outras rotas ou métodos para trial expirado

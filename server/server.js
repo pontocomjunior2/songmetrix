@@ -185,7 +185,7 @@ console.log('Initializing database pool with:', {
 // Create Supabase admin client
 const supabaseAdmin = createClient(
   process.env.VITE_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
   {
     auth: {
       autoRefreshToken: false,
@@ -2253,63 +2253,12 @@ app.post('/api/users/sync-new-users', authenticateBasicUser, async (req, res) =>
 
 // Rota para remover um usuário (Admin)
 app.post('/api/users/remove', authenticateBasicUser, async (req, res) => {
-  // A verificação de ADMIN deve ser feita DENTRO da rota agora
-  if (req.user?.planId !== 'ADMIN') {
-      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
-  }
-  try {
-    // Verificar se o usuário é administrador
-    if (req.user.user_metadata?.status !== 'ADMIN') {
-      console.log('Tentativa não autorizada de remover usuário:', req.user.id);
-      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
-    }
+  // LOG ADICIONADO AQUI (PRIMEIRA LINHA)
+  console.log(`[${new Date().toISOString()}] [ROUTE ENTRY] /api/users/remove`);
 
-    const { userId } = req.body;
+  // Resposta simples para teste
+  res.status(200).send('Teste da rota /api/users/remove alcançado.');
 
-    if (!userId) {
-      return res.status(400).json({ error: 'ID do usuário é obrigatório' });
-    }
-
-    // Verificar se o usuário está tentando remover a si mesmo
-    if (userId === req.user.id) {
-      return res.status(400).json({ error: 'Você não pode remover seu próprio usuário' });
-    }
-
-    console.log(`Removendo usuário ${userId}`);
-
-    // Remover o usuário do Auth primeiro
-    const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(userId);
-    
-    if (deleteAuthError) {
-      console.error(`Erro ao remover usuário ${userId} do Auth:`, deleteAuthError);
-      return res.status(500).json({ 
-        error: 'Erro ao remover usuário do Auth', 
-        details: deleteAuthError
-      });
-    }
-
-    // Depois remover da tabela users - isso deve acontecer automaticamente via CASCADE,
-    // mas vamos garantir que os registros sejam removidos
-    const { error: deleteDbError } = await supabaseAdmin
-      .from('users')
-      .delete()
-      .eq('id', userId);
-      
-    if (deleteDbError) {
-      console.error(`Erro ao remover usuário ${userId} do banco:`, deleteDbError);
-      console.log('Este erro pode ser ignorado se o CASCADE do Auth já removeu o registro');
-    }
-
-    console.log(`Usuário ${userId} removido com sucesso`);
-
-    res.status(200).json({ 
-      message: 'Usuário removido com sucesso',
-      userId
-    });
-  } catch (error) {
-    console.error('Erro ao remover usuário:', error);
-    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
-  }
 });
 
 // Rota para forçar a atualização de status para TRIAL para usuários novos (Admin)
@@ -2481,6 +2430,57 @@ app.post('/api/sendpulse/sync-all-users', authenticateBasicUser, async (req, res
       return res.status(403).json({ error: 'Apenas administradores podem sincronizar usuários com o SendPulse' });
   }
   // ... resto da lógica ...
+});
+
+// Rota para definir plan_id='ADMIN' para um usuário (ADMIN ONLY)
+app.post('/admin/users/:userId/set-admin-plan', authenticateBasicUser, async (req, res) => {
+  // Verificar se o requisitante é ADMIN
+  if (req.user?.planId !== 'ADMIN') {
+      console.log(`[set-admin-plan] Acesso negado para não-admin. User: ${req.user?.id}, Plan: ${req.user?.planId}`);
+      return res.status(403).json({ error: 'Acesso negado. Somente administradores.' });
+  }
+
+  const targetUserId = req.params.userId;
+  console.log(`[set-admin-plan] Admin ${req.user.id} tentando definir plan_id=ADMIN para usuário ${targetUserId}`);
+
+  try {
+    // Obter metadados atuais para mesclar
+    const { data: userData, error: getError } = await supabaseAdmin.auth.admin.getUserById(targetUserId);
+
+    if (getError) {
+        console.error(`[set-admin-plan] Erro ao buscar usuário ${targetUserId}:`, getError);
+        return res.status(500).json({ error: 'Erro ao buscar usuário alvo.', details: getError.message });
+    }
+
+    if (!userData || !userData.user) {
+        return res.status(404).json({ error: 'Usuário alvo não encontrado.' });
+    }
+
+    // Mesclar metadados existentes com o novo plan_id
+    const currentMetadata = userData.user.user_metadata || {};
+    const newMetadata = {
+        ...currentMetadata,
+        plan_id: 'ADMIN'
+    };
+
+    // Atualizar metadados
+    const { data: updateData, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+      targetUserId,
+      { user_metadata: newMetadata }
+    );
+
+    if (updateError) {
+      console.error(`[set-admin-plan] Erro ao atualizar metadados para ${targetUserId}:`, updateError);
+      return res.status(500).json({ error: 'Erro ao atualizar metadados.', details: updateError.message });
+    }
+
+    console.log(`[set-admin-plan] Metadados atualizados com sucesso para ${targetUserId}:`, updateData.user?.user_metadata);
+    res.status(200).json({ success: true, message: `Plan ID 'ADMIN' definido para ${targetUserId}`, metadata: updateData.user?.user_metadata });
+
+  } catch (error) {
+    console.error(`[set-admin-plan] Erro inesperado para ${targetUserId}:`, error);
+    res.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
+  }
 });
 
 const PORT = process.env.PORT || 3001;
