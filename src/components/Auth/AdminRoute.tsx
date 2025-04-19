@@ -1,8 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { UserStatus } from '../../types/auth';
-import { supabase } from '../../lib/supabase-client';
 import { Loader2 } from 'lucide-react';
 
 interface AdminRouteProps {
@@ -10,45 +8,27 @@ interface AdminRouteProps {
 }
 
 export default function AdminRoute({ children }: AdminRouteProps) {
-  const { currentUser } = useAuth();
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { currentUser, planId, loading: authLoading } = useAuth();
 
-  useEffect(() => {
-    const checkAdminStatus = () => {
-      if (!currentUser) {
-        setIsAdmin(false);
-        setIsLoading(false);
-        return;
-      }
-
-      // Check admin status from user metadata
-      const userStatus = currentUser.user_metadata?.status;
-      setIsAdmin(userStatus === UserStatus.ADMIN);
-      setIsLoading(false);
-    };
-
-    checkAdminStatus();
-  }, [currentUser]);
-
-  if (isLoading) {
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-12 h-12 animate-spin text-blue-500" />
+        <Loader2 className="w-12 h-12 animate-spin text-primary" />
       </div>
     );
   }
 
-  // Se não estiver autenticado, redireciona para login
   if (!currentUser) {
-    return <Navigate to="/login" />;
+    return <Navigate to="/login" replace />;
   }
 
-  // Se não for admin, redireciona para a página de ranking
+  const isAdmin = planId === 'ADMIN';
+
   if (!isAdmin) {
-    return <Navigate to="/ranking" />;
+    console.log(`AdminRoute: Access denied for user ${currentUser.id}. PlanId: ${planId}. Redirecting.`);
+    return <Navigate to="/ranking" replace />;
   }
 
-  // Se for admin, permite o acesso
+  console.log(`AdminRoute: Access granted for user ${currentUser.id}. PlanId: ${planId}.`);
   return <>{children}</>;
 }

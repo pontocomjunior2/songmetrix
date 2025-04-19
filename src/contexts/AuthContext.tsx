@@ -2,9 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useRef } from 'r
 import { User, AuthError } from '@supabase/supabase-js';
 import { PostgrestError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase-client';
-import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { syncUserWithBrevo } from '../utils/brevo-service';
 import { getAuthRedirectOptions } from '../lib/supabase-redirect';
 
 // Custom error type that includes both Auth and Postgrest errors
@@ -20,27 +18,26 @@ class CustomAuthError extends AuthError {
 interface DbUser {
   id: string;
   email: string;
-  status: UserStatusType;
   created_at: string;
   updated_at: string;
   favorite_radios?: string[];
+  plan_id: string | null;
+  trial_ends_at: string | null;
+  full_name?: string;
+  whatsapp?: string;
 }
-
-// Definir os tipos para o contexto
-export type UserStatusType = 'ADMIN' | 'ATIVO' | 'INATIVO' | 'TRIAL';
 
 export interface AuthContextType {
   currentUser: User | null;
-  userStatus: UserStatusType | null;
+  planId: string | null;
+  trialEndsAt: string | null;
   loading: boolean;
   error: string | null;
-  trialDaysRemaining: number | null;
   login: (email: string, password: string) => Promise<{ error: CustomAuthError | null }>;
   logout: () => Promise<void>;
-  updateUserStatus: (userId: string, newStatus: UserStatusType) => Promise<void>;
-  refreshUserStatus: () => Promise<boolean>;
-  signUp: (email: string, password: string, fullName?: string, whatsapp?: string) => Promise<{ 
-    error: any, 
+  refreshUserData: () => Promise<boolean>;
+  signUp: (email: string, password: string, fullName?: string, whatsapp?: string) => Promise<{
+    error: any,
     confirmation_sent?: boolean,
     should_redirect?: boolean,
     message?: string
@@ -56,22 +53,14 @@ const EMAIL_SERVER_URL = import.meta.env.VITE_EMAIL_SERVER_URL || 'http://localh
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [userStatus, setUserStatus] = useState<UserStatusType | null>(null);
+  const [planId, setPlanId] = useState<string | null>(null);
+  const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [trialDaysRemaining, setTrialDaysRemaining] = useState<number | null>(null);
   const isRefreshing = useRef(false);
   const isInitialized = useRef(false);
   const isMounted = useRef(true);
   const hasWelcomeEmailBeenSent = useRef(false);
-  const navigate = useNavigate();
-
-  // Desmontar o componente
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-    };
-  }, []);
 
   // Função para verificar se há uma sessão ativa rapidamente
   const checkSessionActive = async (): Promise<boolean> => {
@@ -84,154 +73,126 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  // Função para atualizar status de um usuário (admin)
-  const updateUserStatus = async (userId: string, newStatus: UserStatusType) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
-
-      const isAdmin = userStatus === 'ADMIN';
-      if (!isAdmin) {
-        throw new Error('Usuário não tem permissão de administrador');
-      }
-
-      // Atualizar status no banco de dados
-      const { error: dbError } = await supabase
-        .from('users')
-        .update({ 
-          status: newStatus,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userId);
-
-      if (dbError) {
-        throw dbError;
-      }
-
-      // Atualizar metadados via API
-      const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch('/api/users/update-status', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`
-        },
-        body: JSON.stringify({
-          userId,
-          status: newStatus
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Falha ao atualizar metadados do usuário');
-      }
-    } catch (error) {
-      throw error;
-    }
-  };
-
-  // Função para atualizar explicitamente o status do usuário
-  const refreshUserStatus = async (): Promise<boolean> => {
+  // Função para buscar dados do usuário (plano, trial, etc.) e verificar expiração
+  const refreshUserData = async (): Promise<boolean> => {
     if (isRefreshing.current) return false;
-    
     isRefreshing.current = true;
-    
+    setLoading(true);
+
     try {
       // Verificar se há uma sessão ativa
       const isSessionActive = await checkSessionActive();
       if (!isSessionActive) {
-        isRefreshing.current = false;
-        return false;
-      }
-      
-      // Obter usuário da sessão ativa
-      const { data: { user }, error } = await supabase.auth.getUser();
-      
-      if (error || !user) {
-        isRefreshing.current = false;
-        return false;
-      }
-      
-      // Obter status do banco
-      const { data: dbUser, error: dbError } = await supabase
-        .from('users')
-        .select('status, created_at')
-        .eq('id', user.id)
-        .single();
-        
-      if (dbError || !dbUser) {
-        isRefreshing.current = false;
-        return false;
-      }
-      
-      // Verificar status permitidos
-      if (dbUser.status === 'ADMIN' || dbUser.status === 'ATIVO' || dbUser.status === 'TRIAL') {
         if (isMounted.current) {
-          setCurrentUser(user);
-          setUserStatus(dbUser.status as UserStatusType);
-        }
-        
-        // Calcular dias restantes se for TRIAL
-        if (dbUser.status === 'TRIAL') {
-          const createdAt = new Date(dbUser.created_at);
-          const now = new Date();
-          const diffTime = Math.abs(now.getTime() - createdAt.getTime());
-          const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-          const daysRemaining = Math.max(0, 14 - diffDays);
-          
-          if (isMounted.current) {
-            setTrialDaysRemaining(daysRemaining);
-          }
-          
-          if (daysRemaining <= 0) {
-            // Atualizar status no banco
-            await supabase
-              .from('users')
-              .update({ status: 'INATIVO' })
-              .eq('id', user.id);
-              
-            navigate('/plans', { 
-              state: { 
-                trialExpired: true,
-                message: 'Seu período de avaliação gratuito expirou. Escolha um plano para continuar utilizando o sistema.'
-              },
-              replace: true
-            });
-            isRefreshing.current = false;
-            return false;
-          }
-        } else if (isMounted.current) {
-          setTrialDaysRemaining(null);
-        }
-        
-        if (isMounted.current) {
+          setCurrentUser(null);
+          setPlanId(null);
+          setTrialEndsAt(null);
           setLoading(false);
         }
         isRefreshing.current = false;
-        return true;
-      } else if (dbUser.status === 'INATIVO') {
-        // Usuário inativo - não fazer logout, apenas redirecionar
-        navigate('/pending-approval', {
-          state: {
-            message: 'Sua conta está aguardando aprovação. Por favor, aguarde o contato do nosso atendimento.'
-          },
-          replace: true
-        });
-        isRefreshing.current = false;
         return false;
-      } else {
-        // Status não permitido
-        await supabase.auth.signOut();
-        navigate('/login', {
-          state: {
-            error: 'Usuário inativo. Entre em contato com o administrador.'
-          },
-          replace: true
-        });
+      }
+
+      // Obter usuário da sessão ativa
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+      if (authError || !user) {
+         if (isMounted.current) {
+           setCurrentUser(null);
+           setPlanId(null);
+           setTrialEndsAt(null);
+           setLoading(false);
+         }
         isRefreshing.current = false;
         return false;
       }
+
+      // Obter dados do perfil/usuário do banco
+      const { data: dbUser, error: dbError } = await supabase
+        .from('users')
+        .select('plan_id, trial_ends_at')
+        .eq('id', user.id)
+        .single();
+
+      if (dbError) {
+        console.error('Erro ao buscar dados do perfil do usuário:', dbError);
+        if (dbError.code === 'PGRST116') {
+           console.warn(`Perfil não encontrado para usuário ${user.id}. Pode ser um cadastro recente ou falha.`);
+           await supabase.auth.signOut();
+           if (isMounted.current) {
+             setCurrentUser(null);
+             setPlanId(null);
+             setTrialEndsAt(null);
+             setLoading(false);
+           }
+           isRefreshing.current = false;
+           return false;
+        }
+         if (isMounted.current) setLoading(false);
+         isRefreshing.current = false;
+         return false;
+      }
+
+      if (!dbUser) {
+         console.error('Dados do perfil do usuário não encontrados (inesperado).');
+         await supabase.auth.signOut();
+         if (isMounted.current) {
+           setCurrentUser(null);
+           setPlanId(null);
+           setTrialEndsAt(null);
+           setLoading(false);
+         }
+         isRefreshing.current = false;
+         return false;
+      }
+
+      // Verificar expiração do trial
+      const now = new Date();
+      const trialEnd = dbUser.trial_ends_at ? new Date(dbUser.trial_ends_at) : null;
+      let currentPlanId = dbUser.plan_id;
+
+      // Se o plano atual é 'trial' e a data de expiração existe e já passou
+      if (currentPlanId === 'trial' && trialEnd && trialEnd < now) {
+        console.log(`Trial expirado para o usuário: ${user.id}. Data fim: ${trialEnd.toISOString()}`);
+        currentPlanId = 'expired_trial'; // Atualiza localmente para uso imediato
+
+        // Tenta atualizar no banco de dados em background
+        supabase
+          .from('users')
+          .update({ plan_id: 'expired_trial' })
+          .eq('id', user.id)
+          .then(({ error: updateError }) => {
+            if (updateError) {
+              console.error(`Falha ao atualizar plan_id para expired_trial no DB para usuário ${user.id}:`, updateError);
+              // O que fazer se a atualização falhar? O usuário ficará como 'trial' no DB.
+              // Poderia tentar novamente depois ou notificar o admin.
+            } else {
+              console.log(`Plan_id atualizado para expired_trial no DB para usuário ${user.id}`);
+              // Atualiza o estado local com o valor do DB confirmado, se a lógica depender disso
+              // (Neste caso, currentPlanId já foi setado localmente antes)
+            }
+          });
+      }
+
+      // Atualiza o estado do contexto se o componente ainda estiver montado
+      if (isMounted.current) {
+        setCurrentUser(user);
+        setPlanId(currentPlanId);
+        setTrialEndsAt(dbUser.trial_ends_at);
+        setLoading(false);
+      }
+
+      isRefreshing.current = false;
+      return true;
+
     } catch (error) {
+      console.error("Erro inesperado em refreshUserData:", error);
+      if (isMounted.current) {
+         setCurrentUser(null);
+         setPlanId(null);
+         setTrialEndsAt(null);
+         setLoading(false);
+       }
       isRefreshing.current = false;
       return false;
     }
@@ -240,219 +201,108 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Função para enviar email de boas-vindas
   const sendWelcomeEmail = async (): Promise<boolean> => {
     try {
+      // Não enviar se não houver usuário ou já tiver sido enviado
       if (!currentUser || hasWelcomeEmailBeenSent.current) {
         return false;
       }
 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
+        console.warn("Tentativa de enviar email de boas-vindas sem sessão ativa.");
         return false;
       }
 
-      // Verificar se este usuário já recebeu um email de boas-vindas
-      const { data: existingLogs, error: logsError } = await supabase
-        .from('email_logs')
-        .select('id')
-        .eq('user_id', currentUser.id)
-        .eq('status', 'SUCCESS')
-        .limit(1);
+      console.log('Tentando enviar email de boas-vindas para:', currentUser.email);
+      const response = await fetch(`${EMAIL_SERVER_URL}/api/email/send-welcome`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}` // Usar token da sessão atual
+        },
+        body: JSON.stringify({ userId: currentUser.id })
+      });
 
-      if (logsError) {
-        console.error('Erro ao verificar logs de email:', logsError);
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.error('Erro ao enviar email de boas-vindas:', response.status, errorBody);
+        toast.error('Erro ao enviar email de boas-vindas.');
         return false;
       }
 
-      // Se já recebeu email de boas-vindas, não enviar novamente
-      if (existingLogs && existingLogs.length > 0) {
-        hasWelcomeEmailBeenSent.current = true;
-        return false;
-      }
+      const result = await response.json();
+      console.log('Email de boas-vindas enviado com sucesso:', result);
+      toast.success('Email de boas-vindas enviado!');
+      hasWelcomeEmailBeenSent.current = true; // Marca como enviado para esta sessão
+      return true;
 
-      // Chamar a API para enviar o email de boas-vindas
-      try {
-        const response = await fetch(`${EMAIL_SERVER_URL}/api/email/send-welcome`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`
-          },
-          body: JSON.stringify({ userId: currentUser.id })
-        });
-
-        if (!response.ok) {
-          console.error(`Erro na API: ${response.status} ${response.statusText}`);
-          return false;
-        }
-
-        const result = await response.json();
-
-        if (result.success) {
-          hasWelcomeEmailBeenSent.current = true;
-          toast.success('Email de boas-vindas enviado com sucesso!');
-          return true;
-        } else {
-          console.error('Erro ao enviar email de boas-vindas:', result.message);
-          return false;
-        }
-      } catch (error) {
-        console.error('Erro ao enviar email de boas-vindas:', error);
-        return false;
-      }
     } catch (error) {
-      console.error('Erro ao enviar email de boas-vindas:', error);
+      console.error('Erro na função sendWelcomeEmail:', error);
+      toast.error('Falha ao processar envio do email de boas-vindas.');
       return false;
     }
   };
 
-  // Verificar sessão inicial e configurar listener para mudanças de autenticação
+  // Efeito para inicializar autenticação e configurar listeners
   useEffect(() => {
-    // Evitar inicialização repetida
     if (isInitialized.current) return;
     isInitialized.current = true;
-    
-    const initializeAuth = async () => {
-      if (!isMounted.current) return;
-      
-      try {
-        // Verificar se há uma sessão rápida no storage
-        const storageKey = `sb-${import.meta.env.VITE_SUPABASE_URL.split('//')[1].split('.')[0]}-auth-token`;
-        const hasStoredSession = !!sessionStorage.getItem(storageKey);
-        
-        if (!hasStoredSession) {
-          // Não há sessão armazenada, finalizar carga rapidamente
-          if (isMounted.current) {
-            setCurrentUser(null);
-            setUserStatus(null);
-            setLoading(false);
-          }
-          return;
+
+    refreshUserData();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'INITIAL_SESSION') {
+        if (currentUser || !loading) {
+            return;
         }
-        
-        // Obter sessão atual com detalhes completos
-        const { data: { user } } = await supabase.auth.getUser();
-        
-        if (!user) {
-          if (isMounted.current) {
-            setCurrentUser(null);
-            setUserStatus(null);
-            setLoading(false);
-          }
-          return;
-        }
-        
-        // Atualizar usuário e status
-        await refreshUserStatus();
-        
-        // Verificar se é o primeiro login 
-        const isFirstAccess = !hasWelcomeEmailBeenSent.current;
-        
-        if (isFirstAccess) {
-          // Verificar se o first_login_at já está registrado
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('first_login_at')
-            .eq('id', user.id)
-            .single();
-            
-          // Se first_login_at não estiver definido, atualizar com a data/hora atual
-          if (!userError && userData && !userData.first_login_at) {
-            await supabase
-              .from('users')
-              .update({ first_login_at: new Date().toISOString() })
-              .eq('id', user.id);
-              
-            console.log('Primeiro login registrado para o usuário:', user.id);
-            
-            // Processar imediatamente os emails após primeiro login
-            try {
-              const { data: { session } } = await supabase.auth.getSession();
-              
-              if (session) {
-                console.log('Processando emails após primeiro login para o usuário:', user.id);
-                
-                // Chamar API para processar emails de primeiro login específicos para este usuário
-                const response = await fetch(`${EMAIL_SERVER_URL}/api/email/process-first-login`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`
-                  },
-                  body: JSON.stringify({ userId: user.id })
-                });
-                
-                if (!response.ok) {
-                  console.error('Erro ao processar emails após primeiro login:', response.status, response.statusText);
-                } else {
-                  const result = await response.json();
-                  console.log('Resultado do processamento de emails após primeiro login:', result);
-                }
-              }
-            } catch (processError) {
-              console.error('Erro ao processar emails após primeiro login:', processError);
-            }
-          }
-          
-          // Enviar email de boas-vindas
-          sendWelcomeEmail();
-        }
-      } catch (error) {
-        if (isMounted.current) {
-          setLoading(false);
-        }
-      }
-    };
-    
-    // Inicializar autenticação
-    initializeAuth();
-    
-    // Verificar se estamos na página de registro ou pending-approval
-    const isRegisterOrPendingPage = 
-      window.location.pathname.includes('/register') || 
-      window.location.pathname.includes('/pending-approval');
-    
-    // Configurar listener para mudanças de autenticação
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      // Logar todos os eventos para diagnóstico
-      console.log('Evento de autenticação:', event, session ? 'com sessão' : 'sem sessão');
-      
-      // Verificar especificamente eventos de atualização de usuário
-      if (event === 'USER_UPDATED' && session?.user) {
-        console.log('Usuário atualizado:', {
-          id: session.user.id,
-          email: session.user.email,
-          created_at: session.user.created_at,
-          metadados: session.user.user_metadata
-        });
-      }
-      
-      // Ignorar eventos específicos para evitar loops
-      if (event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
         return;
       }
-      
-      // Se estivermos na página de registro ou pending-approval, não redirecionar em caso de SIGNED_OUT
-      if (event === 'SIGNED_OUT' || !session) {
+
+      if (event === 'SIGNED_IN') {
+        if (!currentUser && isMounted.current) {
+           const success = await refreshUserData();
+           if (!success) {
+              console.error("Falha ao carregar dados do usuário após SIGNED_IN (no currentUser case).");
+           }
+        } else if (currentUser && isMounted.current) {
+           if (session?.user && currentUser.id !== session.user.id) {
+               setCurrentUser(session.user);
+           }
+        }
+      } else if (event === 'SIGNED_OUT') {
         if (isMounted.current) {
           setCurrentUser(null);
-          setUserStatus(null);
-          setTrialDaysRemaining(null);
+          setPlanId(null);
+          setTrialEndsAt(null);
+          setError(null);
+          setLoading(false);
         }
-        return;
-      }
-      
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        if (!currentUser && isMounted.current) {
-          // Atualizar dados apenas se não tivermos usuário ainda
-          refreshUserStatus();
+      } else if (event === 'TOKEN_REFRESHED') {
+         if (session?.user && isMounted.current) {
+           if (currentUser?.id !== session.user.id || currentUser?.aud !== session.user.aud) {
+             setCurrentUser(session.user);
+           }
+         } else if (!session && isMounted.current) {
+           setCurrentUser(null);
+           setPlanId(null);
+           setTrialEndsAt(null);
+           setLoading(false); 
+         }
+      } else if (event === 'USER_UPDATED') {
+        if (session?.user && isMounted.current) {
+          setCurrentUser(session.user);
         }
+      } else if (event === 'PASSWORD_RECOVERY') {
+         if (session && isMounted.current) {
+           refreshUserData();
+         }
       }
     });
-    
-    // Limpar listener ao desmontar
+
     return () => {
-      subscription.unsubscribe();
+      subscription?.unsubscribe();
+      isInitialized.current = false;
     };
-  }, [navigate]);
+  }, []);
 
   const login = async (email: string, password: string): Promise<{ error: CustomAuthError | null }> => {
     try {
@@ -462,310 +312,225 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       // Tentar fazer login
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) throw error;
+      if (signInError) {
+         console.error('Erro no Login:', signInError);
+         if (isMounted.current) setError(signInError.message || 'Falha no login.');
+         throw signInError; // Re-throw para o chamador saber que falhou
+      }
 
       if (!data?.user) {
-        throw new CustomAuthError('Usuário não encontrado');
+         if (isMounted.current) setError('Usuário não encontrado ou falha inesperada.');
+         throw new CustomAuthError('Usuário não encontrado');
       }
 
-      // Obter dados atualizados
-      const { data: refreshedData, error: refreshError } = await supabase.auth.getUser();
-      
-      if (refreshError) throw refreshError;
-      
-      const user = refreshedData?.user || data.user;
+      // A lógica de refreshUserData será chamada pelo listener 'SIGNED_IN'
+      // Não precisamos chamar aqui explicitamente para evitar chamadas duplicadas.
+      // Apenas garantimos que setLoading(false) será chamado pelo refreshUserData.
 
-      // Verificar status do usuário
-      const { data: dbUser, error: dbError } = await supabase
-        .from('users')
-        .select('status, created_at, first_login_at')
-        .eq('id', user.id)
-        .single();
+      // Retorna sucesso (sem erro)
+      return { error: null };
 
-      if (dbError) {
-        console.error('Erro ao buscar status do usuário:', dbError);
-        throw new CustomAuthError('Erro ao verificar status do usuário');
-      }
-
-      // Atualizar estado com dados do usuário
+    } catch (err: any) {
+      // O erro já foi setado ou logado acima
       if (isMounted.current) {
-        setCurrentUser(user);
-        setUserStatus(dbUser.status as UserStatusType);
-        
-        // Registrar último acesso
-        const { error: loginUpdateError } = await supabase
-          .from('users')
-          .update({ last_sign_in_at: new Date().toISOString() })
-          .eq('id', user.id);
-          
-        if (loginUpdateError) {
-          console.error('Erro ao registrar último acesso:', loginUpdateError);
-        } else {
-          console.log('Último acesso registrado para o usuário:', user.id);
-        }
-        
-        // Se o usuário não tem primeiro login registrado
-        if (!dbUser.first_login_at) {
-          // Registrar o primeiro login
-          const { error: updateError } = await supabase
-            .from('users')
-            .update({ first_login_at: new Date().toISOString() })
-            .eq('id', user.id);
-            
-          if (updateError) {
-            console.error('Erro ao registrar primeiro login:', updateError);
-          } else {
-            console.log('Primeiro login registrado para o usuário:', user.id);
-            
-            // Processar imediatamente os emails após primeiro login
-            try {
-              const { data: { session } } = await supabase.auth.getSession();
-              
-              if (session) {
-                console.log('Processando emails após primeiro login para o usuário:', user.id);
-                
-                // Chamar API para processar emails de primeiro login específicos para este usuário
-                const response = await fetch(`${EMAIL_SERVER_URL}/api/email/process-first-login`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`
-                  },
-                  body: JSON.stringify({ userId: user.id })
-                });
-                
-                if (!response.ok) {
-                  console.error('Erro ao processar emails após primeiro login:', response.status, response.statusText);
-                } else {
-                  const result = await response.json();
-                  console.log('Resultado do processamento de emails após primeiro login:', result);
-                }
-              }
-            } catch (processError) {
-              console.error('Erro ao processar emails após primeiro login:', processError);
-            }
+        setLoading(false); // Garante que loading termina em caso de erro
+      }
+      // Retorna o erro para o formulário de login poder tratar
+      return { error: err instanceof AuthError || err instanceof CustomAuthError ? err : new CustomAuthError(err.message || 'Erro desconhecido no login') };
+    }
+  };
+
+  // Logout
+  const logout = async () => {
+    setLoading(true);
+    const { error: signOutError } = await supabase.auth.signOut();
+    if (signOutError) {
+      console.error("Erro ao fazer logout:", signOutError);
+      toast.error("Erro ao sair. Tente novamente.");
+      // Mesmo com erro, limpamos o estado local
+    }
+  };
+
+  // Cadastro
+  const signUp = async (email: string, password: string, fullName?: string, whatsapp?: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Opções para o signUp, incluindo metadata e URL de redirecionamento
+      const signUpOptions = {
+        options: {
+          emailRedirectTo: getAuthRedirectOptions().emailRedirectTo, // Usa a função centralizada
+          data: { // user_metadata inicial
+            full_name: fullName,
+            whatsapp: whatsapp,
+            // NÃO definir plan_id ou trial_ends_at aqui, será feito na tabela 'users'
           }
         }
-      }
+      };
 
-      // Calcular dias restantes do trial
-      let trialDaysRemaining = null;
-      if (dbUser.status === 'TRIAL') {
-        const createdAt = new Date(dbUser.created_at);
-        const now = new Date();
-        const diffTime = Math.abs(now.getTime() - createdAt.getTime());
-        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-        trialDaysRemaining = Math.max(0, 14 - diffDays);
-        
-        if (trialDaysRemaining <= 0) {
-          await supabase.auth.signOut();
-          throw new CustomAuthError('Seu período de avaliação gratuito expirou.');
-        }
-      }
-
-      // Verificar status permitido
-      if (dbUser.status !== 'ADMIN' && dbUser.status !== 'ATIVO' && dbUser.status !== 'TRIAL') {
-        await supabase.auth.signOut();
-        throw new CustomAuthError('Usuário inativo. Entre em contato com o administrador.');
-      }
-
-      // Atualizar estado
-      if (isMounted.current) {
-        setTrialDaysRemaining(trialDaysRemaining);
-        setLoading(false);
-      }
-
-      // Redirecionar para dashboard
-      navigate('/dashboard', { replace: true });
-            
-      return { error: null };
-    } catch (error) {
-      await supabase.auth.signOut();
-      
-      if (isMounted.current) {
-        setLoading(false);
-      }
-      
-      if (error instanceof AuthError) {
-        if (error.message.includes('Invalid login')) {
-          return { error: new CustomAuthError('Email ou senha inválidos') };
-        } else if (error.message.includes('Email not confirmed')) {
-          return { error: new CustomAuthError('Email não confirmado') };
-        } else if (error.message.includes('trial_expired') || error.message.includes('período de avaliação')) {
-          return { error: new CustomAuthError('Seu período de avaliação gratuito expirou. Escolha um plano para continuar utilizando o sistema.') };
-        }
-        return { error: new CustomAuthError(error.message) };
-      }
-      
-      return { error: new CustomAuthError('Erro ao fazer login') };
-    }
-  };
-
-  // Função para deslogar o usuário
-  const signOut = async () => {
-    if (isMounted.current) {
-      setLoading(true);
-    }
-    
-    try {
-      await supabase.auth.signOut();
-      
-      if (isMounted.current) {
-        setCurrentUser(null);
-        setUserStatus(null);
-        setTrialDaysRemaining(null);
-      }
-      
-      // Não redirecionar para o login se estiver na página de registro ou pending-approval
-      const currentPath = window.location.pathname;
-      if (!currentPath.includes('/register') && !currentPath.includes('/pending-approval')) {
-        navigate('/login', { replace: true });
-      }
-    } catch (error) {
-      // Ignorar erros no logout
-    } finally {
-      if (isMounted.current) {
-        setLoading(false);
-      }
-    }
-  };
-
-  const signUp = async (email: string, password: string, fullName?: string, whatsapp?: string) => {
-    try {
-      setLoading(true);
-      
-      // Verificar inputs
-      if (!email || !password) {
-        return { error: { message: 'Email e senha são obrigatórios' } };
-      }
-
-      // Obter opções de redirecionamento e incluir dados do usuário
-      const authOptions = getAuthRedirectOptions({
-        fullName: fullName,
-        whatsapp: whatsapp,
-        status: 'TRIAL'
-      });
-
-      console.log('Opções de autenticação para signUp:', authOptions);
-
-      // Realizar cadastro no Supabase
-      const { data, error } = await supabase.auth.signUp({
+      // Tenta criar o usuário no Supabase Auth
+      const { data, error: signUpAuthError } = await supabase.auth.signUp({
         email,
         password,
-        options: authOptions
+        ...signUpOptions
       });
 
-      if (error) throw error;
-      
-      // Garantir que o usuário foi criado e tem o status TRIAL
-      if (data?.user) {
-        console.log('Usuário criado com sucesso. ID:', data.user.id);
-        
-        // Tentar criar registro usando o endpoint de API em vez de direto no banco
-        try {
-          // Criar ou atualizar o registro na tabela users via API do servidor
-          const userRegistrationResult = await fetch('/api/users/register', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              id: data.user.id,
-              email: data.user.email,
-              status: 'TRIAL',
-              full_name: fullName,
-              whatsapp: whatsapp,
-            })
-          });
-          
-          if (userRegistrationResult.ok) {
-            console.log('Registro do usuário criado/atualizado com sucesso na tabela users via API');
-          } else {
-            console.error('Erro ao criar registro do usuário via API:', await userRegistrationResult.text());
-            // Continuar mesmo com erro, pois o usuário foi criado na autenticação
-          }
-        } catch (dbError) {
-          console.error('Erro ao criar registro do usuário no banco de dados:', dbError);
-          // Continuar mesmo com erro, pois o usuário foi criado na autenticação
-        }
-        
-        console.log('Processo de cadastro concluído com sucesso. Redirecionando...');
-        
-        // Retornar sucesso
-        return { 
-          error: null,
-          confirmation_sent: true,
-          message: 'Conta criada com sucesso! Verifique seu email para confirmar o cadastro.'
-        };
-      } else {
-        console.warn('Dados do usuário não disponíveis após signUp');
+      if (signUpAuthError) {
+        console.error("Erro no Supabase Auth signUp:", signUpAuthError);
+        throw signUpAuthError; // Joga o erro para o catch tratar
       }
-      
-      return { 
-        error: null
-      };
-    } catch (err) {
+
+      // Verifica se o usuário foi criado e se a confirmação é necessária
+      const userCreated = data.user;
+      const confirmationRequired = data.session === null && data.user !== null; // Indica que email de confirmação foi enviado
+
+      if (userCreated) {
+        console.log(`Usuário ${email} criado no Auth. ID: ${userCreated.id}. Confirmação necessária: ${confirmationRequired}`);
+
+        // INSERIR/ATUALIZAR PERFIL NA TABELA 'users'
+        // Idealmente, isso seria um TRIGGER no Supabase (`handle_new_user`).
+        // Se não for trigger, fazemos aqui (menos robusto).
+        try {
+            const trialEndDate = new Date();
+            trialEndDate.setDate(trialEndDate.getDate() + 14);
+
+            const { error: profileError } = await supabase
+              .from('users') // Confirme o nome da tabela
+              .insert({
+                id: userCreated.id,
+                email: userCreated.email,
+                plan_id: 'trial', // Plano inicial
+                trial_ends_at: trialEndDate.toISOString(), // Data de fim do trial
+                full_name: fullName, // Adiciona nome
+                whatsapp: whatsapp, // Adiciona whatsapp
+                // status: 'ATIVO' // Se ainda usar status, defina um inicial
+              });
+
+            if (profileError) {
+               // Log detalhado do erro de perfil
+               console.error(`Erro ao criar perfil para ${userCreated.id} na tabela 'users':`, profileError);
+
+               // O que fazer aqui? O usuário existe no Auth mas não no Profiles.
+               // Opção 1: Tentar deletar o usuário do Auth (requer privilégios admin ou chamar API backend)
+               // Opção 2: Logar o erro e retornar falha, deixando o usuário 'órfão'.
+               // Opção 3: Retornar um erro específico para o usuário tentar novamente?
+
+               // Vamos retornar um erro específico por enquanto.
+               throw new CustomAuthError(`Falha ao inicializar o perfil do usuário. Código: ${profileError.code}`);
+            } else {
+               console.log(`Perfil criado com sucesso para ${userCreated.id} na tabela 'users'.`);
+               // Remover sincronização com Brevo após criar perfil
+               /*
+               syncUserWithBrevo({ id: userCreated.id, email, name: fullName, whatsapp });
+               */
+            }
+        } catch (profileInsertError: any) {
+           // Captura erro do bloco try/catch da inserção do perfil
+           console.error("Erro capturado durante a inserção do perfil:", profileInsertError);
+           // Re-throw para ser pego pelo catch externo do signUp
+           throw profileInsertError;
+        }
+
+        // Preparar resposta de sucesso
+        if (confirmationRequired) {
+          return {
+            error: null,
+            confirmation_sent: true,
+            should_redirect: true, // Pode redirecionar para uma página de "Verifique seu email"
+            message: 'Cadastro realizado! Verifique seu email para ativar sua conta.'
+          };
+        } else {
+          // Se a confirmação não for necessária (auto-confirm ativado no Supabase)
+          // O listener 'SIGNED_IN' será disparado, fará o refreshUserData e redirecionará.
+          return {
+            error: null,
+            confirmation_sent: false,
+            should_redirect: false, // O listener cuidará do redirect
+            message: 'Conta criada com sucesso!'
+          };
+        }
+      } else {
+        // Caso inesperado: signUp não retornou erro, mas não criou usuário nem sessão.
+        console.warn('Supabase signUp retornou sem erro, usuário ou sessão.');
+        throw new CustomAuthError('Falha inesperada durante o cadastro.');
+      }
+
+    } catch (err: any) {
       console.error('Erro durante o processo de cadastro:', err);
-      return { 
-        error: err
+      let errorMessage = 'Ocorreu um erro durante o cadastro.';
+      if (err instanceof AuthError || err instanceof CustomAuthError) {
+          errorMessage = err.message;
+          // Tratar erros específicos, ex: usuário já existe
+          if (errorMessage.includes('User already registered')) {
+              errorMessage = 'Este email já está cadastrado. Tente fazer login.';
+          } else if (errorMessage.includes('profile')) {
+              // Mensagem do erro de criação de perfil
+              errorMessage = err.message;
+          }
+      }
+      setError(errorMessage);
+      return {
+        error: err, // Retorna o objeto de erro original
+        message: errorMessage // Retorna a mensagem tratada
       };
     } finally {
-      setLoading(false);
+      if (isMounted.current) {
+        setLoading(false);
+      }
     }
   };
 
   // Função para atualizar rádios favoritas no metadata do usuário
   const updateFavoriteRadios = async (radios: string[]) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
+    if (!currentUser) {
+      console.error("Tentativa de atualizar favoritas sem usuário logado.");
+      toast.error("Você precisa estar logado para salvar favoritas.");
+      return;
+    }
 
-      // Primeiro, atualizar os metadados do usuário na auth
-      const { error } = await supabase.auth.updateUser({
-        data: {
-          ...user.user_metadata,
+    try {
+      // Atualizar APENAS os metadados no Supabase Auth
+      const { data, error } = await supabase.auth.updateUser({
+        data: { // Atualiza user_metadata
           favorite_radios: radios
         }
       });
 
-      if (error) throw error;
-      
-      // Também atualizar o campo favorite_radios na tabela users
-      const { error: dbError } = await supabase
-        .from('users')
-        .update({ 
-          favorite_radios: radios,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
-        
-      if (dbError) {
-        console.error('Erro ao atualizar rádios favoritas no banco de dados:', dbError);
-        // Não lançar erro aqui para não impedir a navegação, pois os metadados já foram atualizados
+      if (error) {
+        console.error("Erro ao atualizar rádios favoritas no Auth:", error);
+        toast.error("Não foi possível salvar suas rádios favoritas.");
+        throw error;
       }
-      
-      console.log('Rádios favoritas atualizadas com sucesso:', radios);
+
+      // Atualiza o currentUser localmente se a atualização no Auth foi bem sucedida
+      if (data.user && isMounted.current) {
+          console.log("Metadados de favoritas atualizados no Auth.");
+          // É importante atualizar o objeto currentUser local para refletir a mudança
+          // sem precisar de um refresh completo da sessão/dados.
+          setCurrentUser(prevUser => prevUser ? { ...prevUser, user_metadata: data.user!.user_metadata } : null);
+          toast.success("Rádios favoritas salvas!");
+      }
+
     } catch (error) {
-      console.error('Erro ao atualizar rádios favoritas:', error);
-      throw error;
+      // Erro já logado e notificado
     }
   };
 
-  const value = {
+  // Montar o valor do contexto
+  const value: AuthContextType = {
     currentUser,
-    userStatus,
+    planId,
+    trialEndsAt,
     loading,
     error,
-    trialDaysRemaining,
     login,
-    logout: signOut,
-    updateUserStatus,
-    refreshUserStatus,
+    logout,
+    refreshUserData,
     signUp,
     updateFavoriteRadios,
     sendWelcomeEmail
@@ -776,12 +541,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       {children}
     </AuthContext.Provider>
   );
-}
+};
 
+// Hook para usar o contexto de autenticação
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error('useAuth deve ser usado dentro de um AuthProvider');
   }
   return context;
 }

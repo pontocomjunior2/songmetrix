@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 import './components/ui/styles.css';
+import { AuthProvider } from './contexts/AuthContext';
+import { BrowserRouter } from 'react-router-dom';
 
 // Carrega o tema salvo ou o tema do sistema
 const savedTheme = localStorage.getItem('theme');
@@ -12,7 +14,13 @@ if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-s
   document.documentElement.classList.remove('dark');
 }
 
-// Remover o StrictMode para evitar renderizações duplas que podem afetar a autenticação
+// Renderizar App diretamente
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <App />
+  <React.StrictMode>
+    <BrowserRouter>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </BrowserRouter>
+  </React.StrictMode>
 );

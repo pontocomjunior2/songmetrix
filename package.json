@@ -24,12 +24,6 @@
     "start:email-scheduler": "node scripts/schedule-emails.js",
     "process-scheduled-emails": "node scripts/send-scheduled-emails.js",
     "ensure-first-login": "node scripts/ensure-first-login-sequence.js",
-    "email:sync-brevo": "node scripts/sync-brevo-contacts.js",
-    "email:server-brevo": "node server-email.js",
-    "sync-brevo-contacts": "node scripts/sync-brevo-contacts.js",
-    "sync-brevo-lists": "node scripts/sync-brevo-lists.js",
-    "force-sync-brevo": "node scripts/force-sync-brevo.js",
-    "test-brevo-sync": "node scripts/test-brevo-sync.js",
     "check-user-metadata": "node scripts/check-user-metadata.js",
     "migrate-user-metadata": "node scripts/migrate_user_metadata.js",
     "fix-user-profiles": "node scripts/fix_user_profile_fields.js",
@@ -37,9 +31,7 @@
     "test-metadata-sync": "node scripts/test_user_metadata_sync.js",
     "apply-trigger-sql": "node scripts/apply-trigger-sql.js",
     "create-exec-sql": "node scripts/create-exec-sql-function.js",
-    "install-brevo-auto-sync": "node scripts/install-brevo-auto-sync.js",
-    "direct-sql-setup": "node scripts/direct-sql-setup.js",
-    "sync-brevo": "node scripts/sync-brevo.js"
+    "direct-sql-setup": "node scripts/direct-sql-setup.js"
   },
   "dependencies": {
     "@chakra-ui/react": "^3.8.1",
@@ -84,7 +76,6 @@
     "react-toastify": "^11.0.3",
     "react-tooltip": "^5.28.0",
     "recharts": "^2.15.1",
-    "sib-api-v3-sdk": "^8.5.0",
     "sonner": "^2.0.3",
     "stripe": "^17.6.0",
     "tailwind-merge": "^3.0.2",

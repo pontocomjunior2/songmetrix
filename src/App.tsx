@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext';
+import React, { useEffect } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
 import RequestPasswordReset from './components/Auth/RequestPasswordReset';
@@ -26,6 +25,7 @@ import PaymentCanceled from './components/Payment/PaymentCanceled';
 import Relatorios from './components/Relatorios';
 import Plans from './components/Plans';
 import Spotify from './components/Spotify';
+import { TrialRestricted } from './components/Auth/TrialRestricted';
 
 // Componente para redirecionar após confirmação de email
 // Deve ser usado dentro do Router
@@ -47,93 +47,48 @@ function RedirectHandler() {
   return null;
 }
 
-// Interface para as props do RootRoute
-interface RootRouteProps {
-  currentView: string;
-  onNavigate: (view: string) => void;
-}
-
-// Componente específico para raiz que verifica se precisa redirecionar
-function RootRoute({ currentView, onNavigate }: RootRouteProps) {
+// Envolver RootRoute com React.memo
+const RootRoute = React.memo(() => {
   return (
     <>
       <RedirectHandler />
       <ProtectedRoute>
-        <MainLayout currentView={currentView} onNavigate={onNavigate} />
+        <MainLayout />
       </ProtectedRoute>
     </>
   );
-}
+});
 
 function App() {
-  const [currentView, setCurrentView] = useState('dashboard');
-
-  const handleNavigate = (view: string) => {
-    setCurrentView(view);
-  };
-
   return (
-    <Router>
-      <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/reset-password" element={<RequestPasswordReset />} />
-          <Route path="/update-password" element={<ResetPassword />} />
-          <Route path="/pending-approval" element={<PendingApproval />} />
-          <Route path="/payment/success" element={<PaymentSuccess />} />
-          <Route path="/payment/canceled" element={<PaymentCanceled />} />
-          <Route path="/first-access" element={<FirstAccessRoute />} />
-          <Route path="/plans" element={<Plans />} />
-          
-          {/* Rota raiz com verificação de redirecionamento */}
-          <Route path="/" element={<RootRoute currentView={currentView} onNavigate={handleNavigate} />}>
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<Dashboard />} />
-            <Route path="ranking" element={<Ranking />} />
-            <Route path="realtime" element={<RealTime />} />
-            <Route path="radios" element={<Radios />} />
-            <Route path="relatorios" element={<Relatorios />} />
-            <Route path="spotify" element={<Spotify />} />
-            <Route path="admin/users" element={
-              <AdminRoute>
-                <UserList />
-              </AdminRoute>
-            } />
-            <Route path="admin/abbreviations" element={
-              <AdminRoute>
-                <RadioAbbreviations />
-              </AdminRoute>
-            } />
-            <Route path="admin/streams" element={
-              <AdminRoute>
-                <StreamsManager />
-              </AdminRoute>
-            } />
-            <Route path="admin/relay-streams" element={
-              <AdminRoute>
-                <RelayStreamsManager />
-              </AdminRoute>
-            } />
-            <Route path="admin/suggestions" element={
-              <AdminRoute>
-                <RadioSuggestions />
-              </AdminRoute>
-            } />
-            <Route path="admin/emails" element={
-              <AdminRoute>
-                <EmailManager />
-              </AdminRoute>
-            } />
-            <Route path="admin/notifications" element={
-              <AdminRoute>
-                <NotificationsPage />
-              </AdminRoute>
-            } />
-          </Route>
-        </Routes>
-      </AuthProvider>
-    </Router>
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
+      <Route path="/reset-password" element={<RequestPasswordReset />} />
+      <Route path="/update-password" element={<ResetPassword />} />
+      <Route path="/pending-approval" element={<PendingApproval />} />
+      <Route path="/payment/success" element={<PaymentSuccess />} />
+      <Route path="/payment/canceled" element={<PaymentCanceled />} />
+      <Route path="/first-access" element={<FirstAccessRoute />} />
+      <Route path="/plans" element={<Plans />} />
+      
+      <Route path="/*" element={<RootRoute />}>
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route path="dashboard" element={<Dashboard />} />
+        <Route path="ranking" element={<Ranking />} />
+        <Route path="realtime" element={<TrialRestricted><RealTime /></TrialRestricted>} />
+        <Route path="radios" element={<TrialRestricted><Radios /></TrialRestricted>} />
+        <Route path="relatorios" element={<TrialRestricted><Relatorios /></TrialRestricted>} />
+        <Route path="spotify" element={<TrialRestricted><Spotify /></TrialRestricted>} />
+        <Route path="admin/users" element={<AdminRoute><UserList /></AdminRoute>} />
+        <Route path="admin/abbreviations" element={<AdminRoute><RadioAbbreviations /></AdminRoute>} />
+        <Route path="admin/streams" element={<AdminRoute><StreamsManager /></AdminRoute>} />
+        <Route path="admin/relay-streams" element={<AdminRoute><RelayStreamsManager /></AdminRoute>} />
+        <Route path="admin/suggestions" element={<AdminRoute><RadioSuggestions /></AdminRoute>} />
+        <Route path="admin/emails" element={<AdminRoute><EmailManager /></AdminRoute>} />
+        <Route path="admin/notifications" element={<AdminRoute><NotificationsPage /></AdminRoute>} />
+      </Route>
+    </Routes>
   );
 }
 
