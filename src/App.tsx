@@ -25,7 +25,7 @@ import PaymentCanceled from './components/Payment/PaymentCanceled';
 import Relatorios from './components/Relatorios';
 import Plans from './components/Plans';
 import Spotify from './components/Spotify';
-import { TrialRestricted } from './components/Auth/TrialRestricted';
+import TrialRestricted from './components/Auth/TrialRestricted';
 
 // Componente para redirecionar após confirmação de email
 // Deve ser usado dentro do Router
@@ -47,21 +47,21 @@ function RedirectHandler() {
   return null;
 }
 
-// Envolver RootRoute com React.memo
-const RootRoute = React.memo(() => {
+const RootRoute = () => {
   return (
     <>
-      <RedirectHandler />
+      {/* <RedirectHandler /> */}
       <ProtectedRoute>
         <MainLayout />
       </ProtectedRoute>
     </>
   );
-});
+};
 
 function App() {
   return (
     <Routes>
+      {/* Rotas Públicas */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/reset-password" element={<RequestPasswordReset />} />
@@ -72,14 +72,18 @@ function App() {
       <Route path="/first-access" element={<FirstAccessRoute />} />
       <Route path="/plans" element={<Plans />} />
       
-      <Route path="/*" element={<RootRoute />}>
+      {/* Rotas Protegidas aninhadas */}
+      <Route path="/" element={<RootRoute />}>
+        {/* Rota Index (default dentro das protegidas) */}
         <Route index element={<Navigate to="/dashboard" replace />} />
+        {/* Outras rotas protegidas */}
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="ranking" element={<Ranking />} />
         <Route path="realtime" element={<TrialRestricted><RealTime /></TrialRestricted>} />
         <Route path="radios" element={<TrialRestricted><Radios /></TrialRestricted>} />
         <Route path="relatorios" element={<TrialRestricted><Relatorios /></TrialRestricted>} />
         <Route path="spotify" element={<TrialRestricted><Spotify /></TrialRestricted>} />
+        {/* Rotas Admin */}
         <Route path="admin/users" element={<AdminRoute><UserList /></AdminRoute>} />
         <Route path="admin/abbreviations" element={<AdminRoute><RadioAbbreviations /></AdminRoute>} />
         <Route path="admin/streams" element={<AdminRoute><StreamsManager /></AdminRoute>} />
@@ -87,7 +91,12 @@ function App() {
         <Route path="admin/suggestions" element={<AdminRoute><RadioSuggestions /></AdminRoute>} />
         <Route path="admin/emails" element={<AdminRoute><EmailManager /></AdminRoute>} />
         <Route path="admin/notifications" element={<AdminRoute><NotificationsPage /></AdminRoute>} />
+        {/* Adicionar rota catch-all ou 404 se necessário dentro das protegidas */}
+         {/* <Route path="*" element={<NotFound />} /> */}
       </Route>
+
+      {/* Rota Catch-all Geral (opcional) */}
+      {/* <Route path="*" element={<NotFoundPublic />} /> */}
     </Routes>
   );
 }

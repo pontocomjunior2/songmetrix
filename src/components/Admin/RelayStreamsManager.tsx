@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { apiGet, apiPost, apiPut, apiDelete } from '../../services/api.ts';
 import { toast } from 'react-toastify';
 import { Loader2, Edit, Trash2, Plus, X, Check } from 'lucide-react';
@@ -16,7 +16,7 @@ const RelayStreamsManager: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [editingStream, setEditingStream] = useState<RelayStream | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
 
   useEffect(() => {
     fetchStreams();

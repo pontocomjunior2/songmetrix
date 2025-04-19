@@ -1,10 +1,10 @@
 import express from 'express';
-import { authenticateUser } from '../auth-middleware.js';
+import { authenticateBasicUser } from '../auth-middleware.js';
 import supabaseAdmin from '../supabase-admin.js';
 
 const router = express.Router();
 
-router.get('/', authenticateUser, async (req, res) => {
+router.get('/', authenticateBasicUser, async (req, res) => {
   try {
     const { page = 0, limit = 1000, start_date, end_date, start_time, end_time } = req.query;
 

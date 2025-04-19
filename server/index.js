@@ -7,22 +7,25 @@ import executionsRoutes from './routes/executions.js';
 import radiosRoutes from './routes/radios.js';
 import relayStreamsRoutes from './routes/relay-streams.js';
 import usersRoutes from './routes/users.js';
+import rankingRoutes from './ranking.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import pkg from 'pg';
-const { Pool } = pkg;
+// Remover import de pg e Pool
+// import pkg from 'pg'; 
+// const { Pool } = pkg;
+import { pool } from './db.js'; // <-- Importar pool de db.js
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Configuração da conexão com o banco de dados
-const pool = new Pool({
-  user: process.env.POSTGRES_USER,
-  host: process.env.POSTGRES_HOST,
-  database: process.env.POSTGRES_DB,
-  password: process.env.POSTGRES_PASSWORD,
-  port: process.env.POSTGRES_PORT,
-});
+// Remover criação local do pool
+// const pool = new Pool({
+//   user: process.env.POSTGRES_USER,
+//   host: process.env.POSTGRES_HOST,
+//   database: process.env.POSTGRES_DB,
+//   password: process.env.POSTGRES_PASSWORD,
+//   port: process.env.POSTGRES_PORT,
+// });
 
 export default function registerRoutes(app) {
   // Servir arquivos estáticos da pasta uploads
@@ -49,10 +52,13 @@ export default function registerRoutes(app) {
   // Registrar as rotas de usuários
   app.use('/api/users', usersRoutes);
   
+  // Registrar as rotas de ranking
+  app.use('/api/ranking', rankingRoutes);
+  
   // Rota de diagnóstico para verificar a conexão com o banco de dados
   app.get('/api/diagnostico', async (req, res) => {
     try {
-      // Verificar a conexão com o banco de dados
+      // Verificar a conexão com o banco de dados (usar pool importado)
       const dbResult = await pool.query('SELECT NOW() as time');
       
       // Verificar variáveis de ambiente

@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Star, Radio, Loader2, ArrowUpDown, Search } from 'lucide-react';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase-client';
 import { RadioStatus } from '../../types/components';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useFavoriteRadios } from '../../hooks/useFavoriteRadios'; // Importando o hook
-import { UserStatus } from '../../types/auth';
 import {
   Table,
   TableBody,
@@ -19,9 +18,9 @@ import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 
 export default function Radios() {
-  const { currentUser, userStatus } = useAuth();
+  const { currentUser, planId } = useAuth();
   const { refresh } = useFavoriteRadios(); // Adicionando a chamada ao hook
-  const isAdmin = userStatus === UserStatus.ADMIN;
+  const isAdmin = planId === 'admin';
   const [radios, setRadios] = useState<RadioStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

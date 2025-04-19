@@ -7,13 +7,13 @@ import fs from 'fs';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import express from 'express';
 import cors from 'cors';
-import pg from 'pg';
 import { format } from 'date-fns';
 import { authenticateBasicUser, authenticateUser } from './auth-middleware.js';
 import { createClient } from '@supabase/supabase-js';
 import { createCheckoutSession, handleWebhook } from './stripe.js';
 import { reportQuery } from './report-query.js';
 import registerRoutes from './index.js';
+import { pool } from './db.js'; // <-- Importar pool de db.js
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -174,8 +174,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Erro interno do servidor', details: err.message });
 });
 
-const { Pool } = pg;
-
 // Initialize database pool
 console.log('Initializing database pool with:', {
   user: process.env.POSTGRES_USER,
@@ -196,28 +194,7 @@ const supabaseAdmin = createClient(
   }
 );
 
-// Configure database pool
-const pool = new Pool({
-  user: process.env.POSTGRES_USER,
-  host: process.env.POSTGRES_HOST,
-  database: process.env.POSTGRES_DB,
-  password: process.env.POSTGRES_PASSWORD,
-  port: parseInt(process.env.POSTGRES_PORT || '5432'),
-  ssl: {
-    rejectUnauthorized: false
-  }
-});
-
-// Log actual pool configuration for debugging
-console.log('Database configuration:', {
-  user: process.env.POSTGRES_USER,
-  host: '104.234.173.96',
-  database: process.env.POSTGRES_DB,
-  port: process.env.POSTGRES_PORT,
-  ssl: true
-});
-
-// Test database connection
+// Test database connection (usará o pool importado)
 const testConnection = async () => {
   try {
     const client = await pool.connect();
@@ -232,7 +209,7 @@ const testConnection = async () => {
 
 testConnection();
 
-// Helper function to safely execute database queries
+// Helper function to safely execute database queries (usará o pool importado)
 const safeQuery = async (query, params = []) => {
   if (!pool) {
     console.error('Pool de conexões não disponível');
@@ -816,7 +793,7 @@ app.post('/api/radio-abbreviations', authenticateBasicUser, async (req, res) => 
 });
 
 // Rotas protegidas (requerem paid ou admin)
-app.post('/api/executions', authenticateUser, async (req, res) => {
+app.post('/api/executions', authenticateBasicUser, async (req, res) => {
   const { filters, page = 0 } = req.body;
   const offset = page * 100;
 
@@ -894,7 +871,7 @@ app.post('/api/executions', authenticateUser, async (req, res) => {
 });
 
 // Rota para o dashboard
-app.get('/api/dashboard', authenticateUser, async (req, res) => {
+app.get('/api/dashboard', authenticateBasicUser, async (req, res) => {
   try {
     const endDate = new Date();
     const startDate = new Date();
@@ -1106,7 +1083,7 @@ function getGenreColor(genre) {
 }
 
 // Rotas para cidades e estados
-app.get('/api/cities', authenticateUser, async (req, res) => {
+app.get('/api/cities', authenticateBasicUser, async (req, res) => {
   try {
     const query = `
       SELECT DISTINCT cidade as city
@@ -1124,7 +1101,7 @@ app.get('/api/cities', authenticateUser, async (req, res) => {
   }
 });
 
-app.get('/api/validate-location', authenticateUser, async (req, res) => {
+app.get('/api/validate-location', authenticateBasicUser, async (req, res) => {
   try {
     const { city, state } = req.query;
     
@@ -1151,7 +1128,7 @@ app.get('/api/validate-location', authenticateUser, async (req, res) => {
   }
 });
 
-app.get('/api/radios/by-location', authenticateUser, async (req, res) => {
+app.get('/api/radios/by-location', authenticateBasicUser, async (req, res) => {
   try {
     const { city, state } = req.query;
     
@@ -1191,8 +1168,12 @@ app.get('/api/radios/by-location', authenticateUser, async (req, res) => {
   }
 });
 
-// Atualizar status do usuário
-app.put('/admin/users/:userId/status', authenticateUser, async (req, res) => {
+// Atualizar status do usuário (Admin)
+app.put('/admin/users/:userId/status', authenticateBasicUser, async (req, res) => {
+  // A verificação de ADMIN deve ser feita DENTRO da rota agora
+  if (req.user?.planId !== 'ADMIN') {
+      return res.status(403).json({ message: 'Acesso negado. Somente administradores.' });
+  }
   const { userId } = req.params;
   const { status } = req.body;
 
@@ -1244,7 +1225,7 @@ app.put('/admin/users/:userId/status', authenticateUser, async (req, res) => {
   }
 });
 
-app.get('/api/states', authenticateUser, async (req, res) => {
+app.get('/api/states', authenticateBasicUser, async (req, res) => {
   try {
     const query = `
       SELECT DISTINCT estado as state
@@ -1262,7 +1243,7 @@ app.get('/api/states', authenticateUser, async (req, res) => {
   }
 });
 
-app.get('/api/report', authenticateUser, async (req, res) => {
+app.get('/api/report', authenticateBasicUser, async (req, res) => {
   try {
     const { startDate, endDate, radios, limit, city, state } = req.query;
     
@@ -1348,7 +1329,7 @@ app.get('/api/report', authenticateUser, async (req, res) => {
   }
 });
 
-app.get('/api/ranking', authenticateUser, async (req, res) => {
+app.get('/api/ranking', authenticateBasicUser, async (req, res) => {
   try {
     const { startDate, endDate, startTime, endTime, radio, rankingSize = '10' } = req.query;
     const limit = parseInt(rankingSize, 10);
@@ -1428,15 +1409,13 @@ app.get('/api/ranking', authenticateUser, async (req, res) => {
   }
 });
 
-// Rota para simular o fim do período trial de um usuário
-app.post('/api/simulate-trial-end', authenticateUser, async (req, res) => {
-  try {
-    // Verificar se o usuário é administrador
-    if (req.user.user_metadata?.status !== 'ADMIN') {
-      console.log('Tentativa não autorizada de simular fim do trial:', req.user.id);
+// Rota para simular o fim do período trial de um usuário (Admin)
+app.post('/api/simulate-trial-end', authenticateBasicUser, async (req, res) => {
+  // A verificação de ADMIN deve ser feita DENTRO da rota agora
+  if (req.user?.planId !== 'ADMIN') {
       return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
-    }
-
+  }
+  try {
     const { userId } = req.body;
 
     if (!userId) {
@@ -1588,8 +1567,12 @@ app.post('/api/simulate-trial-end', authenticateUser, async (req, res) => {
   }
 });
 
-// Rota para sincronizar status de usuários
-app.post('/api/users/sync-status', authenticateUser, async (req, res) => {
+// Rota para sincronizar status de usuários (Admin)
+app.post('/api/users/sync-status', authenticateBasicUser, async (req, res) => {
+  // A verificação de ADMIN deve ser feita DENTRO da rota agora
+  if (req.user?.planId !== 'ADMIN') {
+      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
+  }
   try {
     // Verificar se o usuário é administrador
     if (req.user.user_metadata?.status !== 'ADMIN') {
@@ -1660,8 +1643,12 @@ app.post('/api/users/sync-status', authenticateUser, async (req, res) => {
   }
 });
 
-// Rota para atualizar o status de um usuário específico
-app.post('/api/users/update-status', authenticateUser, async (req, res) => {
+// Rota para atualizar o status de um usuário específico (Admin)
+app.post('/api/users/update-status', authenticateBasicUser, async (req, res) => {
+  // A verificação de ADMIN deve ser feita DENTRO da rota agora
+  if (req.user?.planId !== 'ADMIN') {
+      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
+  }
   try {
     // Verificar se o usuário é administrador
     if (req.user.user_metadata?.status !== 'ADMIN') {
@@ -1817,8 +1804,12 @@ app.post('/api/users/update-status', authenticateUser, async (req, res) => {
   }
 });
 
-// Rota para verificar o status de um usuário específico
-app.get('/api/users/check-status/:userId', authenticateUser, async (req, res) => {
+// Rota para verificar o status de um usuário específico (Admin)
+app.get('/api/users/check-status/:userId', authenticateBasicUser, async (req, res) => {
+  // A verificação de ADMIN deve ser feita DENTRO da rota agora
+  if (req.user?.planId !== 'ADMIN') {
+      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
+  }
   try {
     // Verificar se o usuário é administrador
     if (req.user.user_metadata?.status !== 'ADMIN') {
@@ -1872,8 +1863,12 @@ app.get('/api/users/check-status/:userId', authenticateUser, async (req, res) =>
   }
 });
 
-// Rota para corrigir o status de todos os usuários novos
-app.post('/api/users/fix-new-users', authenticateUser, async (req, res) => {
+// Rota para corrigir o status de todos os usuários novos (Admin)
+app.post('/api/users/fix-new-users', authenticateBasicUser, async (req, res) => {
+  // A verificação de ADMIN deve ser feita DENTRO da rota agora
+  if (req.user?.planId !== 'ADMIN') {
+      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
+  }
   try {
     // Verificar se o usuário é administrador
     if (req.user.user_metadata?.status !== 'ADMIN') {
@@ -1961,8 +1956,12 @@ app.post('/api/users/fix-new-users', authenticateUser, async (req, res) => {
   }
 });
 
-// Rota para processar a fila de sincronização
-app.post('/api/users/process-sync-queue', authenticateUser, async (req, res) => {
+// Rota para processar a fila de sincronização (Admin)
+app.post('/api/users/process-sync-queue', authenticateBasicUser, async (req, res) => {
+  // A verificação de ADMIN deve ser feita DENTRO da rota agora
+  if (req.user?.planId !== 'ADMIN') {
+      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
+  }
   try {
     // Verificar se o usuário é administrador
     if (req.user.user_metadata?.status !== 'ADMIN') {
@@ -2115,8 +2114,12 @@ app.post('/api/users/process-sync-queue', authenticateUser, async (req, res) => 
   }
 });
 
-// Rota para sincronizar novos usuários para TRIAL
-app.post('/api/users/sync-new-users', authenticateUser, async (req, res) => {
+// Rota para sincronizar novos usuários para TRIAL (Admin)
+app.post('/api/users/sync-new-users', authenticateBasicUser, async (req, res) => {
+  // A verificação de ADMIN deve ser feita DENTRO da rota agora
+  if (req.user?.planId !== 'ADMIN') {
+      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
+  }
   try {
     // Verificar se o usuário é administrador
     if (req.user.user_metadata?.status !== 'ADMIN') {
@@ -2248,8 +2251,12 @@ app.post('/api/users/sync-new-users', authenticateUser, async (req, res) => {
   }
 });
 
-// Rota para remover um usuário
-app.post('/api/users/remove', authenticateUser, async (req, res) => {
+// Rota para remover um usuário (Admin)
+app.post('/api/users/remove', authenticateBasicUser, async (req, res) => {
+  // A verificação de ADMIN deve ser feita DENTRO da rota agora
+  if (req.user?.planId !== 'ADMIN') {
+      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
+  }
   try {
     // Verificar se o usuário é administrador
     if (req.user.user_metadata?.status !== 'ADMIN') {
@@ -2305,8 +2312,12 @@ app.post('/api/users/remove', authenticateUser, async (req, res) => {
   }
 });
 
-// Rota para forçar a atualização de status para TRIAL para usuários novos
-app.post('/api/users/force-trial-status', authenticateUser, async (req, res) => {
+// Rota para forçar a atualização de status para TRIAL para usuários novos (Admin)
+app.post('/api/users/force-trial-status', authenticateBasicUser, async (req, res) => {
+ // A verificação de ADMIN deve ser feita DENTRO da rota agora
+  if (req.user?.planId !== 'ADMIN') {
+      return res.status(403).json({ error: 'Apenas administradores podem realizar esta operação' });
+  }
   try {
     // Verificar se é administrador
     if (req.user?.status !== 'ADMIN') {
@@ -2433,8 +2444,12 @@ app.post('/api/users/force-trial-status', authenticateUser, async (req, res) => 
   }
 });
 
-// Rota para sincronizar manualmente usuários com o SendPulse
-app.post('/api/sendpulse/sync-users', authenticateUser, async (req, res) => {
+// Rota para sincronizar manualmente usuários com o SendPulse (Admin)
+app.post('/api/sendpulse/sync-users', authenticateBasicUser, async (req, res) => {
+  // A verificação de ADMIN deve ser feita DENTRO da rota agora
+  if (req.user?.planId !== 'ADMIN') {
+      return res.status(403).json({ error: 'Apenas administradores podem sincronizar usuários com o SendPulse' });
+  }
   // Verificar se o usuário é administrador
   if (req.user.role !== 'ADMIN') {
     console.error('Tentativa de sincronização não autorizada:', req.user.id);
@@ -2460,8 +2475,12 @@ app.post('/api/sendpulse/sync-user', async (req, res) => {
 });
 
 // Endpoint para sincronizar todos os usuários com o SendPulse (apenas para ADMIN)
-app.post('/api/sendpulse/sync-all-users', authenticateUser, async (req, res) => {
-  // ... existing code ...
+app.post('/api/sendpulse/sync-all-users', authenticateBasicUser, async (req, res) => {
+  // A verificação de ADMIN deve ser feita DENTRO da rota agora
+  if (req.user?.planId !== 'ADMIN') {
+      return res.status(403).json({ error: 'Apenas administradores podem sincronizar usuários com o SendPulse' });
+  }
+  // ... resto da lógica ...
 });
 
 const PORT = process.env.PORT || 3001;
@@ -2469,8 +2488,12 @@ app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
 
-// Atualizar último acesso dos usuários
-app.post('/api/users/update-last-sign-in', authenticateUser, async (req, res) => {
+// Atualizar último acesso dos usuários (Admin)
+app.post('/api/users/update-last-sign-in', authenticateBasicUser, async (req, res) => {
+ // A verificação de ADMIN deve ser feita DENTRO da rota agora
+  if (req.user?.planId !== 'ADMIN') {
+      return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem executar esta ação.' });
+  }
   try {
     // Verificar se o usuário é administrador
     const { data: userData, error: userError } = await supabaseAdmin

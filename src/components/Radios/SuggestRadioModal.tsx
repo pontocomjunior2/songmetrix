@@ -11,8 +11,9 @@ import {
 import { Button } from '../ui/button';
 import { PlusCircle, Radio, AlertTriangle } from 'lucide-react';
 import { saveRadioSuggestion } from '../../services/radioSuggestionService';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { Alert } from '../ui/alert';
+import { toast } from 'react-toastify';
 
 // Lista de países mais comuns para o dropdown
 const paises = [
@@ -282,7 +283,7 @@ export default function SuggestRadioModal({
         ) : (
           <>
             {error && (
-              <Alert className="mb-4 bg-red-50 dark:bg-red-900 border-red-200 dark:border-red-700">
+              <Alert className="mb-4 bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700">
                 <div className="flex items-start">
                   <AlertTriangle className="h-5 w-5 text-red-500 dark:text-red-400 mr-3 flex-shrink-0 mt-0.5" />
                   <div>

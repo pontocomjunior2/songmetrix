@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { Home, BarChart3, FileText, Users, Type, Radio, LogOut, Clock, X, ChevronDown, Mail, MessageSquare, Bell } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -23,7 +23,7 @@ interface MenuItem {
   }>;
 }
 
-const SidebarFixed: React.FC<SidebarProps> = React.memo(({ pathname, onClose, isMobile }: SidebarProps) => {
+const SidebarFixed: React.FC<SidebarProps> = ({ pathname, onClose, isMobile }: SidebarProps) => {
   const { planId, currentUser, logout } = useAuth();
   const navigate = useNavigate();
   const [hoveredMenu, setHoveredMenu] = useState<string | null>(null);
@@ -241,6 +241,6 @@ const SidebarFixed: React.FC<SidebarProps> = React.memo(({ pathname, onClose, is
       )}
     </div>
   );
-});
+};
 
 export default SidebarFixed;

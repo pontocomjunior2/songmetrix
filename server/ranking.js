@@ -1,10 +1,10 @@
 import express from 'express';
-import { authenticateUser } from './auth.js';
+import { authenticateBasicUser } from './auth-middleware.js';
 import { pool } from './db.js';
 
 const router = express.Router();
 
-router.get('/api/ranking', authenticateUser, async (req, res) => {
+router.get('/api/ranking', authenticateBasicUser, async (req, res) => {
   try {
     const { startDate, endDate, startTime, endTime, radio, rankingSize = '10' } = req.query;
     const limit = parseInt(rankingSize, 10);

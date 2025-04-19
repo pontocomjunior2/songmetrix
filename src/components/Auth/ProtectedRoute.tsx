@@ -1,6 +1,6 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { Loader2 } from 'lucide-react';
 // import { supabase } from '../../lib/supabase-client'; // Não parece ser mais necessário aqui
 
@@ -9,10 +9,12 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { currentUser, planId, loading: authLoading, error: authError } = useAuth();
+  const { currentUser, planId, loading: authLoading, error: authError, isInitialized } = useAuth();
   const location = useLocation();
+  console.log('[ProtectedRoute] Rendering. Initialized:', isInitialized, 'Loading:', authLoading, 'User:', !!currentUser, 'planId:', planId, 'Location:', location.pathname);
 
-  if (authLoading) {
+  if (!isInitialized || authLoading) {
+    console.log('[ProtectedRoute] Condition: Not Initialized or Loading. Showing loader.');
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -23,7 +25,8 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     );
   }
 
-  if (authError && !currentUser) {
+  if (isInitialized && authError && !currentUser) {
+    console.log('[ProtectedRoute] Condition: Initialized, Auth Error, No User. Showing error page.');
     return (
       <div className="min-h-screen flex items-center justify-center">
          <div className="text-center p-6 bg-card rounded-lg shadow-md border border-destructive">
@@ -42,16 +45,20 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     );
   }
 
-  if (!currentUser) {
-    return <Navigate to="/login" replace />;
+  if (isInitialized && !currentUser) {
+    console.error(`[ProtectedRoute] CRITICAL: Navigating to /login! State: isInitialized=${isInitialized}, currentUser=${currentUser}, planId=${planId}, authLoading=${authLoading}, authError=${authError}`);
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   const isAdminRoute = location.pathname.startsWith('/admin');
   const isAdminPlan = planId === 'ADMIN';
 
   if (isAdminRoute && !isAdminPlan) {
-     return <Navigate to="/dashboard" replace />;
+    console.log('[ProtectedRoute] Condition: Admin Route, Not Admin Plan. Navigating to /dashboard.');
+    return <Navigate to="/dashboard" replace />;
   }
 
+  // Se chegou aqui, está autorizado
+  console.log('[ProtectedRoute] Condition: Authorized. Rendering children.');
   return <>{children}</>;
 }

@@ -1,36 +1,40 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
-import { UserStatus } from '../../lib/user-status';
+import { useAuth } from '../../hooks/useAuth';
 import Loading from '../Common/Loading';
 import { ErrorAlert } from '../Common/Alert';
 import UserAvatar from '../Common/UserAvatar';
 import { toast as reactToast } from 'react-toastify'; // Importing toast for notifications
-import { Trash2, Clock, RefreshCw, MailCheck, Database, Calendar } from 'lucide-react';
+import { Trash2, Clock, RefreshCw, MailCheck, Database, Calendar, Search } from 'lucide-react';
 import { supabase } from '../../lib/supabase-client';
 import { FaEdit } from 'react-icons/fa';
 import { Tooltip } from 'react-tooltip';
-import { syncUserWithSendPulse } from '../../utils/sendpulse-service';
+import { syncUserWithSendPulse, type UserData as SendPulseUserData } from '../../utils/sendpulse-service';
+import { Input } from '../ui/input';
+import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '../ui/table';
 
-type UserStatusType = 'ADMIN' | 'ATIVO' | 'INATIVO' | 'TRIAL';
-
-// Definindo constantes para os valores de UserStatus
-const USER_STATUS = {
-  ADMIN: 'ADMIN' as UserStatusType,
-  ATIVO: 'ATIVO' as UserStatusType,
-  INATIVO: 'INATIVO' as UserStatusType,
-  TRIAL: 'TRIAL' as UserStatusType
+// Adicionar mapeamento de plan_id para exibição
+const PLAN_DISPLAY_NAMES: { [key: string]: string } = {
+  ADMIN: 'Admin',
+  TRIAL: 'Trial',
+  expired_trial: 'Trial Expirado',
+  ATIVO: 'Ativo',
+  // Adicionar outros planos aqui conforme necessário (ex: 'premium': 'Premium')
 };
 
+// Definir os plan_ids que o admin pode selecionar
+const SELECTABLE_PLANS = ['TRIAL', 'expired_trial', 'ATIVO', 'ADMIN'];
+
+// Atualizar interface User para remover 'status' se não for mais necessário
 interface User {
   id: string;
   email: string | null;
-  status: UserStatusType; // Alterado para usar UserStatusType diretamente
   created_at: string;
   updated_at: string;
   photoURL?: string;
   full_name?: string;
   whatsapp?: string;
   last_sign_in_at?: string;
+  plan_id?: string | null; // Permitir null explicitamente
 }
 
 interface SyncProgress {
@@ -61,16 +65,15 @@ export default function UserList() {
   const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<UserStatusType | 'ALL'>('ALL');
-  const [editingUser, setEditingUser] = useState<string | null>(null);
-  const [newStatus, setNewStatus] = useState<UserStatusType>('INATIVO');
+  const [planFilter, setPlanFilter] = useState<string | 'ALL'>('ALL');
+  const [searchTerm, setSearchTerm] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [syncResults, setSyncResults] = useState<any | null>(null);
   const [updatingLastLogin, setUpdatingLastLogin] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const { updateUserStatus, currentUser, userStatus } = useAuth();
+  const { currentUser } = useAuth();
   const [syncingUsers, setSyncingUsers] = useState<string[]>([]);
 
   useEffect(() => {
@@ -79,7 +82,7 @@ export default function UserList() {
 
   useEffect(() => {
     filterUsers();
-  }, [users, statusFilter]);
+  }, [users, planFilter, searchTerm]);
 
   // Limpar recursos ao desmontar o componente
   useEffect(() => {
@@ -91,15 +94,23 @@ export default function UserList() {
   }, []);
 
   const filterUsers = () => {
-    const validUsers = users.filter(user => 
-      [USER_STATUS.ATIVO, USER_STATUS.INATIVO, USER_STATUS.ADMIN, USER_STATUS.TRIAL].includes(user.status)
-    );
+    let tempUsers = users;
 
-    if (statusFilter === 'ALL') {
-      setFilteredUsers(validUsers);
-    } else {
-      setFilteredUsers(validUsers.filter(user => user.status === statusFilter));
+    // 1. Filtrar por plano
+    if (planFilter !== 'ALL') {
+      tempUsers = tempUsers.filter(user => user.plan_id === planFilter);
     }
+
+    // 2. Filtrar por termo de busca (nome ou email)
+    if (searchTerm) {
+      const lowerCaseSearchTerm = searchTerm.toLowerCase();
+      tempUsers = tempUsers.filter(user => 
+        (user.full_name && user.full_name.toLowerCase().includes(lowerCaseSearchTerm)) ||
+        (user.email && user.email.toLowerCase().includes(lowerCaseSearchTerm))
+      );
+    }
+
+    setFilteredUsers(tempUsers);
   };
 
   const loadUsers = async () => {
@@ -109,10 +120,9 @@ export default function UserList() {
       
       console.log('Carregando usuários...');
       
-      // Buscar usuários da tabela users
       const { data: usersData, error: fetchError } = await supabase
         .from('users')
-        .select('id, email, status, created_at, updated_at, full_name, whatsapp, last_sign_in_at')
+        .select('id, email, created_at, updated_at, full_name, whatsapp, last_sign_in_at, plan_id')
         .order('created_at', { ascending: false });
       
       if (fetchError) {
@@ -120,24 +130,9 @@ export default function UserList() {
       }
       
       console.log('Usuários carregados:', usersData);
-      // Log adicional para verificar se os campos full_name e whatsapp estão presentes
-      const usersWithFullName = usersData.filter(user => user.full_name);
-      const usersWithWhatsapp = usersData.filter(user => user.whatsapp);
-      console.log(`Usuários com nome completo: ${usersWithFullName.length}/${usersData.length}`);
-      console.log(`Usuários com WhatsApp: ${usersWithWhatsapp.length}/${usersData.length}`);
       
-      if (usersWithFullName.length > 0) {
-        console.log('Exemplo de usuário com nome completo:', usersWithFullName[0]);
-      }
-      
-      if (usersWithWhatsapp.length > 0) {
-        console.log('Exemplo de usuário com WhatsApp:', usersWithWhatsapp[0]);
-      }
-      
-      // Não vamos mais alterar automaticamente o status dos usuários
-      // Isso respeitará o status definido pelo administrador
-      
-      setUsers(usersData);
+      const processedUsers = usersData.map(user => ({ ...user, plan_id: user.plan_id || null }));
+      setUsers(processedUsers);
     } catch (error: any) {
       console.error('Erro ao carregar usuários:', error);
       let errorMessage = 'Erro ao carregar usuários';
@@ -154,106 +149,32 @@ export default function UserList() {
     }
   };
 
-  const handleStatusChange = async (userId: string, newStatus: UserStatusType) => {
+  const handlePlanChange = async (userId: string, newPlanId: string) => {
+    setUpdatingUserId(userId);
     try {
-      // Verificar se o usuário está tentando alterar seu próprio status de ADMIN
-      if (userId === currentUser?.id && userStatus === 'ADMIN' && newStatus !== 'ADMIN') {
-        setError('Você não pode remover seu próprio status de administrador');
-        return;
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ plan_id: newPlanId })
+        .eq('id', userId);
+
+      if (updateError) {
+        throw updateError;
       }
-  
-      setLoading(true);
-      setUpdatingUserId(userId); // Desabilitar o controle durante a atualização
-      setError(null);
-      
-      // Encontrar o usuário atual para referência
-      const userToUpdate = users.find(u => u.id === userId);
-      if (!userToUpdate) {
-        throw new Error('Usuário não encontrado na lista');
-      }
-      
-      console.log(`Alterando status do usuário ${userId} de ${userToUpdate.status} para ${newStatus}`);
-      
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) {
-        throw new Error('Sessão não encontrada');
-      }
-      
-      // Se o novo status for TRIAL, vamos incluir a data atual como trial_start_date
-      const additionalData = newStatus === 'TRIAL' ? { trial_start_date: new Date().toISOString() } : {};
-      
-      const response = await fetch('/api/users/update-status', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.data.session.access_token}`
-        },
-        body: JSON.stringify({
-          userId,
-          newStatus,
-          ...additionalData
-        })
-      });
-      
-      // Verificar se a resposta é válida antes de tentar fazer parse do JSON
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Resposta de erro do servidor:', response.status, errorText);
-        
-        let errorMessage = `Erro do servidor: ${response.status}`;
-        try {
-          // Tentar extrair mensagem de erro do JSON, se existir
-          const errorData = JSON.parse(errorText);
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch (parseError) {
-          // Se não conseguir fazer parse do JSON, usar o texto original
-          errorMessage = errorText || `Erro ${response.status}`;
-        }
-        
-        throw new Error(errorMessage);
-      }
-      
-      // Verificar se há conteúdo antes de fazer parse do JSON
-      const responseText = await response.text();
-      if (!responseText || responseText.trim() === '') {
-        console.warn('Resposta do servidor está vazia');
-        throw new Error('Resposta vazia do servidor');
-      }
-      
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch (jsonError) {
-        console.error('Erro ao processar resposta JSON:', jsonError, 'Texto da resposta:', responseText);
-        throw new Error('Erro ao processar resposta do servidor');
-      }
-      
-      console.log('Resposta do servidor:', result);
-      
-      // Atualizar a lista de usuários localmente
-      setUsers(users.map(user => 
-        user.id === userId ? { ...user, status: newStatus } : user
-      ));
-      
-      setEditingUser(null);
-      
-      // Mostrar notificação de sucesso
-      reactToast.success(`Status do usuário alterado com sucesso para ${newStatus}`);
-      
-      // Recarregar a lista para garantir que temos os dados mais atualizados
-      await loadUsers();
+
+      setUsers(prevUsers =>
+        prevUsers.map(user =>
+          user.id === userId ? { ...user, plan_id: newPlanId } : user
+        )
+      );
+      reactToast.success(`Plano do usuário atualizado para ${PLAN_DISPLAY_NAMES[newPlanId] || newPlanId}`);
     } catch (error: any) {
-      console.error('Erro ao atualizar status:', error);
-      setError(`Erro ao atualizar status: ${error.message}`);
-      reactToast.error(`Erro ao atualizar status: ${error.message}`);
+      console.error("Erro ao atualizar plano do usuário:", error);
+      reactToast.error("Falha ao atualizar plano do usuário: " + error.message);
     } finally {
-      setLoading(false);
       setUpdatingUserId(null);
     }
   };
-  
+
   const handleSyncAllUsers = async () => {
     try {
       setSyncing(true);
@@ -290,129 +211,104 @@ export default function UserList() {
         const { done, value } = await reader.read();
         if (done) break;
         
-        // Decodificar o chunk recebido
         const chunk = new TextDecoder().decode(value);
-        
-        // Processar eventos SSE linha por linha
         const lines = chunk.split('\n');
         
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             currentData = line.substring(6);
-            
+            parsedEventData = null; // Resetar antes de tentar parsear
             try {
               parsedEventData = JSON.parse(currentData);
               
-              // Processar diferentes tipos de eventos
-              if (parsedEventData && parsedEventData.type === 'start') {
-                // Início da sincronização
-                setSyncProgress({
-                  total: parsedEventData.totalUsers || 0,
-                  processed: 0,
-                  success: 0,
-                  failed: 0,
-                  percentage: 0
-                });
-              } 
-              else if (parsedEventData && parsedEventData.type === 'progress') {
-                // Atualização de progresso
-                const total = parsedEventData.total || 0;
-                const processed = parsedEventData.processed || 0;
-                const percentage = total > 0 ? Math.round((processed / total) * 100) : 0;
-                
-                setSyncProgress(prev => ({
-                  total: total,
-                  processed: processed,
-                  success: prev ? prev.success + (parsedEventData.success ? 1 : 0) : (parsedEventData.success ? 1 : 0),
-                  failed: prev ? prev.failed + (!parsedEventData.success ? 1 : 0) : (!parsedEventData.success ? 1 : 0),
-                  percentage: percentage
-                }));
-              } 
-              else if (parsedEventData && parsedEventData.type === 'complete') {
-                // Final da sincronização - resultado completo
-                setSyncResults(parsedEventData);
-                setSyncProgress({
-                  total: parsedEventData.total || 0,
-                  processed: parsedEventData.total || 0,
-                  success: parsedEventData.success || 0,
-                  failed: parsedEventData.errors || 0,
-                  percentage: 100
-                });
-                
-                reactToast.success(`Sincronização concluída! ${parsedEventData.success || 0} usuários sincronizados com sucesso, ${parsedEventData.errors || 0} falhas.`);
-              } 
-              else if (parsedEventData && parsedEventData.type === 'error') {
-                // Erro durante o processamento
-                throw new Error(parsedEventData.message || 'Erro durante a sincronização');
-              }
-            } catch (parseError) {
-              console.error('Erro ao processar evento SSE:', parseError, currentData);
+              // Adicionar verificação de nulidade para parsedEventData
+              if (parsedEventData) { 
+                if (parsedEventData.type === 'start') {
+                  setSyncProgress({
+                    total: parsedEventData.totalUsers || 0,
+                    processed: 0,
+                    success: 0,
+                    failed: 0,
+                    percentage: 0
+                  });
+                } 
+                else if (parsedEventData.type === 'progress') {
+                  const total = parsedEventData.total || 0;
+                  const processed = parsedEventData.processed || 0;
+                  const percentage = total > 0 ? Math.round((processed / total) * 100) : 0;
+                  
+                  // Converter boolean para number explicitamente
+                  const successIncrement = parsedEventData.success !== undefined ? Number(parsedEventData.success) : 0;
+                  const failedIncrement = parsedEventData.success !== undefined ? Number(!parsedEventData.success) : 0;
+
+                  setSyncProgress(prev => ({
+                    total: total,
+                    processed: processed,
+                    success: prev ? prev.success + successIncrement : successIncrement,
+                    failed: prev ? prev.failed + failedIncrement : failedIncrement,
+                    percentage: percentage
+                  }));
+                } 
+                else if (parsedEventData.type === 'end') {
+                  // Finalizar e definir resultados
+                  setSyncResults({
+                    success: syncProgress?.success || 0,
+                    failed: syncProgress?.failed || 0,
+                    errorDetails: parsedEventData.errorDetails || []
+                  });
+                  break; // Sair do loop interno após o fim
+                }
+              } // Fim do if (parsedEventData)
+
+            } catch (e) {
+              console.error('Erro ao parsear evento SSE:', currentData, e);
+              // Continuar processando outras linhas se possível
             }
-          }
-        }
-      }
+          } // Fim do if (line.startsWith)
+        } // Fim do for (line of lines)
+        if (parsedEventData?.type === 'end') break; // Sair do loop while após o fim
+      } // Fim do while (true)
+
+      reader.releaseLock(); // Liberar o leitor
+      
     } catch (error: any) {
-      console.error('Erro ao sincronizar usuários com SendPulse:', error);
-      setError(`Erro ao sincronizar usuários com SendPulse: ${error.message}`);
-      reactToast.error(`Erro ao sincronizar usuários com SendPulse: ${error.message}`);
+      console.error("Erro ao sincronizar usuários com SendPulse:", error);
+      setError(error.message || "Falha na sincronização com SendPulse.");
+      reactToast.error("Falha na sincronização com SendPulse.");
     } finally {
       setSyncing(false);
-      setSyncProgress(null); // Garantir que o progresso seja limpo mesmo em caso de erro
     }
   };
 
   const handleSyncUserWithSendPulse = async (user: User) => {
+    if (!user.email) {
+      reactToast.warn("Usuário sem email não pode ser sincronizado.");
+      return; 
+    }
+
+    setSyncingUsers(prev => [...prev, user.id]);
     try {
-      setSyncingUsers((prev) => [...prev, user.id]);
-      
-      const syncData = {
+      const userStatusForSync = user.plan_id ? user.plan_id : 'sem_plano'; 
+
+      const syncData: SendPulseUserData = {
         id: user.id,
-        email: user.email,
+        email: user.email, 
         name: user.full_name,
-        status: user.status,
-        whatsapp: user.whatsapp || ''
+        status: userStatusForSync,
+        whatsapp: user.whatsapp || undefined
       };
       
-      // Usar o método do SendPulse
       const result = await syncUserWithSendPulse(syncData);
       
       if (result.success) {
-        reactToast.success(`Usuário ${user.email} sincronizado com o SendPulse com sucesso.`, {
-          position: "top-right",
-          autoClose: 5000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          progress: undefined,
-          theme: "light",
-        });
+        reactToast.success(`Usuário ${user.email} sincronizado com SendPulse.`);
       } else {
-        reactToast.error(`Erro ao sincronizar usuário ${user.email} com SendPulse: ${result.error || 'Erro desconhecido'}`, {
-          position: "top-right",
-          autoClose: 5000,
-          hideProgressBar: false,
-          closeOnClick: true,
-          pauseOnHover: true,
-          draggable: true,
-          progress: undefined,
-          theme: "light",
-        });
+        reactToast.error(`Falha ao sincronizar ${user.email}: ${result.error}`);
       }
-    } catch (error) {
-      console.error('Erro ao sincronizar usuário com SendPulse:', error);
-      reactToast.error(`Erro ao sincronizar usuário ${user.email} com SendPulse: ${error instanceof Error ? error.message : 'Erro desconhecido'}`, {
-        position: "top-right",
-        autoClose: 5000,
-        hideProgressBar: false,
-        closeOnClick: true,
-        pauseOnHover: true,
-        draggable: true,
-        progress: undefined,
-        theme: "light",
-      });
+    } catch (error: any) { 
+      reactToast.error(`Erro ao sincronizar ${user.email}: ${error.message}`);
     } finally {
-      setSyncingUsers((prev) => prev.filter(id => id !== user.id));
+      setSyncingUsers(prev => prev.filter(id => id !== user.id));
     }
   };
 
@@ -468,7 +364,7 @@ export default function UserList() {
           throw new Error('Usuário não encontrado na lista');
         }
         
-        console.log(`Simulando fim do período trial para o usuário ${userId} (status atual: ${userToUpdate.status})`);
+        console.log(`Simulando fim do período trial para o usuário ${userId} (status atual: ${userToUpdate.plan_id})`);
         
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
@@ -494,7 +390,7 @@ export default function UserList() {
         
         // Atualizar a lista de usuários localmente
         setUsers(users.map(user => 
-          user.id === userId ? { ...user, status: 'INATIVO' } : user
+          user.id === userId ? { ...user, plan_id: 'INATIVO' } : user
         ));
         
         reactToast.success('Período de teste encerrado com sucesso');
@@ -562,19 +458,20 @@ export default function UserList() {
     }
   };
 
-  const formatDate = (dateString: string | undefined) => {
-    if (!dateString) return 'Não disponível';
-    
+  const formatDate = (dateString: string | undefined | null): string => {
+    if (!dateString) return 'N/A';
     try {
-      const date = new Date(dateString);
-      return date.toLocaleString('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch (error) {
+      return new Date(dateString).toLocaleDateString('pt-BR');
+    } catch (e) {
+      return 'Data inválida';
+    }
+  };
+  
+  const formatDateTime = (dateString: string | undefined | null): string => {
+    if (!dateString) return 'N/A';
+    try {
+      return new Date(dateString).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    } catch (e) {
       return 'Data inválida';
     }
   };
@@ -604,16 +501,25 @@ export default function UserList() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <div className="flex flex-wrap items-center gap-2">
             <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as UserStatusType | 'ALL')}
-              className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 px-3 py-2"
+              value={planFilter}
+              onChange={(e) => setPlanFilter(e.target.value)}
+              className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 px-3 py-2 text-sm"
             >
-              <option value="ALL">Todos</option>
-              <option value="ADMIN">Admin</option>
-              <option value="ATIVO">Ativo</option>
-              <option value="INATIVO">Inativo</option>
-              <option value="TRIAL">Trial</option>
+              <option value="ALL">Todos Status</option>
+              {Object.entries(PLAN_DISPLAY_NAMES).map(([planId, displayName]) => (
+                <option key={planId} value={planId}>{displayName}</option>
+              ))}
             </select>
+            <div className="relative">
+               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+               <Input 
+                 type="search"
+                 placeholder="Buscar por nome ou email..."
+                 value={searchTerm}
+                 onChange={(e) => setSearchTerm(e.target.value)}
+                 className="pl-8 pr-2 py-2 text-sm h-9 w-full sm:w-64"
+               />
+            </div>
             <button
               onClick={handleRefresh}
               className="p-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -623,7 +529,7 @@ export default function UserList() {
               <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
             </button>
             
-            {userStatus === 'ADMIN' && (
+            {currentUser?.role === 'ADMIN' && (
               <>
                 <button
                   onClick={handleSyncAllUsers}
@@ -674,7 +580,7 @@ export default function UserList() {
           </div>
           
           <div className="text-sm text-gray-600 dark:text-gray-400">
-            Total de usuários: {filteredUsers.length}
+            Usuários exibidos: {filteredUsers.length}
           </div>
         </div>
         
@@ -726,23 +632,21 @@ export default function UserList() {
         
         {/* Renderizar a tabela de usuários */}
         <div className="mt-6 relative overflow-x-auto shadow-md sm:rounded-lg">
-          <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
-            <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
-              <tr>
-                <th scope="col" className="px-6 py-3">Usuário</th>
-                <th scope="col" className="px-6 py-3">Status</th>
-                <th scope="col" className="px-6 py-3">Último Acesso</th>
-                <th scope="col" className="px-6 py-3">WhatsApp</th>
-                <th scope="col" className="px-6 py-3">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-1/5">Usuário</TableHead>
+                <TableHead className="w-1/5">Status/Plano</TableHead>
+                <TableHead className="w-1/5">Data Criação</TableHead>
+                <TableHead className="w-1/5">Último Login</TableHead>
+                <TableHead className="w-1/5">WhatsApp</TableHead>
+                <TableHead className="w-1/5">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {filteredUsers.map(user => (
-                <tr 
-                  key={user.id} 
-                  className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600"
-                >
-                  <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
+                <TableRow key={user.id}>
+                  <TableCell className="font-medium">
                     <div className="flex items-center">
                       <UserAvatar 
                         email={user.email || ''} 
@@ -771,115 +675,54 @@ export default function UserList() {
                         </Tooltip>
                       </div>
                     </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    {/* Status do usuário */}
-                    {editingUser === user.id ? (
-                      <select
-                        value={newStatus}
-                        onChange={(e) => setNewStatus(e.target.value as UserStatusType)}
-                        className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                        disabled={loading}
-                      >
-                        <option value={USER_STATUS.ADMIN}>Admin</option>
-                        <option value={USER_STATUS.ATIVO}>Ativo</option>
-                        <option value={USER_STATUS.INATIVO}>Inativo</option>
-                        <option value={USER_STATUS.TRIAL}>Trial</option>
-                      </select>
+                  </TableCell>
+                  <TableCell>
+                    {updatingUserId === user.id ? (
+                      <Loading size="small" />
                     ) : (
-                      <span className={`px-2 py-1 rounded text-white font-medium ${
-                        user.status === USER_STATUS.ADMIN 
-                          ? 'bg-purple-600' 
-                          : user.status === USER_STATUS.ATIVO 
-                          ? 'bg-green-600' 
-                          : user.status === USER_STATUS.INATIVO 
-                          ? 'bg-red-600'
-                          : 'bg-blue-600'
-                      }`}>
-                        {user.status}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-6 py-4">
-                    {user.last_sign_in_at 
-                      ? formatDate(user.last_sign_in_at)
-                      : <span className="text-gray-400">Nunca acessou</span>
-                    }
-                  </td>
-                  <td className="px-6 py-4">
-                    {user.whatsapp || <span className="text-gray-400">Não informado</span>}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-1 sm:gap-2">
-                      {editingUser === user.id && (
-                        <>
-                          <button
-                            onClick={() => handleStatusChange(user.id, newStatus)}
-                            disabled={updatingUserId === user.id}
-                            className="p-1 sm:p-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md"
-                            title="Salvar status"
-                          >
-                            <FaEdit className="w-4 h-4 sm:w-5 sm:h-5" />
-                          </button>
-                          <button
-                            onClick={() => setEditingUser(null)}
-                            className="p-1 sm:p-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900/30 rounded-md"
-                            title="Cancelar edição"
-                          >
-                            <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5" />
-                          </button>
-                        </>
-                      )}
-                      
-                      {editingUser !== user.id && (
-                        <button
-                          onClick={() => {
-                            setEditingUser(user.id);
-                            setNewStatus(user.status);
-                          }}
-                          className="p-1 sm:p-2 text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-md"
-                          title="Editar status"
-                        >
-                          <FaEdit className="w-4 h-4 sm:w-5 sm:h-5" />
-                        </button>
-                      )}
-                      
-                      {user.status === USER_STATUS.TRIAL && (
-                        <button
-                          onClick={() => handleSimulateTrialEnd(user.id)}
-                          disabled={updatingUserId === user.id}
-                          className="p-1 sm:p-2 text-orange-600 dark:text-orange-400 hover:text-orange-800 dark:hover:text-orange-300 hover:bg-orange-50 dark:hover:bg-orange-900/30 rounded-md"
-                          title="Encerrar período de teste"
-                        >
-                          <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
-                        </button>
-                      )}
-                      
-                      {user.id !== currentUser?.id && (
-                        <button
-                          onClick={() => handleRemoveUser(user.id)}
-                          className="p-1 sm:p-2 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md"
-                          title="Remover usuário"
-                        >
-                          <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
-                        </button>
-                      )}
-                      
-                      {/* Botão para sincronizar usuário individual com SendPulse */}
-                      <button
-                        onClick={() => handleSyncUserWithSendPulse(user)}
-                        disabled={syncingUsers.includes(user.id)}
-                        className="p-1 sm:p-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md"
-                        title="Sincronizar com SendPulse"
+                      <select
+                        value={user.plan_id || ''}
+                        onChange={(e) => handlePlanChange(user.id, e.target.value)}
+                        disabled={updatingUserId === user.id}
+                        className="p-1 border rounded bg-transparent"
                       >
-                        <MailCheck className="w-4 h-4 sm:w-5 sm:h-5" />
+                        {SELECTABLE_PLANS.map(planId => (
+                           <option key={planId} value={planId}>
+                             {PLAN_DISPLAY_NAMES[planId] || planId} 
+                           </option>
+                        ))}
+                      </select>
+                    )}
+                  </TableCell>
+                  <TableCell>{formatDate(user.created_at)}</TableCell>
+                  <TableCell>{formatDateTime(user.last_sign_in_at)}</TableCell>
+                  <TableCell>
+                    {user.whatsapp || <span className="text-gray-400">Não informado</span>}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex space-x-2">
+                      <button 
+                        onClick={() => handleSyncUserWithSendPulse(user)}
+                        disabled={syncingUsers.includes(user.id) || !user.email} // Desabilitar se não tiver email
+                        title={!user.email ? "Usuário sem email" : "Sincronizar com SendPulse"}
+                        className="p-1 text-blue-600 hover:text-blue-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {syncingUsers.includes(user.id) ? <RefreshCw className="w-4 h-4 animate-spin"/> : <MailCheck className="w-4 h-4" />}
+                      </button>
+                      <button 
+                        onClick={() => handleRemoveUser(user.id)} 
+                        disabled={updatingUserId === user.id} // Exemplo: desabilitar se estiver atualizando plano
+                        title="Remover Usuário"
+                        className="p-1 text-red-600 hover:text-red-800 disabled:opacity-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
         <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
           Total de usuários: {filteredUsers.length}
