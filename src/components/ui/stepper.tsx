@@ -15,7 +15,8 @@ interface StepperProps extends React.HTMLAttributes<HTMLDivElement> {
   steps: Step[];
   currentStep: number; // Índice baseado em 0
   orientation?: "horizontal" | "vertical";
-  // Adicionar mais props conforme necessário (ex: onClickStep, completedSteps, etc.)
+  // Remover prop size
+  // Adicionar mais props conforme necessário
 }
 
 // --- Componente ---
@@ -39,8 +40,9 @@ function Stepper({
   return (
     <div
       className={cn(
-        "flex",
-        isVertical ? "flex-col h-full" : "w-full items-center",
+        "flex", // Voltar para flex simples
+        isVertical ? "flex-col h-full" : "w-full items-center", // Restaurar items-center
+        "px-8", // Aumentar padding horizontal interno para px-8
         className
       )}
       {...props}
@@ -53,42 +55,51 @@ function Stepper({
         return (
           <React.Fragment key={step.label}>
             <div className={cn("flex items-center", isVertical ? "flex-row" : "flex-col relative")}>
-              {/* Círculo/Ícone do Passo */}
+              {/* Círculo/Ícone do Passo - Remover classes de tamanho */}
               <div
                 className={cn(
-                  "flex items-center justify-center rounded-full border-2 w-8 h-8 transition-all duration-300",
+                  "flex items-center justify-center rounded-full border-2 w-8 h-8 text-sm transition-all duration-300", // Voltar para tamanho fixo md
                   isActive
                     ? "bg-blue-600 border-blue-600 text-white"
                     : isCompleted
                     ? "bg-blue-100 border-blue-600 text-blue-600"
                     : "bg-gray-100 border-gray-300 text-gray-500",
-                  isVertical ? "mr-4" : "mb-2" // Espaçamento vertical/horizontal
+                  isVertical ? "mr-4" : "mb-2"
                 )}
               >
-                {/* TODO: Adicionar lógica para mostrar ícone ou número */}
-                {index + 1} 
+                {index + 1}
               </div>
-              {/* Rótulo e Descrição (Horizontal) */}
+              {/* Rótulo e Descrição (Horizontal) - Remover classes de tamanho */}
               {!isVertical && (
                 <div className="absolute top-full mt-2 text-center w-max max-w-xs px-1">
-                  <div className={cn("text-sm font-medium", isActive || isCompleted ? "text-gray-900 dark:text-white" : "text-gray-500 dark:text-gray-400")}>
+                  <div className={cn(
+                    "text-sm font-medium", // Voltar para tamanho fixo md
+                    isActive || isCompleted ? "text-gray-900 dark:text-white" : "text-gray-500 dark:text-gray-400"
+                  )}>
                     {step.label}
                   </div>
                   {step.description && (
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                    <div className={cn(
+                      "text-xs text-gray-500 dark:text-gray-400", // Voltar para tamanho fixo md
+                    )}>
                       {step.description}
                     </div>
                   )}
                 </div>
               )}
-               {/* Rótulo e Descrição (Vertical) */}
+               {/* Rótulo e Descrição (Vertical) - Remover classes de tamanho */}
                {isVertical && (
                 <div>
-                  <div className={cn("text-sm font-medium", isActive || isCompleted ? "text-gray-900 dark:text-white" : "text-gray-500 dark:text-gray-400")}>
+                  <div className={cn(
+                    "text-sm font-medium", // Voltar para tamanho fixo md
+                    isActive || isCompleted ? "text-gray-900 dark:text-white" : "text-gray-500 dark:text-gray-400"
+                  )}>
                     {step.label}
                   </div>
                   {step.description && (
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                    <div className={cn(
+                      "text-xs text-gray-500 dark:text-gray-400", // Voltar para tamanho fixo md
+                    )}>
                       {step.description}
                     </div>
                   )}
@@ -102,7 +113,7 @@ function Stepper({
                 className={cn(
                   "flex-1 border-t-2 transition-colors duration-300",
                   isCompleted ? "border-blue-600" : "border-gray-300",
-                  isVertical ? "ml-4 h-auto min-h-[40px] w-0 border-l-2 border-t-0" : "mx-4" // Estilos para linha vertical/horizontal
+                  isVertical ? "ml-4 h-auto min-h-[40px] w-0 border-l-2 border-t-0" : "mx-4"
                 )}
                 aria-hidden="true"
               />

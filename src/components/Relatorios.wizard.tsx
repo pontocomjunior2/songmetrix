@@ -10,6 +10,7 @@ import { fetchAllPopularityData } from './Relatorios/services/popularity';
 import PopularityIndicator from './Relatorios/components/PopularityIndicator';
 import { useForm, Controller } from 'react-hook-form';
 import { Stepper, type Step } from './ui/stepper';
+import { cn } from '../lib/utils';
 
 import './Ranking/styles/Ranking.css';
 
@@ -469,16 +470,20 @@ const RelatoriosWizard: React.FC = () => {
             setSelectedCity(null);
             setSelectedState(null);
           }}
-          className={`p-6 rounded-lg border-2 transition-all ${
+          className={cn(
+            "rounded-lg border-2 transition-all h-full flex flex-col hover:shadow-md",
+            "p-6",
             selectedReportType === type.id
               ? 'border-navy-600 bg-navy-50 dark:bg-navy-900'
               : 'border-gray-200 dark:border-gray-700 hover:border-navy-400'
-          }`}
+          )}
         >
-          <div className="flex flex-col items-center text-center space-y-4">
-            {type.icon}
+          <div className="items-center text-center space-y-3 flex-grow flex flex-col justify-center">
+            <div>
+              {React.cloneElement(type.icon as React.ReactElement, { className: cn((type.icon as React.ReactElement).props.className, "mx-auto") })}
+            </div>
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{type.title}</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400">{type.description}</p>
+            <p className="text-xs text-gray-600 dark:text-gray-400">{type.description}</p>
           </div>
         </button>
       ))}
@@ -783,71 +788,64 @@ const RelatoriosWizard: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-        <div className="flex items-center justify-between">
-          <div></div>
-          {reportGenerated && (
-            <button
-              onClick={generatePDF}
-              className="flex items-center gap-2 px-4 py-2 bg-navy-600 text-white rounded-lg hover:bg-navy-700 transition-colors"
-            >
-              <FileDown className="w-4 h-4" />
-              Baixar PDF
-            </button>
-          )}
-        </div>
-        
-        {/* Usar o novo Stepper */}
-        <div className="mt-6 flex items-center">
-          <Stepper steps={wizardSteps} currentStep={currentStep - 1} orientation="horizontal" className="w-full" />
-        </div>
+    <div className="p-4 md:p-6 space-y-8 bg-white dark:bg-gray-800 rounded-lg shadow">
+      <div className="flex items-center justify-between">
+        <div></div>
+        {reportGenerated && (
+          <button
+            onClick={generatePDF}
+            className="flex items-center gap-2 px-4 py-2 bg-navy-600 text-white rounded-lg hover:bg-navy-700 transition-colors"
+          >
+            <FileDown className="w-4 h-4" />
+            Baixar PDF
+          </button>
+        )}
       </div>
+      
+      <Stepper
+        steps={wizardSteps}
+        currentStep={currentStep - 1}
+        className="mb-8"
+      />
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+      <div className="min-h-[200px]">
         {currentStep === 1 && renderStep1()}
         {currentStep === 2 && renderStep2()}
         {currentStep === 3 && renderStep3()}
+      </div>
 
-        <div className="mt-6 flex justify-between">
-          {currentStep > 1 && (
-            <button
-              onClick={() => setCurrentStep(currentStep - 1)}
-              className="px-4 py-2 text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-            >
-              Voltar
-            </button>
-          )}
-          {currentStep < 3 && (
-            <button
-              onClick={() => setCurrentStep(currentStep + 1)}
-              className="ml-auto px-4 py-2 bg-navy-600 text-white rounded-lg hover:bg-navy-700 transition-colors"
-              disabled={
-                (currentStep === 2 && selectedReportType === 'radios' && selectedRadios.length === 0) ||
-                (currentStep === 2 && selectedReportType === 'city' && !selectedCity) ||
-                (currentStep === 2 && selectedReportType === 'state' && !selectedState)
-              }
-            >
-              Próximo
-            </button>
-          )}
-          {currentStep === 3 && (
-            <button
-              onClick={handleGenerateReport}
-              className="ml-auto flex items-center gap-2 px-6 py-2 bg-navy-600 text-white rounded-lg hover:bg-navy-700 transition-colors disabled:bg-navy-400"
-              disabled={loading || loadingSpotify}
-            >
-              {loading || loadingSpotify ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  {loadingSpotify ? 'Buscando dados do Spotify...' : 'Gerando...'}
-                </>
-              ) : (
-                'Gerar Relatório'
-              )}
-            </button>
-          )}
-        </div>
+      <div className="flex justify-between pt-6 border-t border-gray-200 dark:border-gray-700">
+        <button
+          onClick={() => setCurrentStep(prev => Math.max(1, prev - 1))}
+          disabled={currentStep === 1}
+          className="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Voltar
+        </button>
+
+        {currentStep < 3 && (
+          <button
+            onClick={() => setCurrentStep(prev => Math.min(3, prev + 1))}
+            className="px-4 py-2 rounded-lg bg-navy-600 text-white hover:bg-navy-700 disabled:opacity-50"
+          >
+            Próximo
+          </button>
+        )}
+
+        {currentStep === 3 && (
+          <button
+            onClick={handleGenerateReport}
+            disabled={loading || loadingSpotify}
+            className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
+          >
+            {loading || loadingSpotify ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <FileDown className="w-5 h-5" />
+            )}
+            Gerar Relatório
+          </button>
+        )}
       </div>
 
       {reportData.length > 0 && (
@@ -857,38 +855,32 @@ const RelatoriosWizard: React.FC = () => {
               {chartSize.label}
             </h2>
             
-            {/* Contêiner principal com estilo para sincronizar rolagem */}
             <div className="relative">
-              {/* Barra de rolagem superior */}
               <div className="overflow-x-auto mb-3 pb-0" 
                    style={{ 
                      maxWidth: '100%',
                      overflowY: 'hidden'
                    }}
                    onScroll={(e) => {
-                     // Sincronizar a rolagem horizontal com a tabela principal
                      const target = e.target as HTMLElement;
                      const mainTable = target.nextElementSibling as HTMLElement;
                      if (mainTable) {
                        mainTable.scrollLeft = target.scrollLeft;
                      }
                    }}>
-                {/* Tabela fantasma apenas para a barra de rolagem superior */}
                 <div style={{ 
                   height: '1px', 
                   width: (selectedReportType === 'radios' ? selectedRadios : locationRadios).length > 5 ? 
                     `${(selectedReportType === 'radios' ? selectedRadios : locationRadios).length * 60 + 
-                      (includeSpotify ? 96 : 0) + // Adiciona largura para coluna do Spotify
-                      500 // Largura base para outras colunas (Pos, Título, Artista, Total)
+                      (includeSpotify ? 96 : 0) +
+                      500
                     }px` : 
                     '100%' 
                 }}></div>
               </div>
               
-              {/* Tabela principal com dados */}
               <div className="overflow-x-auto"
                    onScroll={(e) => {
-                     // Sincronizar a rolagem horizontal com a barra superior
                      const target = e.target as HTMLElement;
                      const topScrollbar = target.previousElementSibling as HTMLElement;
                      if (topScrollbar) {
