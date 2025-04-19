@@ -91,65 +91,34 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }
           success = false;
         } else {
-          const { data: dbUser, error: dbError } = await supabase
-            .from('users')
-            .select('plan_id, trial_ends_at')
-            .eq('id', user.id)
-            .single();
+          // --- LER DADOS DO METADATA --- 
+          const userMetadata = user.user_metadata || {};
+          const dbPlanId = userMetadata.plan_id; // Ler plan_id do metadata
+          const dbTrialEndsAt = userMetadata.trial_ends_at; // Ler trial_ends_at do metadata
 
-          if (dbError) {
-            if (dbError.code === 'PGRST116') {
-              console.warn(`[AuthContext] Profile not found for user ${user.id}. Signing out.`);
-              await supabase.auth.signOut().catch(e => console.error("Error during sign out after profile not found:", e));
-              if (isMounted.current) {
-                setCurrentUser(null);
-                setPlanId(null);
-                setTrialEndsAt(null);
-                setError('Perfil de usuário não encontrado.');
-              }
-            } else {
-              if (isMounted.current) {
-                setCurrentUser(null); // Clear user on generic profile error
-                setPlanId(null);
-                setTrialEndsAt(null);
-                setError(dbError.message || 'Falha ao buscar perfil.');
-              }
-            }
-            success = false;
-          } else if (!dbUser) { // Should be covered by PGRST116, but for safety
-            console.error('[AuthContext] refreshUserData: Profile data is null (unexpected).');
-            await supabase.auth.signOut().catch(e => console.error("Error during sign out after profile null:", e));
-            if (isMounted.current) {
-              setCurrentUser(null);
-              setPlanId(null);
-              setTrialEndsAt(null);
-              setError('Dados de perfil não encontrados.');
-            }
-            success = false;
-          } else {
-            // Profile found, check trial
-            const now = new Date();
-            const trialEnd = dbUser.trial_ends_at ? new Date(dbUser.trial_ends_at) : null;
-            let currentPlanId = dbUser.plan_id;
-            if (currentPlanId === 'trial' && trialEnd && trialEnd < now) {
-              console.log(`[AuthContext] Trial expired for user: ${user.id}.`);
-              currentPlanId = 'expired_trial';
-              supabase.from('users').update({ plan_id: 'expired_trial' }).eq('id', user.id)
-                .then(({ error: updateError }) => { 
-                  if (updateError) console.error("[AuthContext] Failed background update to expired_trial:", updateError);
-                  else console.log("[AuthContext] Background update to expired_trial successful.");
-                 });
-            }
+          console.log('[AuthContext] User metadata:', userMetadata); 
 
-            console.log('[AuthContext] refreshUserData: Update successful. Setting state.');
-            if (isMounted.current) {
-              setCurrentUser(user);
-              setPlanId(currentPlanId);
-              setTrialEndsAt(dbUser.trial_ends_at);
-              setError(null); // Clear error on success
-            }
-            success = true;
+          // Verificar trial com base nos dados do metadata
+          const now = new Date();
+          const trialEnd = dbTrialEndsAt ? new Date(dbTrialEndsAt) : null;
+          let currentPlanId = dbPlanId || 'trial'; // Default para trial se não houver plan_id
+          
+          if (currentPlanId === 'trial' && trialEnd && trialEnd < now) {
+            console.log(`[AuthContext] Trial expired for user: ${user.id}.`);
+            currentPlanId = 'expired_trial';
+            // REMOVER: Não tentar atualizar tabela inexistente
+            // supabase.from('users').update({ plan_id: 'expired_trial' }).eq('id', user.id).then(...);
+            // Se precisar persistir 'expired_trial', usar supabase.auth.updateUser() - talvez em outro lugar.
           }
+
+          console.log('[AuthContext] refreshUserData: Update successful. Setting state.');
+          if (isMounted.current) {
+            setCurrentUser(user); // user já contém user_metadata atualizado
+            setPlanId(currentPlanId); // Definir planId determinado
+            setTrialEndsAt(dbTrialEndsAt); // Definir trialEndsAt do metadata
+            setError(null); // Clear error on success
+          }
+          success = true;
         }
       }
     } catch (error) {
@@ -171,7 +140,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       isRefreshing.current = false; 
     }
     return success;
-  }, []);
+  }, [checkSessionActive]); // Remover dependências internas como error, etc.
 
   // Função para enviar email de boas-vindas
   const sendWelcomeEmail = useCallback(async (): Promise<boolean> => {
@@ -325,6 +294,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setLoading(true);
     setError(null);
     try {
+      // Definir data de fim do trial
+      const trialEndDate = new Date();
+      trialEndDate.setDate(trialEndDate.getDate() + 14);
+
       // Opções para o signUp, incluindo metadata e URL de redirecionamento
       const signUpOptions = {
         options: {
@@ -332,7 +305,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           data: { // user_metadata inicial
             full_name: fullName,
             whatsapp: whatsapp,
-            // NÃO definir plan_id ou trial_ends_at aqui, será feito na tabela 'users'
+            plan_id: 'trial', // <-- INCLUIR AQUI
+            trial_ends_at: trialEndDate.toISOString() // <-- INCLUIR AQUI
           }
         }
       };
@@ -355,49 +329,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (userCreated) {
         console.log(`Usuário ${email} criado no Auth. ID: ${userCreated.id}. Confirmação necessária: ${confirmationRequired}`);
 
-        // INSERIR/ATUALIZAR PERFIL NA TABELA 'users'
-        // Idealmente, isso seria um TRIGGER no Supabase (`handle_new_user`).
-        // Se não for trigger, fazemos aqui (menos robusto).
+        // REMOVER Bloco de inserção na tabela 'users' 
+        /*
         try {
-            const trialEndDate = new Date();
-            trialEndDate.setDate(trialEndDate.getDate() + 14);
-
-            const { error: profileError } = await supabase
-              .from('users') // Confirme o nome da tabela
-              .insert({
-                id: userCreated.id,
-                email: userCreated.email,
-                plan_id: 'trial', // Plano inicial
-                trial_ends_at: trialEndDate.toISOString(), // Data de fim do trial
-                full_name: fullName, // Adiciona nome
-                whatsapp: whatsapp, // Adiciona whatsapp
-                // status: 'ATIVO' // Se ainda usar status, defina um inicial
-              });
-
-            if (profileError) {
-               // Log detalhado do erro de perfil
-               console.error(`Erro ao criar perfil para ${userCreated.id} na tabela 'users':`, profileError);
-
-               // O que fazer aqui? O usuário existe no Auth mas não no Profiles.
-               // Opção 1: Tentar deletar o usuário do Auth (requer privilégios admin ou chamar API backend)
-               // Opção 2: Logar o erro e retornar falha, deixando o usuário 'órfão'.
-               // Opção 3: Retornar um erro específico para o usuário tentar novamente?
-
-               // Vamos retornar um erro específico por enquanto.
-               throw new CustomAuthError(`Falha ao inicializar o perfil do usuário. Código: ${profileError.code}`);
-            } else {
-               console.log(`Perfil criado com sucesso para ${userCreated.id} na tabela 'users'.`);
-               // Remover sincronização com Brevo após criar perfil
-               /*
-               syncUserWithBrevo({ id: userCreated.id, email, name: fullName, whatsapp });
-               */
-            }
+            // ... (código .from('users').insert(...) removido) ...
         } catch (profileInsertError: any) {
-           // Captura erro do bloco try/catch da inserção do perfil
            console.error("Erro capturado durante a inserção do perfil:", profileInsertError);
-           // Re-throw para ser pego pelo catch externo do signUp
            throw profileInsertError;
         }
+        */
+        console.log(`Metadados iniciais (plan_id, trial_ends_at) definidos durante signUp para ${userCreated.id}.`);
 
         // Preparar resposta de sucesso
         if (confirmationRequired) {
@@ -446,7 +387,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setLoading(false);
       }
     }
-  }, []);
+  }, []); // Remover dependências como getAuthRedirectOptions se ela for pura
 
   // Envolver updateFavoriteRadios em useCallback
   const updateFavoriteRadios = useCallback(async (radios: string[]) => {
@@ -483,21 +424,34 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [currentUser]); // Depende de currentUser
 
-  // Memoizar o valor do contexto para evitar re-renderizações desnecessárias
+  // Use useMemo para o valor do contexto para evitar re-renderizações desnecessárias
   const contextValue = useMemo(() => ({
     currentUser,
     planId,
     trialEndsAt,
     loading,
     error,
-    isInitialized, 
+    isInitialized,
     login,
     logout,
     refreshUserData,
     signUp,
     updateFavoriteRadios,
     sendWelcomeEmail
-  }), [currentUser, planId, trialEndsAt, loading, error, isInitialized]); 
+  }), [
+    currentUser,
+    planId,
+    trialEndsAt,
+    loading,
+    error,
+    isInitialized,
+    login,
+    logout,
+    refreshUserData,
+    signUp,
+    updateFavoriteRadios,
+    sendWelcomeEmail
+  ]);
 
   return (
     <AuthContext.Provider value={contextValue}>

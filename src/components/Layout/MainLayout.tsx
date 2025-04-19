@@ -8,11 +8,12 @@ import SidebarFixed from './SidebarFixed';
 import UserAvatar from '../Common/UserAvatar';
 import SuggestRadioModal from '../Radios/SuggestRadioModal';
 import NotificationBell from '../Notifications/NotificationBell';
+import { Badge } from '../ui/badge';
 
 const MainLayout: React.FC = () => {
   console.log('[MainLayout] Rendering...');
   const { theme, toggleTheme } = useTheme();
-  const { currentUser, logout } = useAuth();
+  const { currentUser, logout, planId } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [isMobile, setIsMobile] = useState(false);
@@ -134,8 +135,13 @@ const MainLayout: React.FC = () => {
                       size="sm"
                     />
                     {!isMobile && (
-                      <span className="text-sm text-gray-700 dark:text-gray-200">
+                      <span className="text-sm text-gray-700 dark:text-gray-200 flex items-center">
                         {currentUser.email}
+                        {planId === 'expired_trial' && (
+                          <Badge variant="secondary" className="ml-2 px-1.5 py-0.5 text-xs">
+                            Free
+                          </Badge>
+                        )}
                       </span>
                     )}
                   </button>
@@ -144,8 +150,13 @@ const MainLayout: React.FC = () => {
                     <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
                       <div className="py-1">
                         {isMobile && currentUser.email && (
-                          <div className="px-4 py-2 text-sm text-gray-700 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700">
-                            {currentUser.email}
+                          <div className="px-4 py-2 text-sm text-gray-700 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                            <span>{currentUser.email}</span>
+                            {planId === 'expired_trial' && (
+                              <Badge variant="secondary" className="px-1.5 py-0.5 text-xs">
+                                Free
+                              </Badge>
+                            )}
                           </div>
                         )}
                         <button 
