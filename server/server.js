@@ -1,7 +1,21 @@
 // Load environment variables first
 console.log("********* EXECUTANDO server.js ATUALIZADO *********", new Date().toISOString()); // <--- LOG DE VERIFICAÇÃO
 
+// Carrega as variáveis de ambiente do arquivo .env na raiz do projeto
 import dotenv from 'dotenv';
+// Adicionar override: true para forçar a sobrescrita de variáveis pré-existentes
+const dotenvResult = dotenv.config({ override: true }); 
+
+if (dotenvResult.error) {
+  console.error('[ERROR] Erro ao carregar o arquivo .env da raiz:', dotenvResult.error);
+} else {
+  console.log('[SUCCESS] Arquivo .env da raiz carregado com sucesso.');
+  // Logar valores lidos APENAS se o carregamento foi bem-sucedido
+  console.log('[DEBUG server.js] ASAAS_API_URL lido pelo dotenv:', process.env.ASAAS_API_URL);
+  console.log('[DEBUG server.js] ASAAS_API_KEY lido pelo dotenv:', process.env.ASAAS_API_KEY);
+}
+// FIM DEBUG
+
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
@@ -20,21 +34,8 @@ import { pool } from './db.js'; // <-- Importar pool de db.js
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Try to load environment variables from multiple locations
-const envPaths = [
-  path.join(__dirname, '.env'),
-  path.join(dirname(__dirname), '.env')
-];
-
-for (const envPath of envPaths) {
-  if (dotenv.config({ path: envPath }).error === undefined) {
-    console.log('Loaded environment variables from:', envPath);
-    break;
-  }
-}
-
 // Verify environment variables are loaded
-console.log('Environment variables loaded:', {
+console.log('Environment variables loaded (verificação posterior):', {
   POSTGRES_USER: process.env.POSTGRES_USER,
   POSTGRES_HOST: process.env.POSTGRES_HOST,
   POSTGRES_DB: process.env.POSTGRES_DB,

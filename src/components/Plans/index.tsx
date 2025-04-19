@@ -1,23 +1,207 @@
-import React from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { PrimaryButton } from '../Common/Button';
-import { CheckCircle, Star, Award, Zap, Clock, Shield, BarChart2, Users } from 'lucide-react';
+import { CheckCircle, Star, Award, Zap, Clock, Shield, BarChart2, Users, Loader2, AlertCircle, Info } from 'lucide-react';
+import { useAuth } from '../../hooks/useAuth';
+import { supabase } from '../../lib/supabase-client';
+import { toast } from 'react-toastify';
+import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
+import { cn } from '../../lib/utils';
+import { Badge } from "../ui/badge";
+
+// --- Interfaces --- (Definir tipos)
+
+interface PlanFeature {
+  // Se features for um array de objetos, definir aqui
+}
+
+interface Plan {
+  id: string;
+  title: string;
+  price: number;
+  priceSuffix: string;
+  description: string;
+  features: string[]; // Ou PlanFeature[]
+  buttonText: string;
+  monthlyEquivalent?: number;
+  popular?: boolean;
+  savingsText?: string;
+}
+
+interface PlanCardProps {
+  plan: Plan;
+  onSubscribe: (planId: string) => void;
+  isLoading: boolean;
+}
+
+// Estrutura dos planos
+const planDetails: Plan[] = [
+  {
+    id: 'mensal',
+    title: 'Mensal',
+    price: 1299.00,
+    priceSuffix: '/mês',
+    description: 'Acesso completo por 1 mês.',
+    features: [
+      "Ideal para experimentar",
+      "Flexibilidade total",
+      "Cancele quando quiser"
+    ],
+    buttonText: 'Assinar Mensal'
+  },
+  {
+    id: 'semestral',
+    title: 'Semestral',
+    price: 5394.00,
+    monthlyEquivalent: 899.00,
+    priceSuffix: '/mês',
+    description: 'Economia significativa para 6 meses.',
+    features: [
+      "Todas as funcionalidades",
+      "Suporte prioritário"
+    ],
+    buttonText: 'Assinar Semestral',
+    savingsText: 'Economize 30%'
+  },
+  {
+    id: 'anual',
+    title: 'Anual',
+    price: 8994.00,
+    monthlyEquivalent: 749.50,
+    priceSuffix: '/mês',
+    description: 'O melhor valor para acesso completo por 1 ano.',
+    features: [
+      "Todas as funcionalidades",
+      "Suporte prioritário",
+      "Acesso antecipado a novos recursos"
+    ],
+    buttonText: 'Assinar Anual',
+    popular: true,
+    savingsText: 'Economize 42%'
+  }
+];
+
+// Componente Card do Plano (Recomendado criar em arquivo separado depois)
+const PlanCard: React.FC<PlanCardProps> = ({ plan, onSubscribe, isLoading }) => {
+  const formatPrice = (price: number): string => {
+    return price.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  const displayPrice = plan.monthlyEquivalent ?? plan.price;
+
+  return (
+    <div
+      className={cn(
+        "relative border rounded-xl p-6 flex flex-col bg-white dark:bg-gray-800 shadow-sm hover:shadow-lg transition-shadow duration-200",
+         plan.popular ? 'border-indigo-500 ring-2 ring-indigo-300 dark:ring-indigo-700' : 'border-gray-300 dark:border-gray-700'
+      )}
+    >
+      <div className="absolute top-0 left-6 -translate-y-1/2 flex gap-2">
+        {plan.popular && (
+          <Badge variant="default" className="bg-indigo-500 hover:bg-indigo-600 text-white">
+            Mais Popular
+          </Badge>
+        )}
+         {plan.savingsText && (
+          <Badge variant="secondary" className="bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700">
+            {plan.savingsText}
+          </Badge>
+        )}
+      </div>
+
+      <div className="pt-4">
+        <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">{plan.title}</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 h-10">{plan.description}</p>
+
+        <div className="mb-6">
+          <span className="text-4xl font-extrabold text-gray-900 dark:text-white">R$ {formatPrice(displayPrice)}</span>
+          <span className="text-lg font-medium text-gray-500 dark:text-gray-400">{plan.priceSuffix}</span>
+
+          {plan.monthlyEquivalent && (
+             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+               Cobrado R$ {formatPrice(plan.price)} {plan.id === 'semestral' ? 'semestralmente' : 'anualmente'}
+             </p>
+          )}
+        </div>
+
+        <ul className="space-y-2 mb-8 flex-grow">
+          {plan.features.map((feature: string, index: number) => (
+            <li key={index} className="flex items-start">
+              <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0 mr-2 mt-0.5" />
+              <span className="text-sm text-gray-700 dark:text-gray-300">{feature}</span>
+            </li>
+          ))}
+        </ul>
+
+        <PrimaryButton
+          onClick={() => onSubscribe(plan.id)}
+          disabled={isLoading}
+          className="w-full"
+        >
+          {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : plan.buttonText}
+        </PrimaryButton>
+      </div>
+    </div>
+  );
+};
 
 export default function Plans() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { currentUser } = useAuth();
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  
   const message = location.state?.message || '';
   const isTrialExpired = location.state?.trialExpired || false;
 
-  // Calcular o valor com desconto
-  const originalPrice = 2499;
-  const discountPercentage = 75;
-  const discountedPrice = originalPrice * (1 - discountPercentage / 100);
+  const handleSubscription = useCallback(async (planId: string) => {
+    setError(null);
+    if (!currentUser) {
+        toast.error("Você precisa estar logado para assinar um plano.");
+        navigate('/login');
+        return;
+    }
+    
+    setLoadingPlan(planId);
+    try {
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !sessionData.session) {
+            throw new Error('Sessão inválida ou expirada. Faça login novamente.');
+        }
+        const token = sessionData.session.access_token;
 
-  // Formatar os preços
-  const formatPrice = (price) => {
-    return price.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
+        const response = await fetch('/api/payments/create-charge', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ planId })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || 'Falha ao iniciar o processo de pagamento.');
+        }
+
+        if (result.invoiceUrl) {
+            // Redirecionar para a página de pagamento do Asaas
+            window.location.href = result.invoiceUrl;
+        } else {
+            throw new Error('URL de pagamento não recebida.');
+        }
+
+    } catch (err: any) {
+        console.error("Erro ao criar cobrança:", err);
+        const errorMessage = err.message || 'Ocorreu um erro inesperado.';
+        setError(errorMessage);
+        toast.error(`Erro: ${errorMessage}`);
+    } finally {
+        setLoadingPlan(null);
+    }
+  }, [currentUser, navigate]);
 
   const features = [
     {
@@ -71,282 +255,63 @@ export default function Plans() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
       {/* Header */}
       <div className="max-w-7xl mx-auto text-center">
         <div className="mb-16">
-          <h1 className="text-4xl md:text-5xl font-extrabold text-gray-900 mb-6">
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">
-              Transforme sua Programação Musical
-            </span>
+          <h1 className="text-4xl md:text-5xl font-extrabold text-gray-900 dark:text-white mb-6">
+             Escolha o Plano Ideal para sua Rádio
           </h1>
-          <p className="mt-3 max-w-3xl mx-auto text-xl text-gray-600">
-            Inteligência de dados para sua rádio se destacar no mercado
+          <p className="mt-3 max-w-3xl mx-auto text-xl text-gray-600 dark:text-gray-300">
+            Potencialize sua programação com insights e dados precisos.
           </p>
           
+          {/* Mensagens de Estado (Trial Expirado, Erro, etc.) */}
           {isTrialExpired && (
-            <div className="mt-8 p-4 bg-yellow-50 border-l-4 border-yellow-400 rounded-md max-w-3xl mx-auto text-left">
-              <div className="flex">
-                <div className="flex-shrink-0">
-                  <svg className="h-5 w-5 text-yellow-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div className="ml-3">
-                  <p className="text-sm text-yellow-700">
-                    Seu período de avaliação gratuito expirou. Escolha um plano para continuar utilizando o sistema.
-                  </p>
-                </div>
-              </div>
-            </div>
+             <Alert variant="destructive" className="mt-8 max-w-3xl mx-auto text-left">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Período de Teste Expirado</AlertTitle>
+                <AlertDescription>
+                   Seu período de avaliação gratuito terminou. Escolha um plano abaixo para continuar utilizando todos os recursos do Songmetrix.
+                </AlertDescription>
+             </Alert>
           )}
-          
-          {message && (
-            <div className="mt-8 p-4 bg-blue-50 border-l-4 border-blue-400 rounded-md max-w-3xl mx-auto text-left">
-              <p className="text-sm text-blue-700">{message}</p>
-            </div>
+          {error && (
+             <Alert variant="destructive" className="mt-8 max-w-3xl mx-auto text-left">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Erro ao Processar</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+             </Alert>
+          )}
+           {message && (
+             <Alert variant="default" className="mt-8 max-w-3xl mx-auto text-left border-blue-500 bg-blue-50 dark:bg-blue-900/30">
+                 <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                 <AlertTitle className="text-blue-800 dark:text-blue-300">Informação</AlertTitle>
+                 <AlertDescription className="text-blue-700 dark:text-blue-400">{message}</AlertDescription>
+             </Alert>
           )}
         </div>
       </div>
 
-      {/* Oferta Especial */}
+      {/* Nova Seção de Planos */}
       <div className="max-w-7xl mx-auto mb-20">
-        <div className="bg-gradient-to-r from-indigo-600 to-blue-700 rounded-3xl shadow-xl overflow-hidden">
-          <div className="px-6 py-12 md:p-12 lg:flex lg:items-center lg:justify-between">
-            <div className="lg:w-0 lg:flex-1">
-              <h2 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
-                <span className="block">Oferta de Lançamento</span>
-                <span className="block text-indigo-200">75% de desconto por tempo limitado!</span>
-              </h2>
-              <p className="mt-4 max-w-3xl text-lg text-indigo-100">
-                Aproveite esta oportunidade única e transforme sua rádio com o poder da análise de dados.
-              </p>
-            </div>
-            <div className="mt-8 lg:mt-0 lg:ml-8 lg:flex-shrink-0">
-              <div className="bg-white bg-opacity-10 backdrop-filter backdrop-blur-lg rounded-lg p-6 text-center">
-                <div className="flex items-center justify-center">
-                  <div className="text-white text-opacity-70 line-through text-2xl mr-3">
-                    R$ {formatPrice(originalPrice)}
-                  </div>
-                  <div className="text-white text-4xl font-bold">
-                    R$ {formatPrice(discountedPrice)}
-                  </div>
-                </div>
-                <p className="text-indigo-200 mt-1">/mês</p>
-                <div className="mt-6">
-                  <PrimaryButton 
-                    fullWidth 
-                    onClick={() => navigate('/contact', { state: { plan: 'Premium' } })}
-                    className="bg-white text-indigo-600 hover:bg-indigo-50"
-                  >
-                    Assinar Agora
-                  </PrimaryButton>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Recursos */}
-      <div className="max-w-7xl mx-auto mb-20">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-extrabold text-gray-900">Recursos Exclusivos</h2>
-          <p className="mt-4 max-w-2xl mx-auto text-xl text-gray-500">
-            Tudo o que você precisa para otimizar sua programação musical
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-4">
-          {features.map((feature, index) => (
-            <div key={index} className="bg-white rounded-lg shadow-md p-8 transition-all duration-300 hover:shadow-lg hover:transform hover:scale-105">
-              <div className="mb-5">{feature.icon}</div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">{feature.title}</h3>
-              <p className="text-gray-600">{feature.description}</p>
-            </div>
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-3 items-stretch">
+          {planDetails.map((plan) => (
+            <PlanCard 
+              key={plan.id} 
+              plan={plan} 
+              onSubscribe={handleSubscription} 
+              isLoading={loadingPlan === plan.id}
+            />
           ))}
         </div>
       </div>
 
-      {/* Plano Premium Detalhado */}
-      <div className="max-w-5xl mx-auto mb-20">
-        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-          <div className="px-6 py-8 sm:p-10 sm:pb-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="inline-flex px-4 py-1 rounded-full text-sm font-semibold tracking-wide uppercase bg-indigo-100 text-indigo-600">
-                  Plano Premium
-                </h3>
-                <div className="flex items-baseline mt-4">
-                  <span className="text-5xl font-extrabold text-gray-900">R$ {formatPrice(discountedPrice)}</span>
-                  <span className="ml-1 text-2xl font-medium text-gray-500">/mês</span>
-                </div>
-              </div>
-              <div className="bg-red-100 text-red-800 rounded-full px-3 py-1 text-sm font-semibold transform rotate-3">
-                Economize R$ {formatPrice(originalPrice - discountedPrice)}/mês
-              </div>
-            </div>
-            <p className="mt-5 text-lg text-gray-500">
-              Acesso completo a todas as funcionalidades do Songmetrix para impulsionar sua rádio.
-            </p>
-          </div>
-          <div className="px-6 pt-6 pb-8 bg-gray-50 sm:p-10 sm:pt-6">
-            <ul className="space-y-4">
-              {[
-                "Monitoramento ilimitado de rádios",
-                "Análise em tempo real da programação",
-                "Relatórios personalizados e exportáveis",
-                "Análise detalhada da concorrência",
-                "Insights estratégicos para sua programação",
-                "Suporte prioritário 24/7",
-                "Acesso à API de integração",
-                "Atualizações e novos recursos prioritários",
-                "Consultoria especializada mensal"
-              ].map((feature, index) => (
-                <li key={index} className="flex items-start">
-                  <div className="flex-shrink-0">
-                    <CheckCircle className="h-6 w-6 text-green-500" />
-                  </div>
-                  <p className="ml-3 text-base text-gray-700">{feature}</p>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-8">
-              <PrimaryButton 
-                fullWidth 
-                onClick={() => navigate('/contact', { state: { plan: 'Premium' } })}
-              >
-                Assinar Premium
-              </PrimaryButton>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Depoimentos */}
-      <div className="max-w-7xl mx-auto mb-20">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-extrabold text-gray-900">O que nossos clientes dizem</h2>
-          <p className="mt-4 max-w-2xl mx-auto text-xl text-gray-500">
-            Histórias de sucesso de rádios que transformaram sua programação com o Songmetrix
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
-          {testimonials.map((testimonial, index) => (
-            <div key={index} className="bg-white rounded-lg shadow-md p-8 border-l-4 border-indigo-500">
-              <div className="flex items-center mb-4">
-                <Star className="h-5 w-5 text-yellow-400" />
-                <Star className="h-5 w-5 text-yellow-400" />
-                <Star className="h-5 w-5 text-yellow-400" />
-                <Star className="h-5 w-5 text-yellow-400" />
-                <Star className="h-5 w-5 text-yellow-400" />
-              </div>
-              <p className="text-gray-600 italic mb-6">"{testimonial.quote}"</p>
-              <div>
-                <p className="font-semibold text-gray-900">{testimonial.author}</p>
-                <p className="text-gray-500 text-sm">{testimonial.role}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* FAQ */}
-      <div className="max-w-5xl mx-auto mb-20">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-extrabold text-gray-900">Perguntas Frequentes</h2>
-          <p className="mt-4 max-w-2xl mx-auto text-xl text-gray-500">
-            Tire suas dúvidas sobre o Songmetrix
-          </p>
-        </div>
-
-        <div className="space-y-8">
-          {faqs.map((faq, index) => (
-            <div key={index} className="bg-white rounded-lg shadow-md p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">{faq.question}</h3>
-              <p className="text-gray-600">{faq.answer}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Comparação de Planos */}
-      <div className="max-w-7xl mx-auto mb-20">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-extrabold text-gray-900">Compare os Planos</h2>
-          <p className="mt-4 max-w-2xl mx-auto text-xl text-gray-500">
-            Escolha o plano ideal para sua rádio
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {/* Plano Trial */}
-          <div className="bg-white rounded-lg shadow-md p-8">
-            <h3 className="text-xl font-bold text-gray-900 mb-4">Trial</h3>
-            <p className="text-gray-600 mb-6">Experimente por 7 dias</p>
-            <ul className="space-y-4">
-              <li className="flex items-start">
-                <CheckCircle className="h-6 w-6 text-green-500 flex-shrink-0" />
-                <p className="ml-3 text-gray-600">Acesso básico ao monitoramento</p>
-              </li>
-              <li className="flex items-start">
-                <CheckCircle className="h-6 w-6 text-green-500 flex-shrink-0" />
-                <p className="ml-3 text-gray-600">Visualização limitada de relatórios</p>
-              </li>
-              <li className="flex items-start">
-                <CheckCircle className="h-6 w-6 text-green-500 flex-shrink-0" />
-                <p className="ml-3 text-gray-600">Suporte por email</p>
-              </li>
-            </ul>
-          </div>
-
-          {/* Plano Premium */}
-          <div className="bg-gradient-to-b from-indigo-50 to-white rounded-lg shadow-md p-8 border-2 border-indigo-500">
-            <div className="inline-flex px-3 py-1 rounded-full text-sm font-semibold bg-indigo-100 text-indigo-600 mb-4">
-              Recomendado
-            </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-4">Premium</h3>
-            <p className="text-gray-600 mb-6">Acesso completo a todas as funcionalidades</p>
-            <ul className="space-y-4">
-              <li className="flex items-start">
-                <CheckCircle className="h-6 w-6 text-green-500 flex-shrink-0" />
-                <p className="ml-3 text-gray-600">Monitoramento ilimitado de rádios</p>
-              </li>
-              <li className="flex items-start">
-                <CheckCircle className="h-6 w-6 text-green-500 flex-shrink-0" />
-                <p className="ml-3 text-gray-600">Relatórios detalhados e exportáveis</p>
-              </li>
-              <li className="flex items-start">
-                <CheckCircle className="h-6 w-6 text-green-500 flex-shrink-0" />
-                <p className="ml-3 text-gray-600">Análise de concorrência</p>
-              </li>
-              <li className="flex items-start">
-                <CheckCircle className="h-6 w-6 text-green-500 flex-shrink-0" />
-                <p className="ml-3 text-gray-600">Suporte prioritário 24/7</p>
-              </li>
-              <li className="flex items-start">
-                <CheckCircle className="h-6 w-6 text-green-500 flex-shrink-0" />
-                <p className="ml-3 text-gray-600">Consultoria especializada mensal</p>
-              </li>
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      {/* Contato */}
-      <div className="max-w-3xl mx-auto mb-20 text-center">
-        <h2 className="text-3xl font-extrabold text-gray-900 mb-8">Ainda tem dúvidas?</h2>
-        <p className="text-xl text-gray-600 mb-8">
-          Nossa equipe está pronta para ajudar você a escolher o melhor plano para sua rádio.
-        </p>
-        <PrimaryButton
-          onClick={() => navigate('/contact', { state: { plan: 'Premium' } })}
-          className="px-8 py-3 text-lg"
-        >
-          Fale com um Especialista
-        </PrimaryButton>
-      </div>
+      {/* Manter Recursos, Depoimentos, FAQs se desejar */}
+      {/* ... Seção Recursos ... */}
+      {/* ... Seção Depoimentos ... */}
+      {/* ... Seção FAQs ... */} 
+      
     </div>
   );
 }
