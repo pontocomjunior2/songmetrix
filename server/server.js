@@ -1,4 +1,6 @@
 // Load environment variables first
+console.log("********* EXECUTANDO server.js ATUALIZADO *********", new Date().toISOString()); // <--- LOG DE VERIFICAÇÃO
+
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -267,143 +269,8 @@ app.post('/api/users/status', authenticateBasicUser, async (req, res) => {
 });
 
 // Rotas com autenticação básica (sem verificação de paid/admin)
-app.get('/api/radios/status', authenticateBasicUser, async (req, res) => {
-  try {
-    // Get favorite radios from user metadata
-    const favoriteRadios = req.user.user_metadata?.favorite_radios || [];
-
-    // Query para buscar todas as rádios e sua última execução
-    // A consulta busca a entrada mais recente para cada rádio
-    const query = `
-      WITH latest_entries AS (
-        SELECT 
-          name,
-          MAX(date + time::time) as last_update
-        FROM music_log
-        GROUP BY name
-      ),
-      all_radios AS (
-        SELECT name, created_at, updated_at FROM streams ORDER BY name
-      )
-      SELECT 
-        r.name,
-        l.last_update,
-        r.created_at,
-        r.updated_at
-      FROM all_radios r
-      LEFT JOIN latest_entries l ON r.name = l.name
-      ORDER BY r.name;
-    `;
-
-    try {
-      console.log('Executando consulta para buscar rádios...');
-      const result = await safeQuery(query);
-      console.log(`Encontradas ${result.rows.length} rádios no banco de dados`);
-      
-      // Verificar dados recentes para determinar quais rádios estão online
-      // Uma consulta adicional para verificar quais rádios tiveram execuções nos últimos 10 minutos
-      const recentActivityQuery = `
-        SELECT DISTINCT name
-        FROM music_log
-        WHERE (date + time::time) > NOW() - INTERVAL '10 minutes'
-      `;
-      
-      const recentActivity = await safeQuery(recentActivityQuery);
-      console.log(`Rádios com atividade recente: ${recentActivity.rows.length}`);
-      
-      // Criar um Set com os nomes das rádios com atividade nos últimos 10 minutos
-      const onlineRadiosSet = new Set(recentActivity.rows.map(row => row.name));
-      
-      if (!result.rows || result.rows.length === 0) {
-        // Fallback: Buscar todas as rádios da tabela streams
-        try {
-          const streamsResult = await safeQuery("SELECT name, created_at, updated_at FROM streams ORDER BY name");
-          const radiosStatus = streamsResult.rows.map(row => ({
-            name: row.name,
-            status: onlineRadiosSet.has(row.name) ? 'ONLINE' : 'OFFLINE',
-            lastUpdate: row.updated_at || row.created_at,
-            isFavorite: favoriteRadios.includes(row.name)
-          }));
-          
-          console.log(`Retornando ${radiosStatus.length} rádios (fallback)`);
-          return res.json(radiosStatus);
-        } catch (streamsError) {
-          console.error('Erro ao buscar streams:', streamsError);
-          // Último fallback - retornar apenas favoritas como offline
-          const offlineRadios = favoriteRadios.map(name => ({
-            name,
-            status: 'OFFLINE',
-            lastUpdate: null,
-            isFavorite: true
-          }));
-          
-          console.log(`Retornando apenas ${offlineRadios.length} rádios favoritas como fallback final`);
-          return res.json(offlineRadios);
-        }
-      }
-      
-      // Processar os resultados normais da consulta principal
-      const radiosStatus = result.rows.map(row => {
-        // Uma rádio está online se estiver no set de rádios com atividade recente
-        const isOnline = onlineRadiosSet.has(row.name);
-        
-        return {
-          name: row.name,
-          status: isOnline ? 'ONLINE' : 'OFFLINE',
-          lastUpdate: row.last_update || row.updated_at || row.created_at,
-          isFavorite: favoriteRadios.includes(row.name)
-        };
-      });
-
-      console.log(`Retornando ${radiosStatus.length} rádios ao cliente, ${radiosStatus.filter(r => r.status === 'ONLINE').length} online`);
-      res.json(radiosStatus);
-    } catch (dbError) {
-      console.error('Erro ao consultar banco de dados:', dbError);
-      // Fallback se houver erro na consulta principal
-      try {
-        const streamsResult = await safeQuery("SELECT name, created_at, updated_at FROM streams ORDER BY name");
-        console.log(`Fallback: ${streamsResult.rows.length} rádios encontradas na tabela streams`);
-        
-        // Tentar buscar atividade recente em uma consulta separada
-        let onlineRadios = new Set();
-        try {
-          const recentActivity = await safeQuery(
-            "SELECT DISTINCT name FROM music_log WHERE (date + time::time) > NOW() - INTERVAL '10 minutes'"
-          );
-          onlineRadios = new Set(recentActivity.rows.map(row => row.name));
-          console.log(`Rádios com atividade recente (fallback): ${onlineRadios.size}`);
-        } catch (e) {
-          console.error('Erro ao buscar atividade recente (fallback):', e);
-        }
-        
-        const radiosStatus = streamsResult.rows.map(row => ({
-          name: row.name,
-          status: onlineRadios.has(row.name) ? 'ONLINE' : 'OFFLINE',
-          lastUpdate: row.updated_at || row.created_at,
-          isFavorite: favoriteRadios.includes(row.name)
-        }));
-        
-        console.log(`Retornando ${radiosStatus.length} rádios (fallback stream)`);
-        return res.json(radiosStatus);
-      } catch (streamsError) {
-        console.error('Erro ao buscar streams como fallback:', streamsError);
-        // Último fallback - retornar apenas favoritas
-        const offlineRadios = favoriteRadios.map(name => ({
-          name,
-          status: 'OFFLINE',
-          lastUpdate: null,
-          isFavorite: true
-        }));
-        
-        console.log(`Retornando apenas ${offlineRadios.length} rádios favoritas como fallback final`);
-        return res.json(offlineRadios);
-      }
-    }
-  } catch (error) {
-    console.error('GET /api/radios/status - Erro:', error);
-    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
-  }
-});
+// A definição de /api/radios/status foi movida para server/routes/radios.js
+// app.get('/api/radios/status', async (req, res) => { ... antiga definição removida ...
 
 app.post('/api/radios/favorite', authenticateBasicUser, async (req, res) => {
   try {
@@ -871,216 +738,7 @@ app.post('/api/executions', authenticateBasicUser, async (req, res) => {
 });
 
 // Rota para o dashboard
-app.get('/api/dashboard', authenticateBasicUser, async (req, res) => {
-  try {
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 7);
-
-    // Get favorite radios from user metadata
-    const favoriteRadios = req.user.user_metadata?.favorite_radios || [];
-    
-    // Verificar se deve incluir todas as rádios (quando favoriteRadios está vazio ou quando includeAll=true)
-    const includeAll = req.query.includeAll === 'true' || favoriteRadios.length === 0;
-    
-    // Se não há rádios favoritas e não é para incluir todas, buscar todas as rádios do banco
-    let allRadios = [];
-    if (includeAll) {
-      try {
-        const radiosResult = await pool.query('SELECT name FROM streams ORDER BY name ASC');
-        allRadios = radiosResult.rows.map(r => r.name);
-        console.log('GET /api/dashboard - Incluindo todas as rádios:', allRadios.length);
-      } catch (err) {
-        console.error('Erro ao buscar todas as rádios:', err);
-      }
-    }
-
-    // Pegar rádios da query string
-    const radios = req.query.radio;
-    let selectedRadios = Array.isArray(radios) ? radios : radios ? [radios] : [];
-    
-    // Se deve incluir todas as rádios e não há seleção específica, usar todas as rádios disponíveis
-    if (includeAll && selectedRadios.length === 0) {
-      selectedRadios = allRadios;
-    }
-
-    // Verificar se há rádios selecionadas
-    if (selectedRadios.length === 0) {
-      console.log('GET /api/dashboard - Nenhuma rádio selecionada');
-      return res.json({
-        totalExecutions: 0,
-        uniqueArtists: 0,
-        uniqueSongs: 0,
-        activeRadios: [],
-        topSongs: [],
-        artistData: [],
-        genreData: []
-      });
-    }
-
-    // Apenas verificar se as rádios selecionadas são favoritas quando não estamos incluindo todas
-    if (!includeAll) {
-      const invalidRadios = selectedRadios.filter(radio => !favoriteRadios.includes(radio));
-      if (invalidRadios.length > 0) {
-        console.log('GET /api/dashboard - Rádios inválidas:', invalidRadios);
-        console.log('GET /api/dashboard - Rádios favoritas:', favoriteRadios);
-        console.log('GET /api/dashboard - User metadata:', req.user.user_metadata);
-        return res.status(400).json({ 
-          error: 'Algumas rádios selecionadas não são favoritas',
-          invalidRadios,
-          favoriteRadios,
-          userMetadata: req.user.user_metadata
-        });
-      }
-    }
-
-    console.log('GET /api/dashboard - Rádios selecionadas:', selectedRadios.length > 10 ? `${selectedRadios.length} rádios` : selectedRadios);
-    
-    // Limitar o número de rádios para evitar consultas muito pesadas
-    const MAX_RADIOS = 100;
-    if (selectedRadios.length > MAX_RADIOS) {
-      console.log(`Limitando quantidade de rádios de ${selectedRadios.length} para ${MAX_RADIOS}`);
-      selectedRadios = selectedRadios.slice(0, MAX_RADIOS);
-    }
-    
-    // Obter limites de consulta da query string
-    const limitSongs = parseInt(req.query.limit_songs) || 10;
-    const limitArtists = parseInt(req.query.limit_artists) || 10;
-    const limitGenres = parseInt(req.query.limit_genres) || 5;
-    
-    const query = `
-      WITH adjusted_dates AS (
-        SELECT 
-          artist,
-          song_title,
-          genre,
-          name,
-          (date + INTERVAL '3 hours')::date as adjusted_date
-        FROM music_log
-        WHERE (date + INTERVAL '3 hours')::date BETWEEN $1 AND $2
-          AND name = ANY($3::text[])
-      ),
-      artist_counts AS (
-        SELECT 
-          artist,
-          COUNT(*) as executions
-        FROM adjusted_dates
-        GROUP BY artist
-        ORDER BY executions DESC
-        LIMIT $4
-      ),
-      genre_counts AS (
-        SELECT 
-          genre,
-          COUNT(*) as count
-        FROM adjusted_dates
-        WHERE genre IS NOT NULL
-        GROUP BY genre
-        ORDER BY count DESC
-        LIMIT $5
-      ),
-      song_counts AS (
-        SELECT 
-          song_title,
-          artist,
-          COUNT(*) as executions
-        FROM adjusted_dates
-        GROUP BY song_title, artist
-        ORDER BY executions DESC
-        LIMIT $6
-      ),
-      radio_status AS (
-        SELECT DISTINCT
-          name,
-          true as is_online
-        FROM adjusted_dates
-        WHERE adjusted_date = $2
-      )
-      SELECT
-        json_build_object(
-          'artistData', (SELECT json_agg(artist_counts.*) FROM artist_counts),
-          'genreData', (SELECT json_agg(genre_counts.*) FROM genre_counts),
-          'topSongs', (SELECT json_agg(song_counts.*) FROM song_counts),
-          'activeRadios', (SELECT json_agg(radio_status.*) FROM radio_status)
-        ) as dashboard_data
-    `;
-
-    const params = [
-      format(startDate, 'yyyy-MM-dd'),
-      format(endDate, 'yyyy-MM-dd'),
-      selectedRadios,
-      limitArtists,
-      limitGenres,
-      limitSongs
-    ];
-
-    console.log('GET /api/dashboard - Executando consulta com limites:', { 
-      limitSongs, 
-      limitArtists, 
-      limitGenres, 
-      totalRadios: selectedRadios.length 
-    });
-
-    const result = await safeQuery(query, params);
-
-    const dashboardData = result.rows[0]?.dashboard_data || {
-      artistData: [],
-      genreData: [],
-      topSongs: [],
-      activeRadios: []
-    };
-    
-    // Calcular totais
-    const totalExecutions = (dashboardData.artistData || [])
-      .reduce((sum, item) => sum + parseInt(item.executions), 0);
-    const uniqueArtists = (dashboardData.artistData || []).length;
-    const uniqueSongs = (dashboardData.topSongs || []).length;
-
-    // Formatar dados dos gêneros para percentuais
-    const totalGenreExecutions = (dashboardData.genreData || [])
-      .reduce((sum, item) => sum + parseInt(item.count), 0);
-    const genreData = totalGenreExecutions > 0 
-      ? (dashboardData.genreData || []).map(item => ({
-          name: item.genre,
-          value: Math.round((item.count / totalGenreExecutions) * 100),
-          color: getGenreColor(item.genre)
-        }))
-      : [];
-
-    // Log do tamanho dos dados retornados
-    console.log('GET /api/dashboard - Resultados:', { 
-      totalSongs: dashboardData.topSongs?.length || 0,
-      totalArtists: dashboardData.artistData?.length || 0,
-      totalGenres: dashboardData.genreData?.length || 0,
-      totalRadiosStatus: dashboardData.activeRadios?.length || 0
-    });
-
-    res.json({
-      totalExecutions,
-      uniqueArtists,
-      uniqueSongs,
-      activeRadios: dashboardData.activeRadios || [],
-      topSongs: dashboardData.topSongs || [],
-      artistData: dashboardData.artistData || [],
-      genreData
-    });
-  } catch (error) {
-    console.error('GET /api/dashboard - Erro:', error);
-    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
-  }
-});
-
-// Função auxiliar para atribuir cores aos gêneros
-function getGenreColor(genre) {
-  const colors = {
-    'Sertanejo': '#3B82F6',
-    'Pop': '#10B981',
-    'Rock': '#F59E0B',
-    'Brazilian': '#EF4444',
-    'Alternative': '#8B5CF6'
-  };
-  return colors[genre] || '#6B7280'; // Cor padrão para gêneros não mapeados
-}
+// app.get('/api/dashboard', authenticateBasicUser, async (req, res) => { ... });
 
 // Rotas para cidades e estados
 app.get('/api/cities', authenticateBasicUser, async (req, res) => {
@@ -2526,6 +2184,88 @@ app.post('/api/users/update-last-sign-in', authenticateBasicUser, async (req, re
   } catch (error) {
     console.error('Erro ao processar requisição de atualização de último acesso:', error);
     return res.status(500).json({ error: `Erro interno do servidor: ${error.message}` });
+  }
+});
+
+// Rota para buscar segmentos/formatos únicos das rádios
+app.get('/api/segments', authenticateBasicUser, async (req, res) => { // Usando authenticateBasicUser como outras rotas GET
+  console.log('GET /api/segments - Requisição recebida.');
+  try {
+    const querySql = `
+      SELECT DISTINCT formato
+      FROM streams
+      WHERE formato IS NOT NULL AND formato <> ''
+      ORDER BY formato
+    `;
+
+    // Usando a função safeQuery existente
+    const result = await safeQuery(querySql);
+
+    if (!result || !result.rows) {
+       // safeQuery retorna { rows: [] } em caso de erro, mas verificamos por segurança
+       console.error('GET /api/segments - Erro ou resultado inesperado da safeQuery.');
+       return res.status(500).json({ message: 'Erro ao buscar formatos no banco de dados.' });
+    }
+
+    const uniqueFormats = result.rows.map(row => row.formato);
+    console.log('GET /api/segments - Formatos encontrados:', uniqueFormats);
+
+    return res.status(200).json(uniqueFormats);
+
+  } catch (error) {
+    // Embora safeQuery capture erros de query, capturamos outros erros potenciais aqui
+    console.error('GET /api/segments - Erro inesperado no handler:', error);
+    res.status(500).json({ message: 'Erro interno do servidor', error: error.message });
+  }
+});
+
+// Rota para mapear nomes de rádios para seus segmentos/formatos únicos (POST específico)
+app.post('/api/radios/segments-map', authenticateBasicUser, async (req, res) => { // Requer autenticação básica
+  console.log('POST /api/radios/segments-map - Requisição recebida.');
+  const { radioNames } = req.body; // Espera um array { radioNames: ["Radio A", "Radio B"] }
+
+  // Validação básica da entrada
+  if (!Array.isArray(radioNames) || radioNames.length === 0) {
+    console.log('POST /api/radios/segments-map - Erro: radioNames inválido ou vazio.');
+    return res.status(400).json({ message: 'A propriedade "radioNames" deve ser um array não vazio de strings.' });
+  }
+
+  // Sanitizar nomes das rádios (remover espaços extras, etc.) - opcional, mas recomendado
+  const sanitizedRadioNames = radioNames.map(name => String(name).trim()).filter(Boolean);
+
+  if (sanitizedRadioNames.length === 0) {
+     console.log('POST /api/radios/segments-map - Erro: Nomes de rádios resultaram em array vazio após sanitização.');
+     return res.status(400).json({ message: 'Nomes de rádios inválidos fornecidos.' });
+  }
+
+  console.log(`POST /api/radios/segments-map - Buscando formatos para ${sanitizedRadioNames.length} rádios.`);
+
+  try {
+    const querySql = `
+      SELECT DISTINCT formato
+      FROM streams
+      WHERE name = ANY($1::text[]) -- Usar o operador ANY para arrays PostgreSQL
+        AND formato IS NOT NULL
+        AND formato <> ''
+      ORDER BY formato
+    `;
+
+    // Usar a função safeQuery existente, passando o array como parâmetro
+    const result = await safeQuery(querySql, [sanitizedRadioNames]); // Passar o array diretamente
+
+    if (!result || !result.rows) {
+       console.error('POST /api/radios/segments-map - Erro ou resultado inesperado da safeQuery.');
+       return res.status(500).json({ message: 'Erro ao buscar formatos no banco de dados.' });
+    }
+
+    const uniqueFormats = result.rows.map(row => row.formato);
+    console.log(`POST /api/radios/segments-map - Formatos encontrados para as rádios fornecidas: ${uniqueFormats.length}`, uniqueFormats);
+
+    return res.status(200).json(uniqueFormats); // Retorna o array de formatos
+
+  } catch (error) {
+    console.error('POST /api/radios/segments-map - Erro inesperado no handler:', error);
+    res.status(500).json({ message: 'Erro interno do servidor', error: error.message });
   }
 });
 

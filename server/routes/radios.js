@@ -47,110 +47,132 @@ const safeQuery = async (query, params = [], retries = 3) => {
 
 // Rota para obter status das rádios
 router.get('/status', authenticateBasicUser, async (req, res) => {
-  console.log('Usuário autenticado:', req.user);
-  console.log('Requisição recebida: GET /api/radios/status');
-  
+  console.log('*** [Radios Router] Rota /status ACESSADA ***'); // Log de acesso
   try {
-    // Obter rádios favoritas do usuário
-    const favoriteRadios = req.user?.user_metadata?.favorite_radios || [];
-    console.log('Rádios favoritas do usuário:', favoriteRadios);
-    
-    // Preparar dados de fallback para caso de erro
-    const fallbackData = favoriteRadios.map(name => ({
-      name,
-      status: 'OFFLINE',
-      lastUpdate: null,
-      isFavorite: true
-    }));
-    
-    // Em caso de array vazio, adicionar alguns exemplos
-    if (fallbackData.length === 0) {
-      console.log('Sem rádios favoritas, adicionando dados de exemplo');
-      ['Rádio 1', 'Rádio 2', 'Rádio 3'].forEach(name => {
-        fallbackData.push({
-          name,
-          status: 'OFFLINE',
-          lastUpdate: null,
-          isFavorite: false
-        });
-      });
-    }
-    
-    // Tentar obter dados diretamente do PostgreSQL usando pool.query
-    // Evitando usar Supabase admin que pode estar causando problemas
-    try {
-      console.log('Executando consulta PostgreSQL para obter status das rádios...');
-      // Buscar o último registro de cada rádio
-      const query = `
-        WITH latest_entries AS (
-          SELECT 
-            name,
-            MAX(date + time::time) as last_update
-          FROM music_log
-          GROUP BY name
-        )
-        SELECT 
-          name,
-          last_update
-        FROM latest_entries
-        ORDER BY name;
-      `;
-      
-      const result = await safeQuery(query);
-      
-      if (!result.rows || result.rows.length === 0) {
-        console.log('Nenhum registro encontrado no PostgreSQL, retornando dados de fallback');
-        return res.json(fallbackData);
+    // Obter preferências do usuário do middleware
+    const userMetadata = req.user?.user_metadata || {};
+    const favoriteSegments = userMetadata.favorite_segments || [];
+    const favoriteRadios = userMetadata.favorite_radios || []; // Manter para fallback
+
+    console.log('[Radios Router /status] Preferências:', { favoriteSegments, favoriteRadios });
+
+    let favoriteRadiosSet = new Set(favoriteRadios); // Inicia com rádios antigas (fallback inicial)
+
+    // ** Lógica Correta: Priorizar Segmentos **
+    if (favoriteSegments.length > 0) {
+      console.log(`[Radios Router /status] Buscando rádios para os segmentos:`, favoriteSegments);
+      try {
+        const segmentsQuery = `SELECT name FROM streams WHERE formato = ANY($1::text[])`;
+        console.log(`[Radios Router /status] Executando query de segmentos:`, segmentsQuery, favoriteSegments);
+        const segmentsResult = await safeQuery(segmentsQuery, [favoriteSegments]);
+        console.log(`[Radios Router /status] Resultado da query de segmentos:`, segmentsResult?.rows?.length ?? 0, 'rows');
+
+        if (segmentsResult?.rows?.length > 0) {
+          // Sobrescreve o Set com base nos segmentos ENCONTRADOS
+          favoriteRadiosSet = new Set(segmentsResult.rows.map(row => row.name));
+          console.log(`[Radios Router /status] Rádios favoritas ATUALIZADAS baseadas em segmentos:`, favoriteRadiosSet.size);
+        } else {
+          console.log(`[Radios Router /status] Query de segmentos não retornou rádios. Verificando fallback de favorite_radios.`);
+          // Se segmentos não retornaram nada, mas tínhamos favorite_radios, usamos eles.
+          // Se não tínhamos favorite_radios, o Set continua vazio.
+          if (favoriteRadios.length > 0) {
+             console.log(`[Radios Router /status] Usando fallback de favorite_radios (tamanho ${favoriteRadiosSet.size}).`);
+          } else {
+             console.log(`[Radios Router /status] Sem segmentos ou fallback de favorite_radios. Set de favoritas vazio.`);
+             favoriteRadiosSet = new Set(); // Garante que está vazio
+          }
+        }
+      } catch (segmentError) {
+        console.error("[Radios Router /status] ERRO ao buscar rádios por segmento:", segmentError);
+        console.error(`[Radios Router /status] Mantendo favoriteRadiosSet inicial (fallback de favorite_radios, tamanho ${favoriteRadiosSet.size}) devido ao erro.`);
+        // Mantém o favoriteRadiosSet inicial (baseado em favorite_radios)
       }
-      
-      console.log('Dados obtidos do PostgreSQL:', result.rows.length, 'registros');
-      const currentTime = new Date();
+    } else if (favoriteRadios.length > 0) {
+       // Se não há segmentos, mas há favorite_radios, usa o fallback
+       console.log(`[Radios Router /status] Sem segmentos definidos. Usando fallback de favorite_radios (tamanho ${favoriteRadiosSet.size}).`);
+    } else {
+       // Sem segmentos e sem favorite_radios
+       console.log('[Radios Router /status] Sem segmentos ou rádios favoritas definidas.');
+       favoriteRadiosSet = new Set(); // Garante que está vazio
+    }
+
+    // Query principal para buscar TODAS as rádios e seu status (online/offline e last_update)
+    const query = `
+      WITH latest_entries AS (
+        SELECT
+          name,
+          MAX(date + time::time) as last_update
+        FROM music_log
+        GROUP BY name
+      ),
+      all_radios AS (
+        SELECT name, created_at, updated_at FROM streams ORDER BY name
+      )
+      SELECT
+        r.name,
+        l.last_update,
+        r.created_at,
+        r.updated_at
+      FROM all_radios r
+      LEFT JOIN latest_entries l ON r.name = l.name
+      ORDER BY r.name;
+    `;
+
+    // Tentar obter dados diretamente do PostgreSQL
+    try {
+      console.log('[Radios Router /status] Executando consulta principal para status das rádios...');
+      const result = await safeQuery(query);
+
+      if (!result || !result.rows) { // safeQuery retorna { rows: [] } em caso de erro
+        console.error('[Radios Router /status] Erro na consulta principal ou nenhum resultado. Retornando array vazio.');
+        return res.json([]); // Retorna array vazio em caso de erro grave na query
+      }
+
+      console.log(`[Radios Router /status] Consulta principal retornou ${result.rows.length} rádios.`);
+
+      // Verificar dados recentes para determinar quais rádios estão online
+      const recentActivityQuery = `
+        SELECT DISTINCT name
+        FROM music_log
+        WHERE (date + time::time) > NOW() - INTERVAL '10 minutes'
+      `;
+      const recentActivity = await safeQuery(recentActivityQuery);
+      const onlineRadiosSet = new Set(recentActivity.rows.map(row => row.name));
+      console.log(`[Radios Router /status] Rádios com atividade recente (online): ${onlineRadiosSet.size}`);
+
+      // Processar os resultados, definindo isFavorite com base no favoriteRadiosSet FINAL
       const radiosStatus = result.rows.map(row => {
-        const lastUpdate = row.last_update ? new Date(row.last_update) : null;
-        const timeDiff = lastUpdate ? currentTime.getTime() - lastUpdate.getTime() : Infinity;
-        const isOnline = timeDiff <= 10 * 60 * 1000; // 10 minutos
-        
+        const isOnline = onlineRadiosSet.has(row.name);
+        // *** USA o favoriteRadiosSet que foi determinado pela lógica de segmentos/fallback ***
+        const isFavorite = favoriteRadiosSet.has(row.name);
+
         return {
           name: row.name,
           status: isOnline ? 'ONLINE' : 'OFFLINE',
-          lastUpdate: row.last_update,
-          isFavorite: favoriteRadios.includes(row.name)
+          lastUpdate: row.last_update || row.updated_at || row.created_at,
+          isFavorite: isFavorite
         };
       });
-      
-      // Adicionar rádios favoritas que não estão no resultado
-      const existingRadios = new Set(radiosStatus.map(radio => radio.name));
-      const missingFavorites = favoriteRadios.filter(name => !existingRadios.has(name));
-      
-      missingFavorites.forEach(name => {
-        radiosStatus.push({
-          name,
-          status: 'OFFLINE',
-          lastUpdate: null,
-          isFavorite: true
-        });
-      });
-      
-      console.log('Enviando', radiosStatus.length, 'registros como resposta');
+
+      // Remover fallback que adicionava rádios faltantes - a query principal já traz todas.
+      // const existingRadios = ...
+      // const missingFavorites = ...
+      // missingFavorites.forEach(...)
+
+      console.log(`[Radios Router /status] Enviando ${radiosStatus.length} status de rádios para o cliente.`);
       return res.json(radiosStatus);
+
     } catch (postgresError) {
-      console.error('Erro ao consultar PostgreSQL:', postgresError);
-      // Retornar fallback data em caso de erro
-      return res.json(fallbackData);
+      // Erro na query principal ou na query de atividade recente
+      console.error('[Radios Router /status] Erro durante consulta ao PostgreSQL:', postgresError);
+      // Retorna array vazio em caso de erro, em vez de dados de exemplo
+      return res.json([]);
     }
   } catch (error) {
-    console.error('Erro geral em /api/radios/status:', error);
-    
-    // Retornar dados de exemplo em caso de erro
-    const dummyRadios = ['Rádio 1', 'Rádio 2', 'Rádio 3'].map(name => ({
-      name,
-      status: 'OFFLINE',
-      lastUpdate: null,
-      isFavorite: false
-    }));
-    
-    console.log('Enviando rádios de exemplo devido a erro');
-    return res.json(dummyRadios);
+    // Erro geral antes de tentar as queries (ex: problema no middleware, embora improvável aqui)
+    console.error('[Radios Router /status] Erro geral no handler:', error);
+    // Retorna erro 500
+    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
   }
 });
 
