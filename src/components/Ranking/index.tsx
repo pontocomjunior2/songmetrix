@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import Select from 'react-select';
 import moment from 'moment';
 import { supabase } from '../../lib/supabase-client';

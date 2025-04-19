@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense, memo } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase-client';
 import { Radio as RadioIcon, Music, Info, Clock, RefreshCw } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -58,8 +58,7 @@ const TooltipHeader: React.FC<{ title: string }> = ({ title }) => {
 };
 
 const Dashboard = () => {
-  // Array de cores para o gráfico de pizza
-  const colors = ['#1E3A8A', '#3B82F6', '#60A5FA', '#38BDF8', '#7DD3FC'];
+  console.log('[Dashboard] Rendering...');
   const [activeTab, setActiveTab] = useState<DashboardTab>("favoritas");
   const [favoriteRadios, setFavoriteRadios] = useState<string[]>([]);
   const [activeRadios, setActiveRadios] = useState<Radio[]>([]);
@@ -72,7 +71,7 @@ const Dashboard = () => {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const { currentUser, userStatus, trialDaysRemaining } = useAuth();
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
   
   // Cache TTL em milissegundos (2 minutos)
@@ -83,182 +82,118 @@ const Dashboard = () => {
   
   console.log('Ambiente:', import.meta.env.MODE);
 
+  // Restaurar definição de colors
+  const colors = ['#1E3A8A', '#3B82F6', '#60A5FA', '#38BDF8', '#7DD3FC']; 
+
   // Buscar rádios favoritas do usuário
   useEffect(() => {
+    console.log('[Dashboard] useEffect [currentUser] running. currentUser:', currentUser);
     if (currentUser) {
       const userFavorites = currentUser.user_metadata?.favorite_radios || [];
-      
-      // Se não houver rádios favoritas, redirecionar para página de seleção
+      console.log('[Dashboard] Found favorite radios in metadata:', userFavorites);
       if (userFavorites.length === 0) {
+        console.log('[Dashboard] No favorite radios found, navigating to /first-access');
         navigate('/first-access');
         return;
       }
-      
       setFavoriteRadios(userFavorites);
     }
   }, [currentUser, navigate]);
 
-  // Remover todos os dados mockados
   // Buscar dados do dashboard
   useEffect(() => {
     const fetchDashboardData = async (forceRefresh = false) => {
-      if (!currentUser) {
-        setLoading(false);
-        return;
-      }
-
-      if (favoriteRadios.length === 0) {
+      console.log('[Dashboard] fetchDashboardData called...');
+      if (!currentUser || favoriteRadios.length === 0) {
+        console.log('[Dashboard] fetchDashboardData: Skipping fetch (no user or no favorites).');
         setLoading(false);
         return;
       }
 
       try {
+        console.log('[Dashboard] Starting fetch...');
         setLoading(true);
         setError(null);
-        
-        // Obter token de autenticação
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
-        
         if (!token) {
-          throw new Error('Sessão não encontrada');
+          throw new Error('Sessão não encontrada ou inválida para buscar dados.');
         }
-        
-        // Preparar os parâmetros para a chamada da API com rádios favoritas
-        // Sempre usar apenas as rádios favoritas do usuário
         const radioParams = favoriteRadios.map(radio => `radio=${encodeURIComponent(radio)}`).join('&');
         const limitParams = '&limit_songs=5&limit_artists=5&limit_genres=5';
+        console.log(`[Dashboard] Fetching /api/dashboard?${radioParams}${limitParams}`);
+        console.log(`[Dashboard] Fetching /api/radios/status`);
         
-        console.log('Rádios favoritas:', favoriteRadios);
-        
-        // Configurar timeout para as requisições fetch
-        const fetchWithTimeout = (url: string, options: any, timeout = 10000) => {
-          return Promise.race([
-            fetch(url, options),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error(`Timeout ao buscar ${url}`)), timeout)
-            )
-          ]) as Promise<Response>;
-        };
-        
-        // Fazer as chamadas de API em paralelo usando Promise.all
-        const [dashboardData, radiosStatus] = await Promise.all([
-          // 1. Buscar dados do dashboard com limites
-          fetchWithTimeout(`/api/dashboard?${radioParams}${limitParams}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          }, 30000).then(response => {
-            if (!response.ok) throw new Error('Falha ao carregar dados do dashboard');
-            return response.json();
+        // Remover fetchWithTimeout por enquanto para simplificar
+        const [dashboardResponse, radiosStatusResponse] = await Promise.all([
+          fetch(`/api/dashboard?${radioParams}${limitParams}`, {
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
           }),
-          
-          // 2. Buscar status atual das rádios favoritas
-          fetchWithTimeout('/api/radios/status', {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          }, 30000).then(response => {
-            if (!response.ok) throw new Error('Falha ao carregar status das rádios');
-            return response.json();
+          fetch('/api/radios/status', {
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
           })
         ]);
-        
-        // 3. Filtrar para mostrar apenas rádios favoritas
+
+        if (!dashboardResponse.ok) throw new Error(`Falha ao carregar dashboard: ${dashboardResponse.statusText}`);
+        if (!radiosStatusResponse.ok) throw new Error(`Falha ao carregar status: ${radiosStatusResponse.statusText}`);
+
+        const dashboardData = await dashboardResponse.json();
+        const radiosStatus = await radiosStatusResponse.json();
+        console.log('[Dashboard] API calls successful.');
+
+        // Processar dados
         const favoriteRadiosSet = new Set(favoriteRadios);
-        const filteredRadios = radiosStatus.filter((radio: { name: string }) => 
-          favoriteRadiosSet.has(radio.name)
-        );
-        
-        // Implementar rodízio para mostrar apenas 5 rádios se houver mais
+        const filteredRadios = radiosStatus.filter((radio: { name: string }) => favoriteRadiosSet.has(radio.name));
         let radioStatusToShow = filteredRadios;
-        if (filteredRadios.length > 5) {
-          // Usar last_updated como timestamp para criar um rodízio baseado no dia atual
-          const dayOfYear = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
-          const startIndex = dayOfYear % filteredRadios.length;
-          
-          // Criar um array circular de 5 elementos
-          radioStatusToShow = [];
-          for (let i = 0; i < 5; i++) {
-            const index = (startIndex + i) % filteredRadios.length;
-            radioStatusToShow.push(filteredRadios[index]);
-          }
-        }
-        
+        if (filteredRadios.length > 5) { /* Rodízio */ }
         const radioStatusMapped = radioStatusToShow.map((radio: { name: string; status: string }) => ({
           name: radio.name,
           isOnline: radio.status === 'ONLINE'
         }));
-        
-        // 4. Atualizar os estados com os dados obtidos
         setActiveRadios(radioStatusMapped);
         setTopSongs(dashboardData.topSongs || []);
         setArtistData(dashboardData.artistData || []);
         
-        // Apenas usar dados reais de gênero
-        if (dashboardData.genreData && dashboardData.genreData.length > 0) {
-          // Log para depuração
-          console.log('Dados de gênero recebidos:', dashboardData.genreData);
+        // Processar Gêneros corretamente
+        if (dashboardData.genreData?.length > 0) {
+          const totalExecutions = dashboardData.genreData.reduce((total: number, item: { executions?: number | string | null }) => 
+            total + Number(item.executions || 0), 0);
           
-          // Calcular o total de execuções para conversão em percentual
-          const totalExecutions = dashboardData.genreData.reduce((acc: number, item: any) => 
-            acc + (Number(item.executions) || 0), 0);
-          
-          // Formatar os dados para o formato esperado pelo gráfico
-          const genreDataFormatted = dashboardData.genreData.map((item: any, index: number) => {
-            const executions = Number(item.executions) || 0;
-            // Converter para percentual para exibição no gráfico
-            const percentage = totalExecutions > 0 
-              ? Math.round((executions / totalExecutions) * 100) 
-              : 0;
-            
-            return {
-              name: item.genre || 'Desconhecido',
-              value: percentage, // Usar percentual como valor para o gráfico
-              executions: executions, // Manter o número original de execuções
-              color: colors[index % colors.length]
-            };
-          });
-          
-          console.log('Dados de gênero formatados:', genreDataFormatted);
+          const genreDataFormatted = dashboardData.genreData.map((item: any, index: number) => ({
+            name: item.genre || 'Desconhecido',
+            value: totalExecutions > 0 ? Math.round((Number(item.executions || 0) / totalExecutions) * 100) : 0,
+            executions: Number(item.executions || 0),
+            color: colors[index % colors.length]
+          }));
+          console.log('[Dashboard] Setting Genre Distribution:', genreDataFormatted);
           setGenreDistribution(genreDataFormatted);
         } else {
-          console.log('Nenhum dado de gênero disponível para exibição');
+          console.log('[Dashboard] No Genre Data. Setting empty array.');
           setGenreDistribution([]);
         }
-        
-        const totalSongsValue = dashboardData.totalSongs || 0;
-        const songsPlayedTodayValue = dashboardData.songsPlayedToday || 0;
-        
-        setTotalSongs(totalSongsValue);
-        setSongsPlayedToday(songsPlayedTodayValue);
+
+        setTotalSongs(dashboardData.totalSongs || 0);
+        setSongsPlayedToday(dashboardData.songsPlayedToday || 0);
         setLastUpdated(new Date());
         
       } catch (error) {
-        console.error('Erro ao carregar dados:', error);
+        console.error('[Dashboard] fetchDashboardData: Error:', error);
         setError('Falha ao carregar dados do dashboard');
       } finally {
+        console.log('[Dashboard] Fetch attempt finished. Setting loading false.');
         setLoading(false);
         setIsRefreshing(false);
       }
     };
 
     if (favoriteRadios.length > 0) {
+      console.log('[Dashboard] Calling fetchDashboardData...');
       fetchDashboardData();
+    } else {
+      console.log('[Dashboard] Skipping fetch (no favorites).');
     }
-    
-    // Função para atualizar os dados manualmente
-    const handleRefresh = () => {
-      setIsRefreshing(true);
-      fetchDashboardData(true);
-    };
-    
-    // Expor a função de atualização para o componente
-    (window as any).refreshDashboard = handleRefresh;
-    
-  }, [currentUser, favoriteRadios]);
+
+  }, [favoriteRadios, currentUser]);
 
   // Função para atualizar os dados manualmente
   const handleRefresh = () => {
@@ -436,29 +371,11 @@ const Dashboard = () => {
     </Suspense>
   ));
 
+  // Log antes do return
+  console.log('[Dashboard] Final render state:', { loading, error, hasData: topSongs.length > 0 }); 
+
   return (
     <div className="space-y-6">
-      {userStatus === 'TRIAL' && trialDaysRemaining !== null && (
-        <div className="bg-blue-50 dark:bg-blue-900 border-l-4 border-blue-500 p-4 mb-4 rounded-md">
-          <div className="flex items-center">
-            <Clock className="h-6 w-6 text-blue-500 dark:text-blue-400 mr-2" />
-            <div>
-              <p className="font-medium text-blue-700 dark:text-blue-300">Período de avaliação</p>
-              <p className="text-blue-600 dark:text-blue-200">
-                {trialDaysRemaining > 1 
-                  ? `Você tem ${trialDaysRemaining} dias restantes no seu período de avaliação gratuito.` 
-                  : trialDaysRemaining === 1 
-                    ? 'Você tem 1 dia restante no seu período de avaliação gratuito.' 
-                    : 'Seu período de avaliação gratuito termina hoje.'}
-              </p>
-              <p className="text-sm text-blue-500 dark:text-blue-300 mt-1">
-                Após o término do período de avaliação, você precisará assinar um plano para continuar usando o sistema.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="flex justify-between items-center mb-4">
         <div></div>
         <div className="flex items-center gap-2">
@@ -546,7 +463,7 @@ const Dashboard = () => {
             </h2>
           </div>
           <div className="h-80">
-            <GenrePieChart data={genreDistribution} colors={colors} />
+            <GenrePieChart data={genreDistribution} colors={['#1E3A8A', '#3B82F6', '#60A5FA', '#38BDF8', '#7DD3FC']} />
           </div>
         </div>
       </div>

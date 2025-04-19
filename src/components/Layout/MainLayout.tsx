@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LogOut, Moon, Sun, Menu } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { CustomUser } from '../../types/customUser';
 import { useNavigate, Outlet, useLocation } from 'react-router-dom';
 import SidebarFixed from './SidebarFixed';
@@ -9,7 +9,8 @@ import UserAvatar from '../Common/UserAvatar';
 import SuggestRadioModal from '../Radios/SuggestRadioModal';
 import NotificationBell from '../Notifications/NotificationBell';
 
-const MainLayout: React.FC = React.memo(() => {
+const MainLayout: React.FC = () => {
+  console.log('[MainLayout] Rendering...');
   const { theme, toggleTheme } = useTheme();
   const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
@@ -170,6 +171,6 @@ const MainLayout: React.FC = React.memo(() => {
       </div>
     </div>
   );
-});
+};
 
 export default MainLayout;

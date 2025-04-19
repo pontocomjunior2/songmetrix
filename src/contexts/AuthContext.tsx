@@ -1,11 +1,14 @@
-import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { User, AuthError } from '@supabase/supabase-js';
 import { PostgrestError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase-client';
 import { toast } from 'react-toastify';
 import { getAuthRedirectOptions } from '../lib/supabase-redirect';
+// Importar APENAS o Context e a Interface do novo hook
+import { AuthContext, AuthContextType } from '../hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
 
-// Custom error type that includes both Auth and Postgrest errors
+// Manter erro customizado aqui pois é usado na função login
 class CustomAuthError extends AuthError {
   constructor(message: string) {
     super('Authentication error');
@@ -15,55 +18,40 @@ class CustomAuthError extends AuthError {
   }
 }
 
-interface DbUser {
-  id: string;
-  email: string;
-  created_at: string;
-  updated_at: string;
-  favorite_radios?: string[];
-  plan_id: string | null;
-  trial_ends_at: string | null;
-  full_name?: string;
-  whatsapp?: string;
-}
-
-export interface AuthContextType {
-  currentUser: User | null;
-  planId: string | null;
-  trialEndsAt: string | null;
-  loading: boolean;
-  error: string | null;
-  login: (email: string, password: string) => Promise<{ error: CustomAuthError | null }>;
-  logout: () => Promise<void>;
-  refreshUserData: () => Promise<boolean>;
-  signUp: (email: string, password: string, fullName?: string, whatsapp?: string) => Promise<{
-    error: any,
-    confirmation_sent?: boolean,
-    should_redirect?: boolean,
-    message?: string
-  }>;
-  updateFavoriteRadios: (radios: string[]) => Promise<void>;
-  sendWelcomeEmail: () => Promise<boolean>;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// Constante para a URL do servidor de email
+// Manter constante EMAIL_SERVER_URL aqui pois é usada
 const EMAIL_SERVER_URL = import.meta.env.VITE_EMAIL_SERVER_URL || 'http://localhost:3002';
 
+// Remover interface DbUser se não for usada em mais nenhum lugar aqui
+/*
+interface DbUser { ... }
+*/
+
+// Remover interface AuthContextType daqui (movida)
+/*
+export interface AuthContextType { ... }
+*/
+
+// Remover criação do Context daqui (movida)
+/*
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+*/
+
+// Manter exportação nomeada do Provider
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [planId, setPlanId] = useState<string | null>(null);
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isRefreshing = useRef(false);
-  const isInitialized = useRef(false);
+  const [isInitialized, setIsInitialized] = useState(false);
   const isMounted = useRef(true);
   const hasWelcomeEmailBeenSent = useRef(false);
+  const navigate = useNavigate();
 
-  // Função para verificar se há uma sessão ativa rapidamente
-  const checkSessionActive = async (): Promise<boolean> => {
+  // Memoizar funções que não dependem de estados internos mutáveis (ou usar useCallback)
+  // Exemplo: checkSessionActive geralmente não depende de estado interno.
+  const checkSessionActive = useCallback(async (): Promise<boolean> => {
     try {
       const { data, error } = await supabase.auth.getSession();
       if (error) return false;
@@ -71,135 +59,122 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } catch (e) {
       return false;
     }
-  };
+  }, []); // Array de dependência vazio
 
-  // Função para buscar dados do usuário (plano, trial, etc.) e verificar expiração
-  const refreshUserData = async (): Promise<boolean> => {
-    if (isRefreshing.current) return false;
+  // Envolver refreshUserData em useCallback
+  const refreshUserData = useCallback(async (): Promise<boolean> => {
     isRefreshing.current = true;
-    setLoading(true);
+    let shouldSetLoadingTrue = false;
+    let success = false;
 
     try {
-      // Verificar se há uma sessão ativa
       const isSessionActive = await checkSessionActive();
       if (!isSessionActive) {
         if (isMounted.current) {
           setCurrentUser(null);
           setPlanId(null);
           setTrialEndsAt(null);
-          setLoading(false);
+          setError(null);
         }
-        isRefreshing.current = false;
-        return false;
-      }
+        success = false;
+      } else {
+        shouldSetLoadingTrue = true;
+        if (isMounted.current) setLoading(true);
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-      // Obter usuário da sessão ativa
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
+          if (isMounted.current) {
+            setCurrentUser(null);
+            setPlanId(null);
+            setTrialEndsAt(null);
+            setError(authError?.message || 'Falha ao obter usuário.');
+          }
+          success = false;
+        } else {
+          const { data: dbUser, error: dbError } = await supabase
+            .from('users')
+            .select('plan_id, trial_ends_at')
+            .eq('id', user.id)
+            .single();
 
-      if (authError || !user) {
-         if (isMounted.current) {
-           setCurrentUser(null);
-           setPlanId(null);
-           setTrialEndsAt(null);
-           setLoading(false);
-         }
-        isRefreshing.current = false;
-        return false;
-      }
-
-      // Obter dados do perfil/usuário do banco
-      const { data: dbUser, error: dbError } = await supabase
-        .from('users')
-        .select('plan_id, trial_ends_at')
-        .eq('id', user.id)
-        .single();
-
-      if (dbError) {
-        console.error('Erro ao buscar dados do perfil do usuário:', dbError);
-        if (dbError.code === 'PGRST116') {
-           console.warn(`Perfil não encontrado para usuário ${user.id}. Pode ser um cadastro recente ou falha.`);
-           await supabase.auth.signOut();
-           if (isMounted.current) {
-             setCurrentUser(null);
-             setPlanId(null);
-             setTrialEndsAt(null);
-             setLoading(false);
-           }
-           isRefreshing.current = false;
-           return false;
-        }
-         if (isMounted.current) setLoading(false);
-         isRefreshing.current = false;
-         return false;
-      }
-
-      if (!dbUser) {
-         console.error('Dados do perfil do usuário não encontrados (inesperado).');
-         await supabase.auth.signOut();
-         if (isMounted.current) {
-           setCurrentUser(null);
-           setPlanId(null);
-           setTrialEndsAt(null);
-           setLoading(false);
-         }
-         isRefreshing.current = false;
-         return false;
-      }
-
-      // Verificar expiração do trial
-      const now = new Date();
-      const trialEnd = dbUser.trial_ends_at ? new Date(dbUser.trial_ends_at) : null;
-      let currentPlanId = dbUser.plan_id;
-
-      // Se o plano atual é 'trial' e a data de expiração existe e já passou
-      if (currentPlanId === 'trial' && trialEnd && trialEnd < now) {
-        console.log(`Trial expirado para o usuário: ${user.id}. Data fim: ${trialEnd.toISOString()}`);
-        currentPlanId = 'expired_trial'; // Atualiza localmente para uso imediato
-
-        // Tenta atualizar no banco de dados em background
-        supabase
-          .from('users')
-          .update({ plan_id: 'expired_trial' })
-          .eq('id', user.id)
-          .then(({ error: updateError }) => {
-            if (updateError) {
-              console.error(`Falha ao atualizar plan_id para expired_trial no DB para usuário ${user.id}:`, updateError);
-              // O que fazer se a atualização falhar? O usuário ficará como 'trial' no DB.
-              // Poderia tentar novamente depois ou notificar o admin.
+          if (dbError) {
+            if (dbError.code === 'PGRST116') {
+              console.warn(`[AuthContext] Profile not found for user ${user.id}. Signing out.`);
+              await supabase.auth.signOut().catch(e => console.error("Error during sign out after profile not found:", e));
+              if (isMounted.current) {
+                setCurrentUser(null);
+                setPlanId(null);
+                setTrialEndsAt(null);
+                setError('Perfil de usuário não encontrado.');
+              }
             } else {
-              console.log(`Plan_id atualizado para expired_trial no DB para usuário ${user.id}`);
-              // Atualiza o estado local com o valor do DB confirmado, se a lógica depender disso
-              // (Neste caso, currentPlanId já foi setado localmente antes)
+              if (isMounted.current) {
+                setCurrentUser(null); // Clear user on generic profile error
+                setPlanId(null);
+                setTrialEndsAt(null);
+                setError(dbError.message || 'Falha ao buscar perfil.');
+              }
             }
-          });
-      }
+            success = false;
+          } else if (!dbUser) { // Should be covered by PGRST116, but for safety
+            console.error('[AuthContext] refreshUserData: Profile data is null (unexpected).');
+            await supabase.auth.signOut().catch(e => console.error("Error during sign out after profile null:", e));
+            if (isMounted.current) {
+              setCurrentUser(null);
+              setPlanId(null);
+              setTrialEndsAt(null);
+              setError('Dados de perfil não encontrados.');
+            }
+            success = false;
+          } else {
+            // Profile found, check trial
+            const now = new Date();
+            const trialEnd = dbUser.trial_ends_at ? new Date(dbUser.trial_ends_at) : null;
+            let currentPlanId = dbUser.plan_id;
+            if (currentPlanId === 'trial' && trialEnd && trialEnd < now) {
+              console.log(`[AuthContext] Trial expired for user: ${user.id}.`);
+              currentPlanId = 'expired_trial';
+              supabase.from('users').update({ plan_id: 'expired_trial' }).eq('id', user.id)
+                .then(({ error: updateError }) => { 
+                  if (updateError) console.error("[AuthContext] Failed background update to expired_trial:", updateError);
+                  else console.log("[AuthContext] Background update to expired_trial successful.");
+                 });
+            }
 
-      // Atualiza o estado do contexto se o componente ainda estiver montado
+            console.log('[AuthContext] refreshUserData: Update successful. Setting state.');
+            if (isMounted.current) {
+              setCurrentUser(user);
+              setPlanId(currentPlanId);
+              setTrialEndsAt(dbUser.trial_ends_at);
+              setError(null); // Clear error on success
+            }
+            success = true;
+          }
+        }
+      }
+    } catch (error) {
+      console.error("[AuthContext] refreshUserData: Unexpected error.", error);
       if (isMounted.current) {
-        setCurrentUser(user);
-        setPlanId(currentPlanId);
-        setTrialEndsAt(dbUser.trial_ends_at);
+        setCurrentUser(null);
+        setPlanId(null);
+        setTrialEndsAt(null);
+        setError('Erro inesperado ao carregar dados.');
+      }
+      success = false;
+    } finally {
+      if (shouldSetLoadingTrue && isMounted.current) {
         setLoading(false);
       }
-
-      isRefreshing.current = false;
-      return true;
-
-    } catch (error) {
-      console.error("Erro inesperado em refreshUserData:", error);
-      if (isMounted.current) {
-         setCurrentUser(null);
-         setPlanId(null);
-         setTrialEndsAt(null);
-         setLoading(false);
-       }
-      isRefreshing.current = false;
-      return false;
+      if (!isInitialized && isMounted.current) {
+        setIsInitialized(true);
+      }
+      isRefreshing.current = false; 
     }
-  };
+    return success;
+  }, []);
 
   // Função para enviar email de boas-vindas
-  const sendWelcomeEmail = async (): Promise<boolean> => {
+  const sendWelcomeEmail = useCallback(async (): Promise<boolean> => {
     try {
       // Não enviar se não houver usuário ou já tiver sido enviado
       if (!currentUser || hasWelcomeEmailBeenSent.current) {
@@ -240,124 +215,113 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       toast.error('Falha ao processar envio do email de boas-vindas.');
       return false;
     }
-  };
+  }, [currentUser]); // Depende de currentUser
 
   // Efeito para inicializar autenticação e configurar listeners
   useEffect(() => {
-    if (isInitialized.current) return;
-    isInitialized.current = true;
-
-    refreshUserData();
+    // Chamar refreshUserData incondicionalmente na montagem inicial
+    refreshUserData(); 
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'INITIAL_SESSION') {
-        if (currentUser || !loading) {
-            return;
+        // Lógica para tratar sessão inicial (se houver)
+        console.log('[AuthContext] onAuthStateChange: INITIAL_SESSION event.');
+        if (session && !isInitialized && isMounted.current) {
+          console.log('[AuthContext] Initial session found. Refreshing user data...');
+          await refreshUserData(); 
+        } else if (!session && !isInitialized && isMounted.current) {
+          // Se não há sessão inicial e ainda não inicializou, marca como inicializado
+          setIsInitialized(true);
         }
-        return;
+        return; // Importante retornar após tratar INITIAL_SESSION
       }
 
       if (event === 'SIGNED_IN') {
-        if (!currentUser && isMounted.current) {
-           const success = await refreshUserData();
-           if (!success) {
-              console.error("Falha ao carregar dados do usuário após SIGNED_IN (no currentUser case).");
-           }
-        } else if (currentUser && isMounted.current) {
-           if (session?.user && currentUser.id !== session.user.id) {
-               setCurrentUser(session.user);
-           }
-        }
-      } else if (event === 'SIGNED_OUT') {
+        // IGNORAR COMPLETAMENTE O EVENTO SIGNED_IN AQUI
+        console.log('[AuthContext] onAuthStateChange: SIGNED_IN event received. IGNORING - login function handles refresh.');
+      } 
+      
+      else if (event === 'SIGNED_OUT') {
+        console.log('[AuthContext] onAuthStateChange: SIGNED_OUT event received. Clearing state.');
         if (isMounted.current) {
           setCurrentUser(null);
           setPlanId(null);
           setTrialEndsAt(null);
           setError(null);
           setLoading(false);
+          // Resetar isInitialized pode ser necessário dependendo do fluxo desejado pós-logout
+          // setIsInitialized(false); 
         }
-      } else if (event === 'TOKEN_REFRESHED') {
-         if (session?.user && isMounted.current) {
-           if (currentUser?.id !== session.user.id || currentUser?.aud !== session.user.aud) {
-             setCurrentUser(session.user);
-           }
-         } else if (!session && isMounted.current) {
-           setCurrentUser(null);
-           setPlanId(null);
-           setTrialEndsAt(null);
-           setLoading(false); 
-         }
-      } else if (event === 'USER_UPDATED') {
-        if (session?.user && isMounted.current) {
-          setCurrentUser(session.user);
-        }
-      } else if (event === 'PASSWORD_RECOVERY') {
-         if (session && isMounted.current) {
-           refreshUserData();
-         }
-      }
+      } 
+
     });
 
     return () => {
       subscription?.unsubscribe();
-      isInitialized.current = false;
+      isMounted.current = false;
     };
-  }, []);
+  }, []); // Array vazio aqui
 
-  const login = async (email: string, password: string): Promise<{ error: CustomAuthError | null }> => {
+  // Envolver login em useCallback
+  const login = useCallback(async (email: string, password: string): Promise<{ error: CustomAuthError | null }> => {
+    let loginError: CustomAuthError | null = null;
+    if (isMounted.current) {
+      setError(null);
+    }
+
     try {
-      if (isMounted.current) {
-        setError(null);
-        setLoading(true);
-      }
-
-      // Tentar fazer login
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (signInError) {
-         console.error('Erro no Login:', signInError);
-         if (isMounted.current) setError(signInError.message || 'Falha no login.');
-         throw signInError; // Re-throw para o chamador saber que falhou
+         loginError = new CustomAuthError(signInError.message || 'Falha no login.');
+         if (isMounted.current) setError(loginError.message);
+         return { error: loginError };
       }
 
       if (!data?.user) {
-         if (isMounted.current) setError('Usuário não encontrado ou falha inesperada.');
-         throw new CustomAuthError('Usuário não encontrado');
+         loginError = new CustomAuthError('Usuário não encontrado após login.');
+         if (isMounted.current) setError(loginError.message);
+         return { error: loginError };
       }
 
-      // A lógica de refreshUserData será chamada pelo listener 'SIGNED_IN'
-      // Não precisamos chamar aqui explicitamente para evitar chamadas duplicadas.
-      // Apenas garantimos que setLoading(false) será chamado pelo refreshUserData.
+      // *** LOGIN BEM SUCEDIDO NO SUPABASE AUTH ***
+      // Chamar refreshUserData explicitamente aqui.
+      const refreshSuccess = await refreshUserData();
+      if (!refreshSuccess) { 
+          loginError = new CustomAuthError(error || 'Falha ao carregar dados do usuário após login.');
+          if (isMounted.current) setError(loginError.message);
+          return { error: loginError };
+       }
 
-      // Retorna sucesso (sem erro)
-      return { error: null };
+      // Se refresh foi sucesso, estado está atualizado.
+      // NAVEGAR programaticamente AGORA.
+      console.log('[AuthContext] Login and subsequent refresh successful. Navigating to dashboard...');
+      navigate('/dashboard');
+      return { error: null }; // Sucesso total
 
     } catch (err: any) {
-      // O erro já foi setado ou logado acima
+      loginError = new CustomAuthError(err.message || 'Erro desconhecido no login');
       if (isMounted.current) {
-        setLoading(false); // Garante que loading termina em caso de erro
+        setError(loginError.message);
       }
-      // Retorna o erro para o formulário de login poder tratar
-      return { error: err instanceof AuthError || err instanceof CustomAuthError ? err : new CustomAuthError(err.message || 'Erro desconhecido no login') };
+      return { error: loginError };
     }
-  };
+  }, [refreshUserData, error, navigate]);
 
-  // Logout
-  const logout = async () => {
+  // Envolver logout em useCallback
+  const logout = useCallback(async () => {
     setLoading(true);
     const { error: signOutError } = await supabase.auth.signOut();
     if (signOutError) {
-      console.error("Erro ao fazer logout:", signOutError);
       toast.error("Erro ao sair. Tente novamente.");
-      // Mesmo com erro, limpamos o estado local
     }
-  };
+  }, []);
 
-  // Cadastro
-  const signUp = async (email: string, password: string, fullName?: string, whatsapp?: string) => {
+  // Envolver signUp em useCallback
+  const signUp = useCallback(async (email: string, password: string, fullName?: string, whatsapp?: string) => {
     setLoading(true);
     setError(null);
     try {
@@ -381,7 +345,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       });
 
       if (signUpAuthError) {
-        console.error("Erro no Supabase Auth signUp:", signUpAuthError);
         throw signUpAuthError; // Joga o erro para o catch tratar
       }
 
@@ -483,10 +446,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setLoading(false);
       }
     }
-  };
+  }, []);
 
-  // Função para atualizar rádios favoritas no metadata do usuário
-  const updateFavoriteRadios = async (radios: string[]) => {
+  // Envolver updateFavoriteRadios em useCallback
+  const updateFavoriteRadios = useCallback(async (radios: string[]) => {
     if (!currentUser) {
       console.error("Tentativa de atualizar favoritas sem usuário logado.");
       toast.error("Você precisa estar logado para salvar favoritas.");
@@ -502,7 +465,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       });
 
       if (error) {
-        console.error("Erro ao atualizar rádios favoritas no Auth:", error);
         toast.error("Não foi possível salvar suas rádios favoritas.");
         throw error;
       }
@@ -519,35 +481,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } catch (error) {
       // Erro já logado e notificado
     }
-  };
+  }, [currentUser]); // Depende de currentUser
 
-  // Montar o valor do contexto
-  const value: AuthContextType = {
+  // Memoizar o valor do contexto para evitar re-renderizações desnecessárias
+  const contextValue = useMemo(() => ({
     currentUser,
     planId,
     trialEndsAt,
     loading,
     error,
+    isInitialized, 
     login,
     logout,
     refreshUserData,
     signUp,
     updateFavoriteRadios,
     sendWelcomeEmail
-  };
+  }), [currentUser, planId, trialEndsAt, loading, error, isInitialized]); 
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
 };
-
-// Hook para usar o contexto de autenticação
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth deve ser usado dentro de um AuthProvider');
-  }
-  return context;
-}

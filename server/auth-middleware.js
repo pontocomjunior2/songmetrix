@@ -43,268 +43,127 @@ export const authenticateBasicUser = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
-      console.error('No Bearer token provided');
+      console.error('[AuthMiddleware] No Bearer token provided');
       return res.status(401).json({ error: 'Token não fornecido' });
     }
 
     const token = authHeader.split('Bearer ')[1];
-    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
     
-    if (error || !user) {
-      console.error('Invalid token or user not found:', error);
-      return res.status(401).json({ error: 'Token inválido' });
+    if (authError || !user) {
+      console.error('[AuthMiddleware] Invalid token or user not found:', authError?.message);
+      return res.status(401).json({ error: 'Token inválido ou usuário não encontrado' });
     }
 
-    // Verificar se o usuário existe na tabela users
-    const { data: dbUser, error: dbError } = await supabaseAdmin
+    // Buscar usuário da tabela users usando plan_id
+    const { data: dbUserData, error: dbError } = await supabaseAdmin
       .from('users')
-      .select('id, email, status, created_at, updated_at')
+      // Selecionar plan_id e outros campos necessários, remover status antigo
+      .select('id, email, plan_id, trial_ends_at, created_at, updated_at') 
       .eq('id', user.id)
-      .single();
+      .maybeSingle(); // Usar maybeSingle para tratar usuário não encontrado sem erro
 
-    if (dbError && dbError.code !== 'PGRST116') {
-      console.error('Error fetching user from database:', dbError);
+    if (dbError) {
+      // Logar erro mas não necessariamente bloquear, pode ser perfil não criado ainda
+      console.error('[AuthMiddleware] Error fetching user profile from DB:', dbError);
+      // Se for erro de permissão, etc., retornar erro.
+      // Se for 'PGRST116' (not found), dbUserData será null.
+      // Por enquanto, vamos permitir continuar e tratar dbUserData nulo.
+      // return res.status(500).json({ error: 'Erro ao buscar perfil do usuário' });
     }
 
-    // Se o usuário não existir no banco, mas existir na autenticação, criar no banco
-    if (dbError && dbError.code === 'PGRST116') {
-      console.log('Usuário não encontrado no banco. Criando registro:', user.id);
-      
-      // Verificar se é um usuário novo para determinar o status
-      const createdAt = new Date(user.created_at);
+    let userPlanId = dbUserData?.plan_id; // Obter plan_id do banco
+    let userTrialEndsAt = dbUserData?.trial_ends_at;
+
+    // --- LÓGICA SIMPLIFICADA --- 
+    // Se o perfil não existe no DB, tenta criar.
+    if (!dbUserData) {
+       console.warn(`[AuthMiddleware] User profile not found in DB for user ${user.id}. Attempting to create...`);
+       try {
+           const createdAt = new Date(user.created_at);
+           const trialEndDate = new Date(createdAt); // Basear trial na data de criação do auth
+           trialEndDate.setDate(trialEndDate.getDate() + 14);
+
+           const { error: insertError } = await supabaseAdmin
+             .from('users')
+             .insert({
+               id: user.id,
+               email: user.email,
+               plan_id: 'TRIAL', // Começa como TRIAL
+               trial_ends_at: trialEndDate.toISOString(),
+               created_at: user.created_at || new Date().toISOString(),
+               updated_at: new Date().toISOString()
+               // Adicionar full_name, whatsapp dos metadados se disponíveis e desejado
+               // full_name: user.user_metadata?.full_name,
+               // whatsapp: user.user_metadata?.whatsapp,
+             });
+
+           if (insertError) {
+             console.error(`[AuthMiddleware] Failed to create profile for ${user.id}:`, insertError);
+             // Continuar mesmo assim? Ou negar acesso? Vamos negar por enquanto.
+             return res.status(500).json({ error: 'Falha ao inicializar perfil do usuário.' });
+           } else {
+             console.log(`[AuthMiddleware] Profile created successfully for ${user.id}.`);
+             // Define os valores para continuar a verificação de acesso
+             userPlanId = 'TRIAL'; 
+             userTrialEndsAt = trialEndDate.toISOString();
+             // Não precisa recarregar dbUserData, já temos os valores
+           }
+       } catch (creationError) {
+           console.error(`[AuthMiddleware] Exception during profile creation for ${user.id}:`, creationError);
+           return res.status(500).json({ error: 'Erro interno ao criar perfil do usuário.' });
+       }
+    } else {
+       // Se perfil existe, usar os dados do banco
+       userPlanId = dbUserData.plan_id;
+       userTrialEndsAt = dbUserData.trial_ends_at;
+    }
+    
+    // Verificar se o trial expirou (lógica movida para depois da criação/leitura)
+    if (userPlanId === 'TRIAL' && userTrialEndsAt) {
       const now = new Date();
-      const diffTime = Math.abs(now.getTime() - createdAt.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      const isNewUser = diffDays <= 14;
-      const initialStatus = isNewUser ? 'TRIAL' : 'INATIVO';
-      
-      console.log(`Criando usuário com status ${initialStatus} (dias desde criação: ${diffDays})`);
-      
-      // Criar usuário no banco de dados
-      const { error: insertError } = await supabaseAdmin
-        .from('users')
-        .insert({
-          id: user.id,
-          email: user.email,
-          status: initialStatus,
-          created_at: user.created_at || new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
-        
-      if (insertError) {
-        console.error('Erro ao criar usuário no banco de dados:', insertError);
-        return res.status(500).json({ error: 'Erro ao criar perfil de usuário' });
-      }
-      
-      // Recarregar os dados do usuário
-      const { data: refreshedDbUser, error: refreshDbError } = await supabaseAdmin
-        .from('users')
-        .select('id, email, status, created_at, updated_at')
-        .eq('id', user.id)
-        .single();
-        
-      if (!refreshDbError && refreshedDbUser) {
-        console.log('Usuário criado com sucesso no banco:', refreshedDbUser);
-        dbUser = refreshedDbUser;
+      const trialEnd = new Date(userTrialEndsAt);
+      if (trialEnd < now) {
+        console.log(`[AuthMiddleware] Trial expired for user ${user.id}. Treating as expired_trial.`);
+        userPlanId = 'expired_trial';
+        // Opcional: Atualizar no banco (pode ser feito por job agendado)
+        // supabaseAdmin.from('users').update({ plan_id: 'expired_trial' }).eq('id', user.id).then(...);
       }
     }
 
+    console.log(`[AuthMiddleware] User: ${user.id}, Determined Plan ID: ${userPlanId}`);
+
+    // --- DECISÃO DE ACESSO --- 
+    // Permitir acesso se plano for ADMIN, ATIVO ou TRIAL (não expirado)
+    const allowedPlans = ['ADMIN', 'ATIVO', 'TRIAL'];
+    if (userPlanId && allowedPlans.includes(userPlanId)) {
+      // Anexar informações úteis ao request para uso nas rotas
+      req.user = { 
+        id: user.id, 
+        email: user.email,
+        planId: userPlanId, // Passar o planId determinado
+        // Adicionar outros dados do dbUserData se necessário
+      };
+      console.log(`[AuthMiddleware] Access GRANTED for user ${user.id} with plan ${userPlanId}`);
+      return next(); // Permitir acesso
+    } else {
+      // Negar acesso para outros casos (expired_trial, null, etc.)
+      console.log(`[AuthMiddleware] Access DENIED for user ${user.id} with plan ${userPlanId}`);
+      return res.status(403).json({ error: 'Acesso negado. Plano inválido ou expirado.' });
+    }
+
+    // --- REMOVER LÓGICA ANTIGA DE STATUS --- 
+    /*
     console.log('User status from database:', dbUser?.status);
+    // ... (verificação de inconsistência, fila de sync)
+    // ... (lógica de isNewUser)
+    // ... (lógica complexa de finalStatus)
+    // ... (atualização de status para TRIAL)
+    */
 
-    // Verificar se há inconsistência entre o status do banco e dos metadados
-    const userStatus = user.user_metadata?.status;
-    if (dbUser?.status && userStatus && dbUser.status !== userStatus) {
-      console.log(`Inconsistência detectada: status metadata=${userStatus}, status db=${dbUser.status}`);
-      
-      // Adicionar à fila de sincronização se houver inconsistência
-      const { error: insertError } = await supabaseAdmin
-        .from('auth_sync_queue')
-        .insert({
-          user_id: user.id,
-          status: dbUser.status, // Usar o status do banco como fonte da verdade
-          processed: false,
-          created_at: new Date().toISOString()
-        })
-        .select();
-      
-      if (insertError) {
-        console.error('Error adding user to sync queue:', insertError);
-      } else {
-        console.log(`Usuário ${user.id} adicionado à fila de sincronização`);
-      }
-    }
-
-    // Verificar se o usuário foi criado nos últimos 14 dias
-    const createdAt = new Date(user.created_at);
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - createdAt.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const isNewUser = diffDays <= 14;
-    
-    console.log(`User ${user.id} created ${diffDays} days ago. Is new user: ${isNewUser}`);
-
-    // Determinar o status final
-    let finalStatus;
-    
-    // Verificar se o usuário é novo (< 14 dias) e não é ADMIN/ATIVO, deve ser TRIAL
-    // Essa condição agora tem precedência sobre as condições de INATIVO
-    if (isNewUser && (!userStatus || userStatus === 'TRIAL' || userStatus === 'INATIVO')) {
-      finalStatus = 'TRIAL';
-      console.log('Novo usuário detectado. Definindo status como TRIAL:', user.id);
-      console.log('Detalhes do usuário novo:', {
-        id: user.id,
-        email: user.email,
-        created_at: user.created_at,
-        updated_at: user.updated_at,
-        idade_em_dias: diffDays,
-        status_banco: dbUser?.status,
-        status_metadata: userStatus
-      });
-    }
-    // Se o status do banco é INATIVO, deve permanecer INATIVO
-    else if (dbUser?.status === 'INATIVO') {
-      finalStatus = 'INATIVO';
-    }
-    // Se o status dos metadados é INATIVO, deve permanecer INATIVO
-    else if (userStatus === 'INATIVO') {
-      finalStatus = 'INATIVO';
-    }
-    // Em caso de inconsistência, priorizar o status mais permissivo
-    else if (dbUser?.status && userStatus && dbUser.status !== userStatus) {
-      if (dbUser.status === 'ADMIN' || userStatus === 'ADMIN') {
-        finalStatus = 'ADMIN';
-      } else if (dbUser.status === 'ATIVO' || userStatus === 'ATIVO') {
-        finalStatus = 'ATIVO';
-      } else if (dbUser.status === 'TRIAL' || userStatus === 'TRIAL') {
-        finalStatus = 'TRIAL';
-      } else {
-        finalStatus = 'INATIVO';
-      }
-    } 
-    // Usar o status existente se estiver definido
-    else if (userStatus) {
-      finalStatus = userStatus;
-    } 
-    // Usar o status do banco se o dos metadados não estiver definido
-    else if (dbUser?.status) {
-      finalStatus = dbUser.status;
-    }
-    // Padrão é INATIVO
-    else {
-      finalStatus = 'INATIVO';
-    }
-
-    console.log('Status final determinado:', finalStatus);
-
-    // Atualizar imediatamente se for um novo usuário com status TRIAL
-    if (isNewUser && finalStatus === 'TRIAL') {
-      // Verificar se é necessário atualizar os metadados e o registro no banco
-      const needsMetadataUpdate = !userStatus || userStatus !== 'TRIAL';
-      const needsDbUpdate = !dbUser?.status || dbUser.status !== 'TRIAL';
-      
-      console.log(`Verificação de sincronização para usuário novo ${user.id}:`, {
-        email: user.email,
-        email_confirmado: user.email_confirmed_at ? 'Sim' : 'Não',
-        needsMetadataUpdate,
-        needsDbUpdate,
-        status_atual_db: dbUser?.status || 'não definido',
-        status_atual_metadata: userStatus || 'não definido',
-        status_final: finalStatus
-      });
-
-      if (needsMetadataUpdate || needsDbUpdate) {
-        console.log('Atualizando status para TRIAL em sistema e metadados para novo usuário:', user.id);
-        
-        const updatePromises = [];
-        
-        // Atualizar nos metadados se necessário
-        if (needsMetadataUpdate) {
-          updatePromises.push(
-            supabaseAdmin.auth.admin.updateUserById(
-              user.id,
-              { user_metadata: { ...user.user_metadata, status: 'TRIAL' } }
-            )
-          );
-        }
-        
-        // Atualizar no banco de dados se necessário
-        if (needsDbUpdate) {
-          updatePromises.push(
-            supabaseAdmin
-              .from('users')
-              .upsert({
-                id: user.id,
-                email: user.email,
-                status: 'TRIAL',
-                updated_at: new Date().toISOString()
-              })
-          );
-        }
-        
-        try {
-          await Promise.all(updatePromises);
-          console.log('Status atualizado com sucesso para TRIAL:', user.id);
-        } catch (updateError) {
-          console.error('Erro ao atualizar status para TRIAL:', updateError);
-        }
-      }
-    }
-
-    // Verificação estrita: rejeitar usuários com status INATIVO
-    if (finalStatus === 'INATIVO') {
-      console.log('Acesso negado para usuário inativo:', user.id);
-      return res.status(403).json({ 
-        error: 'Usuário inativo',
-        code: 'inactive_user',
-        redirect: '/plans'
-      });
-    }
-
-    // Se o usuário está no período trial, mas ele expirou
-    if (finalStatus === 'TRIAL' && !isNewUser) {
-      console.log('Trial period expired for user', user.id);
-      
-      // Atualizar o status do usuário para INATIVO em ambos os lugares
-      await Promise.all([
-        // Atualizar nos metadados
-        supabaseAdmin.auth.admin.updateUserById(
-          user.id,
-          { user_metadata: { ...user.user_metadata, status: 'INATIVO' } }
-        ),
-        
-        // Atualizar no banco de dados
-        supabaseAdmin
-          .from('users')
-          .update({
-            status: 'INATIVO',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', user.id)
-      ]);
-      
-      return res.status(403).json({ 
-        error: 'Período trial expirado',
-        code: 'trial_expired',
-        redirect: '/plans'
-      });
-    }
-    
-    // Adicionar informações ao objeto user para a solicitação
-    req.user = {
-      ...user,
-      dbStatus: dbUser?.status,
-      finalStatus: finalStatus
-    };
-    
-    // Adicionar dias restantes do trial se aplicável
-    if (finalStatus === 'TRIAL') {
-      req.user.trial_days_remaining = Math.max(0, 14 - diffDays);
-    }
-    
-    next();
   } catch (error) {
-    console.error('Authentication error:', error);
-    res.status(401).json({ error: 'Token inválido' });
+    console.error('[AuthMiddleware] Unexpected error:', error);
+    return res.status(500).json({ error: 'Erro interno no middleware de autenticação' });
   }
 };
 

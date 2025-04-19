@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 import { Loader2 } from 'lucide-react';
 import { RadioStatus } from '../types/components';
 import { supabase } from '../lib/supabase-client';

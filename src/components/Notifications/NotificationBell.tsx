@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Bell } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Bell, X, Circle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Popover,
@@ -9,7 +9,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { supabase } from '../../lib/supabase-client';
 import type { Tables } from '../../types/database.types.generated';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 
 interface Notification {
   id: string;

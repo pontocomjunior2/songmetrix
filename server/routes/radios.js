@@ -1,5 +1,5 @@
 import express from 'express';
-import { requireAuth } from '../middleware/auth.js';
+import { authenticateBasicUser } from '../auth-middleware.js';
 import pkg from 'pg';
 import supabaseAdmin from '../supabase-admin.js';
 
@@ -46,7 +46,8 @@ const safeQuery = async (query, params = [], retries = 3) => {
 };
 
 // Rota para obter status das rádios
-router.get('/status', requireAuth, async (req, res) => {
+router.get('/status', authenticateBasicUser, async (req, res) => {
+  console.log('Usuário autenticado:', req.user);
   console.log('Requisição recebida: GET /api/radios/status');
   
   try {
@@ -154,7 +155,8 @@ router.get('/status', requireAuth, async (req, res) => {
 });
 
 // Rota para favoritar/desfavoritar uma rádio
-router.post('/favorite', requireAuth, async (req, res) => {
+router.post('/favorite', authenticateBasicUser, async (req, res) => {
+  console.log('Usuário autenticado:', req.user);
   try {
     const { radioName, favorite } = req.body;
     
@@ -227,6 +229,34 @@ router.post('/favorite', requireAuth, async (req, res) => {
       warning: 'Os favoritos estão temporariamente indisponíveis.'
     });
   }
+});
+
+// Rota para sugerir rádio
+router.post('/suggest', authenticateBasicUser, async (req, res) => {
+  console.log('Usuário autenticado:', req.user);
+  // ... (lógica existente) ...
+});
+
+// Rota para obter sugestões (ADMIN)
+router.get('/suggestions', authenticateBasicUser, async (req, res) => {
+  // ADICIONAR VERIFICAÇÃO DE ADMIN AQUI DENTRO DA ROTA
+  if (req.user?.planId !== 'ADMIN') {
+    console.log(`[Radios API] Acesso negado para não-admin à rota /suggestions. User: ${req.user?.id}, Plan: ${req.user?.planId}`);
+    return res.status(403).json({ error: 'Acesso negado. Somente administradores.' });
+  }
+  console.log('Admin autenticado:', req.user);
+  // ... (lógica existente) ...
+});
+
+// Rota para deletar sugestão (ADMIN)
+router.delete('/suggestions/:id', authenticateBasicUser, async (req, res) => {
+  // ADICIONAR VERIFICAÇÃO DE ADMIN AQUI DENTRO DA ROTA
+  if (req.user?.planId !== 'ADMIN') {
+    console.log(`[Radios API] Acesso negado para não-admin à rota /suggestions/:id. User: ${req.user?.id}, Plan: ${req.user?.planId}`);
+    return res.status(403).json({ error: 'Acesso negado. Somente administradores.' });
+  }
+  console.log('Admin autenticado:', req.user);
+  // ... (lógica existente) ...
 });
 
 export default router; 

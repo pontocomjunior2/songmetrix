@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { format, parseISO } from 'date-fns';
-import { Search, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { Search, Loader2, ChevronDown, ChevronRight, Music2, History, AlertCircle } from 'lucide-react';
+import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 import { supabase } from '../lib/supabase-client';
 import { RadioStatus } from '../types/components';

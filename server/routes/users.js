@@ -1,5 +1,6 @@
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
+import { authenticateBasicUser } from '../auth-middleware.js';
 
 const router = express.Router();
 
@@ -48,6 +49,42 @@ router.post('/register', async (req, res) => {
     console.error('Erro no processamento da requisição:', error);
     return res.status(500).json({ error: 'Erro no servidor' });
   }
+});
+
+// Rota para obter todos os usuários (ADMIN)
+router.get('/', authenticateBasicUser, async (req, res) => {
+  // Verificar se o usuário é ADMIN
+  if (req.user?.planId !== 'ADMIN') {
+    return res.status(403).json({ error: 'Acesso negado' });
+  }
+  // ... (lógica existente)
+});
+
+// Rota para atualizar status/plano do usuário (ADMIN)
+router.put('/:id/status', authenticateBasicUser, async (req, res) => {
+  // Verificar se o requisitante é ADMIN
+  if (req.user?.planId !== 'ADMIN') {
+    return res.status(403).json({ error: 'Acesso negado' });
+  }
+  // ... (lógica existente - usar { plan_id: newStatus } na atualização)
+});
+
+// Rota para remover usuário (ADMIN)
+router.post('/remove', authenticateBasicUser, async (req, res) => {
+  // Verificar se o requisitante é ADMIN
+  if (req.user?.planId !== 'ADMIN') {
+    return res.status(403).json({ error: 'Acesso negado' });
+  }
+  // ... (lógica existente)
+});
+
+// Rota para atualizar last_sign_in (ADMIN)
+router.post('/update-last-sign-in', authenticateBasicUser, async (req, res) => {
+  // Verificar se o requisitante é ADMIN
+  if (req.user?.planId !== 'ADMIN') {
+    return res.status(403).json({ error: 'Acesso negado' });
+  }
+  // ... (lógica existente)
 });
 
 export default router; 

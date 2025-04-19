@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Select from 'react-select';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 import { Loader2, FileDown, MapPin, Radio, ChevronRight, InfoIcon, Music } from 'lucide-react';
 import moment from 'moment';
 import { jsPDF } from 'jspdf';
@@ -8,6 +8,8 @@ import autoTable, { CellInput } from 'jspdf-autotable';
 import apiServices from '../services/api.js';
 import { fetchAllPopularityData } from './Relatorios/services/popularity';
 import PopularityIndicator from './Relatorios/components/PopularityIndicator';
+import { useForm, Controller } from 'react-hook-form';
+import { Stepper, type Step } from './ui/stepper';
 
 import './Ranking/styles/Ranking.css';
 
@@ -87,8 +89,15 @@ const reportTypes = [
   }
 ];
 
+// Definir os passos para o novo Stepper
+const wizardSteps: Step[] = [
+  { label: "Tipo de Relatório" },
+  { label: "Seleção" },
+  { label: "Período e Chart" }
+];
+
 const RelatoriosWizard: React.FC = () => {
-  const { currentUser, userStatus } = useAuth();
+  const { currentUser, planId } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedReportType, setSelectedReportType] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -789,27 +798,9 @@ const RelatoriosWizard: React.FC = () => {
           )}
         </div>
         
+        {/* Usar o novo Stepper */}
         <div className="mt-6 flex items-center">
-          <div className={`flex items-center ${currentStep >= 1 ? 'text-navy-600' : 'text-gray-400'}`}>
-            <div className="rounded-full h-8 w-8 flex items-center justify-center border-2 border-current">
-              1
-            </div>
-            <span className="ml-2">Tipo de Relatório</span>
-          </div>
-          <ChevronRight className="mx-4 h-5 w-5 text-gray-400" />
-          <div className={`flex items-center ${currentStep >= 2 ? 'text-navy-600' : 'text-gray-400'}`}>
-            <div className="rounded-full h-8 w-8 flex items-center justify-center border-2 border-current">
-              2
-            </div>
-            <span className="ml-2">Seleção</span>
-          </div>
-          <ChevronRight className="mx-4 h-5 w-5 text-gray-400" />
-          <div className={`flex items-center ${currentStep >= 3 ? 'text-navy-600' : 'text-gray-400'}`}>
-            <div className="rounded-full h-8 w-8 flex items-center justify-center border-2 border-current">
-              3
-            </div>
-            <span className="ml-2">Período e Chart</span>
-          </div>
+          <Stepper steps={wizardSteps} currentStep={currentStep - 1} orientation="horizontal" className="w-full" />
         </div>
       </div>
 
@@ -977,7 +968,7 @@ const RelatoriosWizard: React.FC = () => {
         </div>
       )}
       
-      {userStatus === 'ADMIN' && apiResponse && (
+      {planId === 'ADMIN' && apiResponse && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden mt-4">
           <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border-b border-yellow-200 dark:border-yellow-800">
             <h3 className="text-lg font-medium text-yellow-800 dark:text-yellow-200">Dados da API (Debug - Admin)</h3>

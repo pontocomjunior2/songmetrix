@@ -1,13 +1,13 @@
-import React from 'react';
-import { useAuth } from '../../contexts/AuthContext';
+import React, { ReactNode } from 'react';
+import { useAuth } from '../../hooks/useAuth';
 import { TrialExpiredMessage } from '../Messages/TrialExpiredMessage';
-import { Loader2 } from 'lucide-react'; // Ou seu componente de loading
+import { Loader2 } from 'lucide-react';
 
 interface TrialRestrictedProps {
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
-export function TrialRestricted({ children }: TrialRestrictedProps) {
+export default function TrialRestricted({ children }: TrialRestrictedProps) {
   const { planId, loading } = useAuth();
 
   if (loading) {

@@ -1,5 +1,5 @@
 import express from 'express';
-import { requireAuth } from '../middleware/auth.js';
+import { authenticateBasicUser } from '../auth-middleware.js';
 import supabaseAdmin from '../supabase-admin.js';
 import pkg from 'pg';
 const { Pool } = pkg;
@@ -16,8 +16,9 @@ const pool = new Pool({
 });
 
 // Rota principal para o dashboard - usando PostgreSQL diretamente
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', authenticateBasicUser, async (req, res) => {
   console.log('Requisição recebida: GET /api/dashboard');
+  console.log('Usuário autenticado:', req.user);
   
   try {
     const { query } = req;
@@ -202,7 +203,9 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
-router.get('/complete', requireAuth, async (req, res) => {
+router.get('/complete', authenticateBasicUser, async (req, res) => {
+  console.log('Requisição recebida: GET /api/dashboard/complete');
+  console.log('Usuário autenticado:', req.user);
   try {
     const { query } = req;
     const selectedRadios = Array.isArray(query.radio) ? query.radio : query.radio ? [query.radio] : [];

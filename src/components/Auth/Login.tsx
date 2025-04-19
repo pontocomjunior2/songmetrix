@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { EmailInput, PasswordInput } from '../Common/Input';
 import { PrimaryButton } from '../Common/Button';
 import { ErrorAlert } from '../Common/Alert';
 import Loading from '../Common/Loading';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase-client';
 
 export default function Login() {
@@ -12,38 +12,28 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
-
   const { login } = useAuth();
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setError('');
+    
+    if (!email || !password) {
+      setError('Por favor, preencha todos os campos.');
+      return;
+    }
     
     try {
       setLoading(true);
-      setError('');
-      
-      // Verificar se os campos estão preenchidos
-      if (!email || !password) {
-        setError('Por favor, preencha todos os campos.');
+      const { error: loginError } = await login(email, password);
+      if (loginError) {
+        setError(loginError.message);
         setLoading(false);
-        return;
       }
-      
-      const { error } = await login(email, password);
-      
-      if (error) {
-        setError(error.message);
-        setLoading(false);
-        return;
-      }
-      
-      // Navegar para o dashboard APÓS o login bem-sucedido
-      navigate('/dashboard');
 
     } catch (err) {
-      console.error('Erro ao fazer login:', err);
-      setError('Ocorreu um erro durante o login. Tente novamente.');
+      console.error('Erro inesperado ao chamar login:', err);
+      setError('Ocorreu um erro inesperado.');
       setLoading(false);
     }
   };

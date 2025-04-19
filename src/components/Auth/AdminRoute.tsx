@@ -1,6 +1,6 @@
 import React from 'react';
-import { Navigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
+import { Navigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../../hooks/useAuth';
 import { Loader2 } from 'lucide-react';
 
 interface AdminRouteProps {
@@ -8,7 +8,7 @@ interface AdminRouteProps {
 }
 
 export default function AdminRoute({ children }: AdminRouteProps) {
-  const { currentUser, planId, loading: authLoading } = useAuth();
+  const { currentUser, planId, loading: authLoading, error: authError } = useAuth();
 
   if (authLoading) {
     return (
