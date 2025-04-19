@@ -455,8 +455,8 @@ const Dashboard = () => {
         <MetricCard title="Gênero Principal" value={genreDistribution[0]?.name || '-'} icon={Music} />
       </div>
 
-      {/* Linha 2: Músicas e Rádios */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Linha 2: Músicas e Rádios - Mudar breakpoint para md */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Card Top Músicas com Tooltip */}
         <div className="bg-white dark:bg-gray-800 p-4 md:p-6 rounded-lg shadow-sm">
           <h2 className="text-lg font-semibold flex items-center mb-4">
@@ -476,27 +476,28 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Linha 3: Gráficos com Tooltips - Usar Flexbox */}
-      <div className="flex flex-col lg:flex-row gap-6">
-        {/* Card Top Artistas com Tooltip (reduzir min-h) */}
-        <div className="bg-white dark:bg-gray-800 p-4 md:p-6 rounded-lg shadow-sm flex flex-col flex-1 lg:w-1/2">
+      {/* Linha 3: Gráficos com Tooltips - Usar Flexbox - Mudar breakpoint para md */}
+      <div className="flex flex-col md:flex-row gap-6">
+        {/* Card Top Artistas com Tooltip */}
+        <div className="bg-white dark:bg-gray-800 p-4 md:p-6 rounded-lg shadow-sm flex flex-col flex-1 md:w-1/2">
           <h2 className="text-lg font-semibold flex items-center mb-4">
             Artistas Mais Tocados
             <InfoTooltip text="Top 5 artistas com mais execuções nos últimos 7 dias, baseado no(s) formato(s) de rádio selecionados por você." />
           </h2>
-          {/* Reduzir altura mínima */}
-          <div className="flex-grow min-h-[280px]">
+          {/* Aumentar altura fixa para mobile */}
+          <div className="h-96 md:flex-grow md:min-h-[280px]">
             <ArtistBarChart data={artistData} />
           </div>
         </div>
 
-        {/* Card Distribuição por Gênero com Tooltip (manter min-h-[320px]) */}
-        <div className="bg-white dark:bg-gray-800 p-4 md:p-6 rounded-lg shadow-sm flex flex-col flex-1 lg:w-1/2">
+        {/* Card Distribuição por Gênero com Tooltip */}
+        <div className="bg-white dark:bg-gray-800 p-4 md:p-6 rounded-lg shadow-sm flex flex-col flex-1 md:w-1/2">
           <h2 className="text-lg font-semibold flex items-center mb-4">
              Distribuição por Gênero
              <InfoTooltip text="Distribuição percentual das execuções por gênero (Top 5) nos últimos 7 dias, baseado no(s) formato(s) de rádio selecionados por você." />
           </h2>
-          <div className="flex-grow min-h-[320px]">
+          {/* Aumentar altura fixa para mobile */}
+          <div className="h-96 md:flex-grow md:min-h-[320px]">
             <GenrePieChart data={genreDistribution} colors={colors} />
           </div>
         </div>

@@ -42,7 +42,7 @@ function Stepper({
       className={cn(
         "flex", // Voltar para flex simples
         isVertical ? "flex-col h-full" : "w-full items-center", // Restaurar items-center
-        "px-8", // Aumentar padding horizontal interno para px-8
+        "px-4 sm:px-6 md:px-8 lg:px-8", // Aumentar padding inicial responsivo
         className
       )}
       {...props}
@@ -69,18 +69,20 @@ function Stepper({
               >
                 {index + 1}
               </div>
-              {/* Rótulo e Descrição (Horizontal) - Remover classes de tamanho */}
+              {/* Rótulo e Descrição (Horizontal) - Usar classes de tamanho */}
               {!isVertical && (
                 <div className="absolute top-full mt-2 text-center w-max max-w-xs px-1">
+                  {/* Aplicar fonte responsiva ao label */}
                   <div className={cn(
-                    "text-sm font-medium", // Voltar para tamanho fixo md
+                    "font-medium", 
+                    "text-xs sm:text-sm", // Fonte responsiva
                     isActive || isCompleted ? "text-gray-900 dark:text-white" : "text-gray-500 dark:text-gray-400"
                   )}>
                     {step.label}
                   </div>
                   {step.description && (
                     <div className={cn(
-                      "text-xs text-gray-500 dark:text-gray-400", // Voltar para tamanho fixo md
+                      "text-xs text-gray-500 dark:text-gray-400", // Manter descrição como text-xs por enquanto
                     )}>
                       {step.description}
                     </div>
