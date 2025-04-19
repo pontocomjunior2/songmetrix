@@ -23,7 +23,7 @@ export function TrialExpiredMessage() {
       </CardHeader>
       <CardContent>
         <p className="text-sm text-muted-foreground">
-          Para continuar acessando todos os recursos do Songmetrix, por favor, escolha um de nossos planos.
+          Esta funcionalidade está disponível apenas para assinantes. Para desbloquear este recurso e todos os outros benefícios do Songmetrix, por favor, escolha um de nossos planos.
         </p>
       </CardContent>
       <CardFooter>

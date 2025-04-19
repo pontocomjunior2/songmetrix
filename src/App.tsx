@@ -80,7 +80,7 @@ function App() {
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="ranking" element={<Ranking />} />
         <Route path="realtime" element={<TrialRestricted><RealTime /></TrialRestricted>} />
-        <Route path="radios" element={<TrialRestricted><Radios /></TrialRestricted>} />
+        <Route path="radios" element={<Radios />} />
         <Route path="relatorios" element={<TrialRestricted><Relatorios /></TrialRestricted>} />
         <Route path="spotify" element={<TrialRestricted><Spotify /></TrialRestricted>} />
         {/* Rotas Admin */}
