@@ -1,9 +1,10 @@
-import React, { useState, useEffect, Suspense, memo } from 'react';
+import React, { useState, useEffect, Suspense, memo, useCallback } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase-client';
 import { Radio as RadioIcon, Music, Info, Clock, RefreshCw } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { useNavigate } from 'react-router-dom';
+import { UpgradePrompt } from '../Common/UpgradePrompt';
 
 interface TopSong {
   song_title: string;
@@ -71,7 +72,7 @@ const Dashboard = () => {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const { currentUser } = useAuth();
+  const { currentUser, planId } = useAuth();
   const navigate = useNavigate();
   
   // Cache TTL em milissegundos (2 minutos)
@@ -375,8 +376,19 @@ const Dashboard = () => {
   console.log('[Dashboard] Final render state:', { loading, error, hasData: topSongs.length > 0 }); 
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center mb-4">
+    <div className="dashboard-container space-y-6">
+       <h1 className="text-3xl font-bold">Dashboard</h1>
+       
+       {/* Mostrar Prompt de Upgrade para usuários Free */}
+       {planId === 'expired_trial' && (
+         <UpgradePrompt
+           title="Você está usando a Conta Free"
+           message="Seu acesso ao Songmetrix é limitado. Assine um plano Premium e tenha acesso a histórico completo, filtros avançados e mais insights, relatorios detalhados em tempo real e muito mais."
+           variant="warning"
+         />
+       )}
+
+       <div className="flex justify-between items-center mb-4">
         <div></div>
         <div className="flex items-center gap-2">
           {lastUpdated && (
