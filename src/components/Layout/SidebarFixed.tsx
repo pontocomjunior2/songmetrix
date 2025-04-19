@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { UserStatus } from '../../lib/auth';
 import { Home, BarChart3, FileText, Users, Type, Radio, LogOut, Clock, X, ChevronDown, Mail, MessageSquare, Bell } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import WhatsAppContact from '../Common/WhatsAppContact';
+import { useNavigate } from 'react-router-dom';
 
 interface SidebarProps {
-  currentView: string;
-  onNavigate: (view: string) => void;
+  pathname: string;
   onClose?: () => void;
   isMobile?: boolean;
 }
@@ -24,8 +23,9 @@ interface MenuItem {
   }>;
 }
 
-export default function SidebarFixed({ currentView, onNavigate, onClose, isMobile }: SidebarProps) {
-  const { userStatus, currentUser, logout } = useAuth();
+const SidebarFixed: React.FC<SidebarProps> = React.memo(({ pathname, onClose, isMobile }: SidebarProps) => {
+  const { planId, currentUser, logout } = useAuth();
+  const navigate = useNavigate();
   const [hoveredMenu, setHoveredMenu] = useState<string | null>(null);
 
   const baseMenuItems: MenuItem[] = [
@@ -99,19 +99,19 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
     }
   ];
 
-  // Usando o tipo correto para a comparação
-  const menuItems: MenuItem[] = [...baseMenuItems, ...(userStatus && userStatus === UserStatus.ADMIN ? adminMenuItems : [])];
+  const isAdmin = planId === 'ADMIN';
+  const menuItems: MenuItem[] = [...baseMenuItems, ...(isAdmin ? adminMenuItems : [])];
 
   const handleItemClick = (view: string, hasSubMenu?: boolean) => {
     if (hasSubMenu) return;
-    onNavigate(view);
+    navigate(`/${view}`);
     if (isMobile && onClose) {
       onClose();
     }
   };
 
   const isSubMenuActive = (item: MenuItem) => {
-    return item.subItems && item.subItems.some(sub => currentView === sub.view);
+    return item.subItems && item.subItems.some(sub => `/${sub.view}` === pathname);
   };
 
   return (
@@ -140,7 +140,9 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
 
       {/* Navigation Menu */}
       <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
-        {menuItems.map((item) => (
+        {menuItems.map((item) => {
+          const isActive = `/${item.view}` === pathname || isSubMenuActive(item);
+          return (
           <div 
             key={item.view} 
             className="relative"
@@ -152,20 +154,20 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
               className={`
                 w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium
                 transition-colors duration-150 ease-in-out cursor-pointer
-                ${(currentView === item.view || isSubMenuActive(item))
+                ${isActive
                   ? 'bg-white/10 text-white'
                   : 'text-white/70 hover:text-white hover:bg-white/5'
                 }
                 ${isMobile ? 'text-base py-4' : ''}
               `}
-              aria-current={currentView === item.view ? 'page' : undefined}
+              aria-current={isActive ? 'page' : undefined}
             >
               <item.icon className={`${isMobile ? 'w-6 h-6' : 'w-5 h-5'} flex-shrink-0`} />
               <span className="truncate">{item.name}</span>
               {item.hasSubMenu && (
                 <ChevronDown 
                   className={`ml-auto w-4 h-4 transition-transform duration-200 ${
-                    hoveredMenu === item.view || isSubMenuActive(item) ? 'rotate-180' : ''
+                    hoveredMenu === item.view || isActive ? 'rotate-180' : ''
                   }`} 
                 />
               )}
@@ -173,7 +175,7 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
             
             {item.subItems && (
               <AnimatePresence>
-                {(hoveredMenu === item.view || isMobile || isSubMenuActive(item)) && (
+                {(hoveredMenu === item.view || isMobile || isActive) && (
                   <motion.div 
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
@@ -181,7 +183,9 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
                     transition={{ duration: 0.2, ease: "easeInOut" }}
                     className="ml-8 mt-1 space-y-1 overflow-hidden"
                   >
-                    {item.subItems.map((subItem) => (
+                    {item.subItems.map((subItem) => {
+                      const isSubItemActive = `/${subItem.view}` === pathname;
+                      return (
                       <motion.button
                         key={subItem.view}
                         initial={{ x: -10, opacity: 0 }}
@@ -191,7 +195,7 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
                         className={`
                           w-full flex items-center gap-3 px-4 py-2 rounded-lg text-sm font-medium
                           transition-colors duration-150 ease-in-out
-                          ${currentView === subItem.view
+                          ${isSubItemActive
                             ? 'bg-white/10 text-white'
                             : 'text-white/70 hover:text-white hover:bg-white/5'
                           }
@@ -199,13 +203,15 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
                       >
                         <span className="truncate">{subItem.name}</span>
                       </motion.button>
-                    ))}
+                    );
+                    })}
                   </motion.div>
                 )}
               </AnimatePresence>
             )}
           </div>
-        ))}
+        );
+        })}
       </nav>
 
       {/* Contact Links */}
@@ -235,4 +241,6 @@ export default function SidebarFixed({ currentView, onNavigate, onClose, isMobil
       )}
     </div>
   );
-}
+});
+
+export default SidebarFixed;

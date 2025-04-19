@@ -38,8 +38,9 @@ export default function Login() {
         return;
       }
       
-      // Se chegou até aqui, o login foi bem-sucedido
-      // O redirecionamento será feito pela função login
+      // Navegar para o dashboard APÓS o login bem-sucedido
+      navigate('/dashboard');
+
     } catch (err) {
       console.error('Erro ao fazer login:', err);
       setError('Ocorreu um erro durante o login. Tente novamente.');

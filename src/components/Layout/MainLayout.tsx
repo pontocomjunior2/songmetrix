@@ -3,36 +3,20 @@ import { LogOut, Moon, Sun, Menu } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 import { useAuth } from '../../contexts/AuthContext';
 import { CustomUser } from '../../types/customUser';
-import { useNavigate, Outlet } from 'react-router-dom';
+import { useNavigate, Outlet, useLocation } from 'react-router-dom';
 import SidebarFixed from './SidebarFixed';
 import UserAvatar from '../Common/UserAvatar';
 import SuggestRadioModal from '../Radios/SuggestRadioModal';
 import NotificationBell from '../Notifications/NotificationBell';
 
-interface LayoutProps {
-  currentView: string;
-  onNavigate: (view: string) => void;
-}
-
-const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
+const MainLayout: React.FC = React.memo(() => {
   const { theme, toggleTheme } = useTheme();
-  const { currentUser, logout, sendWelcomeEmail } = useAuth();
+  const { currentUser, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [isMobile, setIsMobile] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-
-  // Efeito para enviar email de boas-vindas quando o usuário faz login pela primeira vez
-  useEffect(() => {
-    const checkEmailConfirmationAndSendWelcome = async () => {
-      if (currentUser && currentUser.email_confirmed_at) {
-        // Usuário está autenticado e email está confirmado
-        sendWelcomeEmail();
-      }
-    };
-
-    checkEmailConfirmationAndSendWelcome();
-  }, [currentUser, sendWelcomeEmail]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -54,27 +38,20 @@ const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
     }
   };
 
-  const handleNavigate = (view: string) => {
-    onNavigate(view);
-    navigate(`/${view}`);
-    if (isMobile) {
-      setIsMobileMenuOpen(false);
-    }
-  };
-
   const getPageTitle = () => {
-    if (currentView === 'dashboard') return 'Dashboard';
-    if (currentView === 'ranking') return 'Ranking';
-    if (currentView === 'realtime') return 'Tempo Real';
-    if (currentView === 'radios') return 'Rádios';
-    if (currentView === 'relatorios') return 'Relatórios';
-    if (currentView === 'spotify') return 'Spotify Charts';
-    if (currentView === 'admin/users') return 'Gerenciar Usuários';
-    if (currentView === 'admin/abbreviations') return 'Abreviações';
-    if (currentView === 'admin/streams') return 'Gerenciar Streams';
-    if (currentView === 'admin/relay-streams') return 'Gerenciar Relay Streams';
-    if (currentView === 'admin/emails') return 'Gerenciar Emails';
-    if (currentView === 'admin/notifications') return 'Gerenciar Notificações';
+    const pathname = location.pathname;
+    if (pathname === '/dashboard') return 'Dashboard';
+    if (pathname === '/ranking') return 'Ranking';
+    if (pathname === '/realtime') return 'Tempo Real';
+    if (pathname === '/radios') return 'Rádios';
+    if (pathname === '/relatorios') return 'Relatórios';
+    if (pathname === '/spotify') return 'Spotify Charts';
+    if (pathname === '/admin/users') return 'Gerenciar Usuários';
+    if (pathname === '/admin/abbreviations') return 'Abreviações';
+    if (pathname === '/admin/streams') return 'Gerenciar Streams';
+    if (pathname === '/admin/relay-streams') return 'Gerenciar Relay Streams';
+    if (pathname === '/admin/emails') return 'Gerenciar Emails';
+    if (pathname === '/admin/notifications') return 'Gerenciar Notificações';
     return '';
   };
 
@@ -101,8 +78,7 @@ const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
         `}
       >
         <SidebarFixed 
-          currentView={currentView} 
-          onNavigate={handleNavigate}
+          pathname={location.pathname}
           onClose={handleCloseMobileMenu}
           isMobile={isMobile}
         />
@@ -194,6 +170,6 @@ const MainLayout: React.FC<LayoutProps> = ({ currentView, onNavigate }) => {
       </div>
     </div>
   );
-};
+});
 
 export default MainLayout;
