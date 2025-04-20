@@ -174,38 +174,50 @@ app.post('/webhook/asaas', express.raw({ type: 'application/json' }), async (req
       const supabaseUserId = user.id;
       console.log(`[Webhook Asaas] Usuário Supabase encontrado: ${supabaseUserId}, Status atual: ${user.status}`);
 
-      // Atualizar status se necessário
-      if (user.status !== 'ATIVO') {
-        console.log(`[Webhook Asaas] Atualizando status para ATIVO para usuário ${supabaseUserId}`);
+      // Atualizar status se necessário -> AGORA ATUALIZAR plan_id
+      // if (user.status !== 'ATIVO') { // Comentando a verificação antiga baseada no status do DB
+        console.log(`[Webhook Asaas] Atualizando plan_id para ATIVO para usuário ${supabaseUserId}`);
         
+        /* // Removendo atualização na tabela users, focaremos nos metadados
         // 1. Atualizar tabela 'users'
-        const { error: updateDbError } = await supabaseAdmin
+        const { data: updateDbData, error: updateDbError } = await supabaseAdmin 
           .from('users')
           .update({ status: 'ATIVO', updated_at: new Date().toISOString() })
-          .eq('id', supabaseUserId);
+          .eq('id', supabaseUserId)
+          .select(); 
 
         if (updateDbError) {
           console.error(`[Webhook Asaas] Erro ao atualizar status na tabela users para ${supabaseUserId}:`, updateDbError);
+        } else {
+          console.log(`[Webhook Asaas] Resultado da atualização na tabela users:`, JSON.stringify(updateDbData)); 
         }
+        */
 
-        // 2. Atualizar metadados do Supabase Auth
+        // 2. Atualizar metadados do Supabase Auth (plan_id e status para consistência temporária)
         const { data: authUser, error: authGetError } = await supabaseAdmin.auth.admin.getUserById(supabaseUserId);
         if (authGetError) {
            console.error(`[Webhook Asaas] Erro ao buscar usuário Auth ${supabaseUserId} para atualizar metadados:`, authGetError);
         } else if (authUser) {
             const currentMetadata = authUser.user.user_metadata || {};
-            const { error: updateMetaError } = await supabaseAdmin.auth.admin.updateUserById(
+            // Define o novo plan_id e também o status para manter consistência por enquanto
+            // USAR 'ATIVO' EM MAIÚSCULAS PARA CONSISTÊNCIA
+            const updatedMetadata = { ...currentMetadata, plan_id: 'ATIVO', status: 'ATIVO' }; 
+            const { data: updateMetaData, error: updateMetaError } = await supabaseAdmin.auth.admin.updateUserById( 
               supabaseUserId,
-              { user_metadata: { ...currentMetadata, status: 'ATIVO' } }
+              { user_metadata: updatedMetadata } 
             );
             if (updateMetaError) {
                console.error(`[Webhook Asaas] Erro ao atualizar metadados Auth para ${supabaseUserId}:`, updateMetaError);
+            } else {
+              console.log(`[Webhook Asaas] Resultado da atualização de metadados Auth:`, JSON.stringify(updateMetaData));
             }
         } 
-        console.log(`[Webhook Asaas] Status ATIVO aplicado para usuário ${supabaseUserId}`);
+        console.log(`[Webhook Asaas] plan_id ATIVO aplicado nos metadados para usuário ${supabaseUserId}`);
+      /* // Fim do if antigo
       } else {
         console.log(`[Webhook Asaas] Usuário ${supabaseUserId} já está ATIVO.`);
       }
+      */
 
     } else {
       console.log(`[Webhook Asaas] Evento ${eventType} não relevante para ativação.`);
