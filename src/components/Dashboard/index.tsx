@@ -2,7 +2,7 @@ import React, { useState, useEffect, Suspense, memo, useCallback, useMemo } from
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase-client';
 import { Radio as RadioIcon, Music, Info, Clock, RefreshCw, AlertCircle } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, PieLabelRenderProps } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import { UpgradePrompt } from '../Common/UpgradePrompt';
 import Loading from '../Common/Loading';
@@ -290,28 +290,33 @@ const Dashboard = () => {
     <Suspense fallback={<Loading />}>
       {data.length > 0 ? (
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data}>
+          <BarChart data={data} margin={{ top: 5, right: 0, left: -20, bottom: 5 }}>
             <defs>
               <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#3B82F6" />
                 <stop offset="100%" stopColor="#1E3A8A" />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" className="dark:stroke-gray-600" />
-            <XAxis dataKey="artist" stroke="#374151" className="dark:stroke-gray-300" />
-            <YAxis stroke="#374151" className="dark:stroke-gray-300" />
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e0e0e0" />
+            <XAxis dataKey="artist" stroke="#6b7280" fontSize={12} />
+            <YAxis stroke="#6b7280" fontSize={12} />
             <Tooltip
-              content={<CustomTooltip />}
-              wrapperStyle={{
-                backgroundColor: 'var(--tooltip-bg, #fff)',
-                color: 'var(--tooltip-text, #000)',
-                borderColor: 'var(--tooltip-border, #ccc)'
+              cursor={{ fill: 'rgba(0, 0, 0, 0.1)' }}
+              content={({ active, payload }) => {
+                if (active && payload && payload.length) {
+                  return (
+                    <div className="bg-white dark:bg-gray-700 p-2 border rounded shadow-lg text-sm">
+                      <p className="font-medium text-gray-900 dark:text-white">{`${payload[0].payload.artist}`}</p>
+                      <p className="text-gray-600 dark:text-gray-300">{`Execuções: ${payload[0].value}`}</p>
+                    </div>
+                  );
+                }
+                return null;
               }}
             />
             <Bar
               dataKey="executions"
               fill="url(#barGradient)"
-              className="dark:opacity-90"
             />
           </BarChart>
         </ResponsiveContainer>
@@ -323,54 +328,87 @@ const Dashboard = () => {
     </Suspense>
   ));
 
-  const GenrePieChart = memo(({ data, colors }: { data: GenreDistribution[], colors: string[] }) => (
-    <Suspense fallback={<Loading />}>
-      {data.length > 0 ? (
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={data}
-              dataKey="value"
-              nameKey="name"
-              cx="50%"
-              cy="50%"
-              outerRadius={80}
-              labelLine={false}
-              label={false}
-              className="text-gray-900 dark:text-white"
-            >
-              {data.map((entry, index) => (
-                <Cell
-                  key={`cell-${index}`}
-                  fill={colors[index % colors.length]}
-                  className="dark:opacity-90"
-                />
-              ))}
-            </Pie>
-            <Tooltip
-              formatter={(value, name, props) => [`${value}% (${props.payload.executions} exec.)`, name]}
-              contentStyle={{
-                backgroundColor: 'var(--tooltip-bg, #fff)',
-                color: 'var(--tooltip-text, #000)',
-                borderColor: 'var(--tooltip-border, #ccc)'
-              }}
-              wrapperStyle={{ color: 'currentColor' }}
-            />
-            <Legend 
-              layout="horizontal" 
-              verticalAlign="bottom" 
-              align="center" 
-              wrapperStyle={{ paddingTop: '10px' }}
-            />
-          </PieChart>
-        </ResponsiveContainer>
-      ) : (
-        <div className="flex items-center justify-center h-full">
-          <p className="text-gray-500 dark:text-gray-400">Sem dados de gênero</p>
-        </div>
-      )}
-    </Suspense>
-  ));
+  const GenrePieChart = memo(({ data, colors }: { data: GenreDistribution[], colors: string[] }) => {
+    // Custom label renderer
+    const RADIAN = Math.PI / 180;
+    // Define explicit types for label props
+    const renderCustomizedLabel = (props: PieLabelRenderProps) => {
+      // Destructure with default values or checks if needed, accessing props directly
+      const cx = Number(props.cx) || 0;
+      const cy = Number(props.cy) || 0;
+      const midAngle = Number(props.midAngle) || 0;
+      const innerRadius = Number(props.innerRadius) || 0;
+      const outerRadius = Number(props.outerRadius) || 0;
+      const name = props.name || '';
+      const value = props.value || 0;
+
+      // Check if required props are valid numbers before calculation
+      if (isNaN(cx) || isNaN(cy) || isNaN(midAngle) || isNaN(innerRadius) || isNaN(outerRadius)) {
+        return null; // Or some default rendering
+      }
+
+      const radius = innerRadius + (outerRadius - innerRadius) * 1.1; // Position label outside
+      const x = cx + radius * Math.cos(-midAngle * RADIAN);
+      const y = cy + radius * Math.sin(-midAngle * RADIAN);
+      const textAnchor = x > cx ? 'start' : 'end';
+
+      return (
+        <text 
+          x={x} 
+          y={y} 
+          textAnchor={textAnchor} 
+          dominantBaseline="central"
+          fontSize={12} // Label font size
+        >
+          {`${name}: ${value}%`} 
+        </text>
+      );
+    };
+
+    return (
+      <Suspense fallback={<Loading />}>
+        {data.length > 0 ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart margin={{ top: 20, right: 40, bottom: 20, left: 40 }}>
+              <Pie
+                data={data}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                outerRadius={100}
+                innerRadius={40}
+                labelLine={false}
+                label={renderCustomizedLabel} // Use custom label function
+              >
+                {data.map((entry, index) => (
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={colors[index % colors.length]}
+                  />
+                ))}
+              </Pie>
+              <Tooltip
+                formatter={(value, name, props) => [`${value}%`, name]}
+                contentStyle={{
+                  backgroundColor: 'var(--tooltip-bg, #fff)',
+                  color: 'var(--tooltip-text, #000)',
+                  borderColor: 'var(--tooltip-border, #ccc)',
+                  fontSize: '12px',
+                  borderRadius: '4px',
+                  padding: '5px 10px'
+                }}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-gray-500 dark:text-gray-400">Sem dados de gênero</p>
+          </div>
+        )}
+      </Suspense>
+    );
+  });
 
   // Componente para Card de Métrica
   const MetricCard = memo(({ title, value, icon: Icon }: { title: string, value: number | string, icon: React.ElementType }) => (
