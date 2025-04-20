@@ -20,6 +20,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto'; // Mover import para cá
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import express from 'express';
 import cors from 'cors';
@@ -83,34 +84,143 @@ const { syncUserWithSendPulse, syncUserWithBrevo } = sendPulseService;
 
 const app = express();
 
-// Middleware para o webhook do Stripe (deve vir antes de express.json)
-app.post('/webhook', express.raw({ type: 'application/json' }), handleWebhook);
+// MANTER O HANDLER COMPLETO DO WEBHOOK NO TOPO
+console.log('[DEBUG] Definindo rota POST /webhook/asaas (HANDLER COMPLETO NO TOPO)'); 
 
-// Middlewares regulares
-// Configurar CORS antes de qualquer rota
-app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if(!origin) return callback(null, true);
-    
-    // Allow localhost and production URL
-    const allowedOrigins = ['http://localhost:5173', 'http://localhost:3000', 'https://songmetrix.com.br'];
-    if(allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+// Middleware para o webhook do Asaas (precisa do corpo raw ANTES do express.json)
+app.post('/webhook/asaas', express.raw({ type: 'application/json' }), async (req, res, next) => {
+  console.log('[Webhook Asaas] Recebido - Headers:', req.headers);
+  // Acessar corpo raw como Buffer: req.body
+  const rawBody = req.body;
+  
+  // ---- VERIFICAÇÃO DO TOKEN ----
+  const webhookSecret = process.env.ASAAS_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    console.error('[Webhook Asaas] Erro: ASAAS_WEBHOOK_SECRET não definido no .env');
+    return res.status(500).send('Webhook secret configuration error');
+  }
+
+  let event;
+  try {
+    // 1. Obter o token do header (busca case-insensitive)
+    const receivedToken = req.headers['asaas-access-token'] || req.headers['Asaas-Access-Token']; 
+    if (!receivedToken) {
+       console.warn("[Webhook Asaas] Header de autenticação 'asaas-access-token' ausente.");
+       return res.status(400).send('Missing authentication token header');
     }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range', 'Content-Type', 'Content-Disposition']
-}));
 
-// Configurar body parser
+    // 2. Obter o token esperado do .env
+    const expectedToken = process.env.ASAAS_WEBHOOK_SECRET;
+
+    // 3. Comparar os tokens
+    if (receivedToken !== expectedToken) {
+        console.warn(`[Webhook Asaas] Token inválido! Recebido (parcial): ${receivedToken.substring(0, 3)}..., Esperado (parcial): ${expectedToken ? expectedToken.substring(0, 3) + '...' : 'N/A'}`);
+        return res.status(401).send('Invalid token'); // Usar 401 Unauthorized
+    }
+
+    console.log('[Webhook Asaas] Token verificado com sucesso!');
+
+    // Se o token for válido, parseamos o corpo:
+    event = JSON.parse(rawBody.toString());
+    console.log('[Webhook Asaas] Evento parseado:', JSON.stringify(event, null, 2));
+
+  } catch (err) {
+    console.error('[Webhook Asaas] Erro ao verificar token ou parsear corpo:', err.message);
+    // Usamos req.body aqui pois rawBody pode não estar definido se o erro ocorreu antes
+    console.error('[Webhook Asaas] Corpo recebido (se disponível):', req.body ? req.body.toString() : 'N/A'); 
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  // ---- PASSO 4: Processar o Evento ----
+  // Responder OK imediatamente para o Asaas é CRUCIAL
+  res.status(200).send('OK');
+
+  // Processar o evento em background (depois de responder OK)
+  try {
+    const eventType = event.event; 
+    const paymentData = event.payment; 
+
+    console.log(`[Webhook Asaas] Processando evento: ${eventType}`);
+
+    // Focar em eventos de pagamento bem-sucedido
+    if (eventType === 'PAYMENT_RECEIVED' || eventType === 'PAYMENT_CONFIRMED') {
+      const asaasCustomerId = paymentData?.customer;
+      const paymentId = paymentData?.id;
+
+      if (!asaasCustomerId) {
+        console.warn('[Webhook Asaas] Evento de pagamento sem ID do cliente Asaas:', paymentId);
+        return; // Não podemos prosseguir sem o ID do cliente
+      }
+
+      console.log(`[Webhook Asaas] Pagamento ${paymentId} recebido/confirmado para cliente Asaas ${asaasCustomerId}`);
+
+      // Encontrar usuário Supabase pelo asaas_customer_id
+      const { data: user, error: findError } = await supabaseAdmin
+        .from('users')
+        .select('id, status') 
+        .eq('asaas_customer_id', asaasCustomerId)
+        .single();
+
+      if (findError) {
+        console.error(`[Webhook Asaas] Erro ao buscar usuário com asaas_customer_id ${asaasCustomerId}:`, findError);
+        return;
+      }
+
+      if (!user) {
+        console.warn(`[Webhook Asaas] Usuário Supabase não encontrado para cliente Asaas ${asaasCustomerId}`);
+        return;
+      }
+
+      const supabaseUserId = user.id;
+      console.log(`[Webhook Asaas] Usuário Supabase encontrado: ${supabaseUserId}, Status atual: ${user.status}`);
+
+      // Atualizar status se necessário
+      if (user.status !== 'ATIVO') {
+        console.log(`[Webhook Asaas] Atualizando status para ATIVO para usuário ${supabaseUserId}`);
+        
+        // 1. Atualizar tabela 'users'
+        const { error: updateDbError } = await supabaseAdmin
+          .from('users')
+          .update({ status: 'ATIVO', updated_at: new Date().toISOString() })
+          .eq('id', supabaseUserId);
+
+        if (updateDbError) {
+          console.error(`[Webhook Asaas] Erro ao atualizar status na tabela users para ${supabaseUserId}:`, updateDbError);
+        }
+
+        // 2. Atualizar metadados do Supabase Auth
+        const { data: authUser, error: authGetError } = await supabaseAdmin.auth.admin.getUserById(supabaseUserId);
+        if (authGetError) {
+           console.error(`[Webhook Asaas] Erro ao buscar usuário Auth ${supabaseUserId} para atualizar metadados:`, authGetError);
+        } else if (authUser) {
+            const currentMetadata = authUser.user.user_metadata || {};
+            const { error: updateMetaError } = await supabaseAdmin.auth.admin.updateUserById(
+              supabaseUserId,
+              { user_metadata: { ...currentMetadata, status: 'ATIVO' } }
+            );
+            if (updateMetaError) {
+               console.error(`[Webhook Asaas] Erro ao atualizar metadados Auth para ${supabaseUserId}:`, updateMetaError);
+            }
+        } 
+        console.log(`[Webhook Asaas] Status ATIVO aplicado para usuário ${supabaseUserId}`);
+      } else {
+        console.log(`[Webhook Asaas] Usuário ${supabaseUserId} já está ATIVO.`);
+      }
+
+    } else {
+      console.log(`[Webhook Asaas] Evento ${eventType} não relevante para ativação.`);
+    }
+
+  } catch (processingError) {
+    console.error('[Webhook Asaas] Erro ao processar evento após resposta OK:', processingError);
+  }
+});
+// FIM DO HANDLER NO TOPO
+
+// Configurar body parser DEPOIS do handler do webhook
 app.use(express.json());
 
-// Log de todas as requisições
+// Log de todas as requisições (pode vir depois do express.json)
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.url}`);
   console.log('Headers:', req.headers);

@@ -81,8 +81,8 @@ export const findOrCreateCustomer = async (userData) => {
         name: metadata.full_name || userData.email, 
         email: userData.email,
         cpfCnpj: metadata.cpfCnpj || '19540550000121', // CNPJ de teste
-        // Adicionar mobilePhone, tentando pegar do whatsapp ou usar teste
-        mobilePhone: metadata.whatsapp?.replace(/\D/g, '') || '27999999999' // Exemplo: 27999999999 
+        // Adicionar mobilePhone, tentando pegar do whatsapp ou usar teste Asaas
+        mobilePhone: metadata.whatsapp?.replace(/\D/g, '') || '11999999999' // Usar número de teste celular Asaas
     };
 
     console.log('Payload para criar cliente Asaas:', customerPayload);
