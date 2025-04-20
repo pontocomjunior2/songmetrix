@@ -66,8 +66,8 @@ export const authenticateBasicUser = async (req, res, next) => {
       const now = new Date();
       const trialEnd = new Date(userTrialEndsAt);
       if (trialEnd < now) {
-        console.log(`[AuthMiddleware] Trial expired for user ${user.id}. Treating as EXPIRED_TRIAL.`);
-        userPlanId = 'EXPIRED_TRIAL';
+        console.log(`[AuthMiddleware] Trial expired for user ${user.id}. Setting planId to FREE.`);
+        userPlanId = 'FREE';
       }
     }
 
@@ -82,8 +82,8 @@ export const authenticateBasicUser = async (req, res, next) => {
     console.log(`[AuthMiddleware] User: ${user.id}, Determined Plan ID (trimmed, uppercase): '${userPlanId}'`);
 
     // --- DECISÃO DE ACESSO --- 
-    const allowedPlans = ['ADMIN', 'ATIVO', 'TRIAL']; // Mantido em maiúsculas
-    const expiredTrialAllowedRoutes = [
+    const allowedPlans = ['ADMIN', 'ATIVO', 'TRIAL']; // FREE não tem acesso total
+    const freePlanAllowedGetRoutes = [
         '/api/dashboard',
         '/api/ranking',
         '/api/radios/status',
@@ -112,19 +112,19 @@ export const authenticateBasicUser = async (req, res, next) => {
         console.log(`[AuthMiddleware] Condition FAILED: Plan '${userPlanId}' IS NOT in allowedPlans.`);
     }
 
-    // 2. Se for trial expirado... (comparar com 'EXPIRED_TRIAL')
-    if (userPlanId === 'EXPIRED_TRIAL') {
-        const isAllowedRoute = expiredTrialAllowedRoutes.some(route => req.originalUrl.startsWith(route));
+    // 2. Se for FREE (antigo trial expirado)... 
+    if (userPlanId === 'FREE') {
+        const isAllowedRoute = freePlanAllowedGetRoutes.some(route => req.originalUrl.startsWith(route));
 
         if (isAllowedRoute && req.method === 'GET') {
-            console.log(`[AuthMiddleware] Access GRANTED (read-only) for expired trial user ${user.id} to ${req.originalUrl}`);
-            console.log(`[${new Date().toISOString()}] [AuthMiddleware] Chamando next() para rota permitida (Trial Expirado GET).`);
+            console.log(`[AuthMiddleware] Access GRANTED (read-only) for FREE plan user ${user.id} to ${req.originalUrl}`);
+            console.log(`[${new Date().toISOString()}] [AuthMiddleware] Chamando next() para rota permitida (FREE Plan GET).`);
             return next();
         } else {
-            console.log(`[AuthMiddleware] Access DENIED for expired trial user ${user.id} to ${req.method} ${req.originalUrl} (Route/Method not allowed)`);
+            console.log(`[AuthMiddleware] Access DENIED for FREE plan user ${user.id} to ${req.method} ${req.originalUrl} (Route/Method not allowed)`);
             return res.status(403).json({ 
-                error: 'Assinatura expirada', 
-                code: 'TRIAL_EXPIRED',
+                error: 'Acesso limitado para plano Free',
+                code: 'FREE_PLAN_LIMIT',
                 planId: userPlanId
             });
         }
@@ -254,10 +254,10 @@ export const authenticateUser = async (req, res, next) => {
       correctStatus = 'TRIAL';
       console.log('Usuário está no período TRIAL, mantendo status');
     }
-    // Em todos os outros casos, o usuário é INATIVO
+    // Em todos os outros casos, o usuário é FREE (não mais INATIVO automaticamente)
     else {
-      correctStatus = 'INATIVO';
-      console.log('Definindo status como INATIVO por padrão');
+      correctStatus = 'FREE'; // Mudar default para FREE
+      console.log('Definindo status como FREE por padrão'); // Mensagem ajustada
     }
 
     console.log('Status correto determinado:', correctStatus);
@@ -350,6 +350,7 @@ export const authenticateUser = async (req, res, next) => {
     // Verificar se o usuário tem permissão para acessar
 
     // --- Verificações de Status para OUTRAS rotas ---
+    /* // REMOVER ESTE BLOCO - Usuário não se torna INATIVO automaticamente
     if (correctStatus === 'INATIVO') {
       console.log('Acesso negado para usuário inativo:', user.id);
       return res.status(403).json({ 
@@ -358,7 +359,9 @@ export const authenticateUser = async (req, res, next) => {
         redirect: '/plans'
       });
     }
+    */
 
+    /* // REMOVER ESTE BLOCO - A expiração para FREE é tratada em authenticateBasicUser
     // Verificar se o usuário está no período trial e se ainda é válido
     if (correctStatus === 'TRIAL' && !isNewUser) {
       console.log('Período trial expirado para o usuário', user.id);
@@ -392,9 +395,9 @@ export const authenticateUser = async (req, res, next) => {
         return res.status(500).json({ error: 'Erro interno do servidor' });
       }
     }
+    */
     
     // Adicionar informações ao objeto user para a solicitação
-    // (Movido para DENTRO da condição de permissão específica ou AQUI se outras rotas precisarem)
     req.user = {
       id: user.id, 
       email: user.email,
