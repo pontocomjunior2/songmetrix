@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { IMaskInput } from 'react-imask';
 import { useAuth } from '../../hooks/useAuth';
 import { EmailInput, PasswordInput } from '../Common/Input';
 import { PrimaryButton } from '../Common/Button';
 import { ErrorAlert } from '../Common/Alert';
 import Loading from '../Common/Loading';
 import { supabase } from '../../lib/supabase-client';
-import Input from '../Common/Input';
 
 export default function Register() {
   const [email, setEmail] = useState('');
@@ -50,6 +50,7 @@ export default function Register() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
 
     if (password !== confirmPassword) {
       return setError('As senhas não coincidem');
@@ -65,58 +66,35 @@ export default function Register() {
       return setError('O Nome Completo é obrigatório');
     }
 
-    if (!whatsapp.trim()) {
-      return setError('O WhatsApp é obrigatório');
+    const whatsappDigits = whatsapp.replace(/\D/g, '');
+    if (!whatsappDigits || (whatsappDigits.length !== 10 && whatsappDigits.length !== 11)) {
+        return setError('O WhatsApp deve conter 10 ou 11 números (incluindo DDD)');
     }
 
     try {
-      setError('');
       setLoading(true);
-      
       console.log('Iniciando processo de cadastro de usuário...');
       console.log('Email:', email);
+      console.log('WhatsApp (dígitos):', whatsappDigits);
       console.log('URL de redirecionamento configurada para:', 'https://songmetrix.com.br/login');
 
-      // Usar a função signUp do AuthContext
-      const { error: signUpError, message } = await signUp(email, password, fullName, whatsapp);
+      const { error: signUpError, message } = await signUp(email, password, fullName, whatsappDigits);
 
       if (signUpError) throw signUpError;
 
       console.log('Cadastro realizado com sucesso no Supabase. Usuário receberá email com link para https://songmetrix.com.br/login');
 
-      // O registro na tabela users já foi criado pelo AuthContext.signUp
-      
-      try {
-        // Atualizar os metadados do usuário explicitamente para garantir o status TRIAL
-        const { error: updateError } = await supabase.auth.updateUser({
-          data: { status: 'TRIAL' }
-        });
-        
-        if (updateError) {
-          console.error('Erro ao atualizar metadados do usuário:', updateError);
-          // Continuar mesmo com erro, pois o usuário foi criado
-        }
-      } catch (metadataError) {
-        console.error('Erro ao atualizar metadados:', metadataError);
-        // Continuar mesmo com erro
-      }
-      
-      // Não fazer logout após o cadastro, isso interrompe o fluxo
-      // O usuário será direcionado para confirmar o email e então fazer login
-
-      // Personalizar a mensagem se fornecida
       const customMessage = message || 'Por favor, verifique seu email para confirmar seu cadastro. Após a confirmação, você terá acesso ao sistema com 14 dias gratuitos para testar todas as funcionalidades. Se não encontrar o email, verifique sua caixa de spam.';
       
-      setLoading(false); // Desativar o loading antes de navegar
+      setLoading(false);
       
       console.log('Redirecionando para pending-approval após cadastro bem-sucedido');
       
-      // Navigate to pending-approval imediatamente
       navigate('/pending-approval', { 
         state: { 
           message: customMessage 
         },
-        replace: true  // Isso garante que o usuário não possa voltar para a página anterior
+        replace: true
       });
       
       console.log(`Redirecionamento executado para: /pending-approval`);
@@ -125,7 +103,6 @@ export default function Register() {
       console.error('Erro no registro:', error);
       let errorMessage = 'Falha ao criar conta. Por favor, tente novamente.';
 
-      // Tratamento de erros mais detalhado
       if (typeof error === 'object' && error !== null) {
         if (error.message) {
           if (error.message.includes('already registered') || error.message.includes('already exists')) {
@@ -140,14 +117,11 @@ export default function Register() {
             errorMessage = 'Erro de conexão. Verifique sua internet e tente novamente.';
           }
           
-          // Caso a mensagem de erro ainda não tenha sido personalizada, usar a mensagem original
           if (errorMessage === 'Falha ao criar conta. Por favor, tente novamente.') {
-            // Mostrar os primeiros 100 caracteres da mensagem de erro para fins de diagnóstico
             console.log('Mensagem de erro original:', error.message.substring(0, 100));
           }
         }
         
-        // Verificar se há um código de erro
         if (error.code) {
           console.log('Código de erro:', error.code);
         }
@@ -157,6 +131,28 @@ export default function Register() {
       setLoading(false);
     }
   };
+
+  const whatsappIcon = (
+      <svg
+        className="h-5 w-5 text-gray-400 group-focus-within:text-[#1a3891] transition-colors"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 20 20"
+        fill="currentColor"
+      >
+        <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
+      </svg>
+  );
+
+  const inputBaseClasses = `
+    appearance-none block w-full px-3 py-2
+    border rounded-lg
+    placeholder-gray-400 dark:placeholder-gray-500
+    focus:outline-none focus:ring-2 focus:ring-[#1a3891] focus:border-[#1a3891]
+    transition-colors
+    sm:text-sm
+    border-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-white
+  `;
+  const inputIconClass = 'pl-10';
 
   return (
     <div className="min-h-screen flex">
@@ -199,14 +195,12 @@ export default function Register() {
             <ErrorAlert message={error} onClose={() => setError('')} />
           )}
 
+          {loading && <Loading />}
+
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div>
-              <Input
-                id="fullName"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Nome Completo"
-                icon={
+              <div className="relative rounded-lg group">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <svg
                     className="h-5 w-5 text-gray-400 group-focus-within:text-[#1a3891] transition-colors"
                     xmlns="http://www.w3.org/2000/svg"
@@ -215,33 +209,40 @@ export default function Register() {
                   >
                     <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
                   </svg>
-                }
-                required
-              />
+                </div>
+                <input
+                  id="fullName"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Nome Completo"
+                  className={`${inputBaseClasses} ${inputIconClass}`}
+                  required
+                />
+              </div>
             </div>
             <div>
-              <Input
-                id="whatsapp"
-                value={whatsapp}
-                onChange={(e) => setWhatsapp(e.target.value)}
-                placeholder="WhatsApp"
-                icon={
-                  <svg
-                    className="h-5 w-5 text-gray-400 group-focus-within:text-[#1a3891] transition-colors"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
-                  </svg>
-                }
-                required
-              />
+              <div className="relative rounded-lg group">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  {whatsappIcon}
+                </div>
+                <IMaskInput
+                  mask={[
+                    { mask: '(00) 0000-0000' },
+                    { mask: '(00) 00000-0000' }
+                  ]}
+                  radix="."
+                  unmask={true}
+                  onAccept={(value) => setWhatsapp(value as string)}
+                  id="whatsapp"
+                  placeholder="WhatsApp (DDD + Número)"
+                  required
+                  className={`${inputBaseClasses} ${inputIconClass}`}
+                />
+              </div>
             </div>
             <div>
               <EmailInput
                 id="email"
-                value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email"
                 required
@@ -250,7 +251,6 @@ export default function Register() {
             <div>
               <PasswordInput
                 id="password"
-                value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Senha"
                 required
@@ -258,42 +258,27 @@ export default function Register() {
             </div>
             <div>
               <PasswordInput
-                id="confirm-password"
-                value={confirmPassword}
+                id="confirmPassword"
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Confirmar Senha"
                 required
               />
             </div>
 
-            <div>
-              <PrimaryButton
-                type="submit"
-                fullWidth
-                isLoading={loading}
-              >
-                Criar conta
+            <div className="pt-2">
+              <PrimaryButton type="submit" disabled={loading} className="w-full">
+                {loading ? <Loading size="small" /> : 'Criar Conta'}
               </PrimaryButton>
             </div>
+            <div className="text-sm text-center">
+              <p className="text-gray-600">
+                Já tem uma conta?{' '}
+                <Link to="/login" className="font-medium text-[#1a3891] hover:text-[#122463]">
+                  Entrar
+                </Link>
+              </p>
+            </div>
           </form>
-
-          <div className="text-sm text-center">
-            <Link
-              to="/login"
-              className="font-medium text-[#1a3891] hover:text-[#162d7a]"
-            >
-              Já tem uma conta? Faça login
-            </Link>
-          </div>
-
-          <div className="mt-4 text-xs text-gray-500">
-            <p>Requisitos da senha:</p>
-            <ul className="list-disc list-inside">
-              <li>Mínimo de 6 caracteres</li>
-              <li>Pelo menos 1 caractere especial (!@#$%^&*)</li>
-              <li>Pelo menos 1 letra maiúscula</li>
-            </ul>
-          </div>
         </div>
       </div>
     </div>

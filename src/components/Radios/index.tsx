@@ -20,7 +20,7 @@ import { Button } from '../ui/button';
 export default function Radios() {
   const { currentUser, planId } = useAuth();
   const { refresh } = useFavoriteRadios(); // Adicionando a chamada ao hook
-  const isAdmin = planId === 'admin';
+  const isAdmin = planId === 'ADMIN';
   const [radios, setRadios] = useState<RadioStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -248,24 +248,13 @@ export default function Radios() {
                     </TableCell>
                     {isAdmin && (
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div
-                            className={`w-2.5 h-2.5 rounded-full ${
-                              radio.status === 'ONLINE'
-                                ? 'bg-green-500'
-                                : 'bg-red-500'
-                            }`}
-                          />
-                          <span
-                            className={`text-sm font-medium ${
-                              radio.status === 'ONLINE'
-                                ? 'text-green-600 dark:text-green-400'
-                                : 'text-red-600 dark:text-red-400'
-                            }`}
-                          >
-                            {radio.status}
-                          </span>
-                        </div>
+                        <span className={`px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${ 
+                          radio.status === 'ONLINE' 
+                            ? 'bg-green-100 text-green-800 dark:bg-green-800/30 dark:text-green-400' 
+                            : 'bg-red-100 text-red-800 dark:bg-red-800/30 dark:text-red-400'
+                          }`}>
+                          {radio.status}
+                        </span>
                       </TableCell>
                     )}
                     {isAdmin && (

@@ -57,7 +57,76 @@ router.get('/', authenticateBasicUser, async (req, res) => {
   if (req.user?.planId !== 'ADMIN') {
     return res.status(403).json({ error: 'Acesso negado' });
   }
-  // ... (lógica existente)
+
+  try {
+    console.log('[GET /api/users] Admin access granted. Fetching user list...');
+
+    // 1. Listar usuários da Autenticação (inclui last_sign_in_at)
+    // ATENÇÃO: listUsers pagina. Buscar a primeira página (até 100) por simplicidade.
+    // Para mais de 100 usuários, implementar paginação ou buscar em loop.
+    const { data: authUsersData, error: authError } = await supabaseAdmin.auth.admin.listUsers({ 
+        page: 1, 
+        perPage: 100 // Ajuste conforme necessário
+    });
+
+    if (authError) {
+      console.error('[GET /api/users] Erro ao listar usuários da autenticação:', authError);
+      throw authError;
+    }
+
+    const authUsers = authUsersData?.users || [];
+    const totalAuthUsers = authUsersData?.total; // Obter o total se disponível na API
+    if (totalAuthUsers && totalAuthUsers > authUsers.length) {
+        console.warn(`[GET /api/users] Atenção: Existem ${totalAuthUsers} usuários, mas apenas ${authUsers.length} foram buscados (limite da paginação). Implementar busca completa se necessário.`);
+    }
+
+    console.log(`[GET /api/users] ${authUsers.length} usuários encontrados na autenticação.`);
+    if(authUsers.length === 0) {
+        return res.json([]); // Retorna array vazio se não houver usuários
+    }
+
+    // Extrair IDs dos usuários de autenticação
+    const userIds = authUsers.map(u => u.id);
+
+    // 2. Buscar dados complementares da tabela public.users
+    const { data: dbUsersData, error: dbError } = await supabaseAdmin
+      .from('users')
+      .select('id, full_name, whatsapp, plan_id, updated_at') // Selecionar campos necessários
+      .in('id', userIds);
+
+    if (dbError) {
+      console.error('[GET /api/users] Erro ao buscar dados da tabela users:', dbError);
+      // Considerar retornar dados parciais ou erro
+      throw dbError;
+    }
+
+    // Mapear dados do DB para fácil acesso
+    const dbUsersMap = new Map(dbUsersData.map(dbUser => [dbUser.id, dbUser]));
+
+    // 3. Combinar os dados
+    const combinedUsers = authUsers.map(authUser => {
+      const dbUser = dbUsersMap.get(authUser.id);
+      return {
+        id: authUser.id,
+        email: authUser.email,
+        created_at: authUser.created_at, // Data de criação da conta Auth
+        last_sign_in_at: authUser.last_sign_in_at, // Último login da Auth
+        full_name: dbUser?.full_name || null, // Da tabela users
+        whatsapp: dbUser?.whatsapp || null, // Da tabela users
+        plan_id: dbUser?.plan_id || 'INDEFINIDO', // Da tabela users (ou um padrão)
+        updated_at: dbUser?.updated_at || null // Da tabela users (para cálculo de expiração)
+        // Adicionar user_metadata se necessário, mas pode ser grande
+        // user_metadata: authUser.user_metadata 
+      };
+    });
+
+    console.log(`[GET /api/users] Retornando ${combinedUsers.length} usuários combinados.`);
+    res.json(combinedUsers);
+
+  } catch (error) {
+    console.error('[GET /api/users] Erro inesperado:', error);
+    res.status(500).json({ error: 'Erro interno do servidor ao buscar usuários', details: error.message });
+  }
 });
 
 // Rota para atualizar status/plano do usuário (ADMIN)
@@ -143,11 +212,51 @@ router.post('/remove', authenticateBasicUser, async (req, res) => {
 
 // Rota para atualizar last_sign_in (ADMIN)
 router.post('/update-last-sign-in', authenticateBasicUser, async (req, res) => {
-  // Verificar se o requisitante é ADMIN
+  console.log(`[${new Date().toISOString()}] [ROUTE ENTRY users.js] POST /update-last-sign-in`);
+  // Verificar se o requisitante é ADMIN (já feito pelo middleware, mas boa prática confirmar)
   if (req.user?.planId !== 'ADMIN') {
-    return res.status(403).json({ error: 'Acesso negado' });
+    console.log(`[${new Date().toISOString()}] [users.js] Erro: Rota /update-last-sign-in acessada por não-admin? PlanId: ${req.user?.planId}`);
+    return res.status(403).json({ error: 'Acesso negado. Apenas administradores.' });
   }
-  // ... (lógica existente)
+
+  console.log(`[${new Date().toISOString()}] [users.js /update-last-sign-in] Admin OK. Chamando RPC update_users_last_sign_in...`);
+
+  try {
+    // Executar a atualização do campo last_sign_in_at chamando a função RPC
+    const { data, error: updateError } = await supabaseAdmin.rpc('update_users_last_sign_in');
+
+    if (updateError) {
+      console.error(`[${new Date().toISOString()}] [users.js /update-last-sign-in] Erro ao executar RPC:`, updateError);
+      return res.status(500).json({ error: `Erro ao atualizar dados via RPC: ${updateError.message}` });
+    }
+
+    console.log(`[${new Date().toISOString()}] [users.js /update-last-sign-in] RPC executado com sucesso. Resposta RPC:`, data);
+
+    // Opcional: Re-contar no backend para confirmar (embora a função RPC possa já retornar isso)
+    // Contar quantos registros foram atualizados na tabela public.users
+    const { count, error: countError } = await supabaseAdmin
+      .from('users')
+      .select('id', { count: 'exact', head: true })
+      .not('last_sign_in_at', 'is', null);
+
+    if (countError) {
+      console.error(`[${new Date().toISOString()}] [users.js /update-last-sign-in] Erro ao re-contar registros atualizados:`, countError);
+      // Ainda retornar sucesso, pois a atualização principal (RPC) funcionou
+      return res.status(200).json({ success: true, message: 'Dados de último acesso atualizados com sucesso (contagem falhou)' });
+    }
+
+    console.log(`[${new Date().toISOString()}] [users.js /update-last-sign-in] Re-contagem indica ${count} usuários com último login.`);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Dados de último acesso atualizados com sucesso',
+      count: count
+    });
+
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] [users.js /update-last-sign-in] Erro GERAL no catch block:`, error);
+    return res.status(500).json({ error: `Erro interno do servidor: ${error.message}` });
+  }
 });
 
 export default router; 

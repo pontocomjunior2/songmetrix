@@ -4,7 +4,7 @@ import Loading from '../Common/Loading';
 import { ErrorAlert } from '../Common/Alert';
 import UserAvatar from '../Common/UserAvatar';
 import { toast as reactToast } from 'react-toastify'; // Importing toast for notifications
-import { Trash2, Clock, RefreshCw, MailCheck, Database, Calendar, Search } from 'lucide-react';
+import { Trash2, Clock, RefreshCw, MailCheck, Database, Calendar, Search, Timer } from 'lucide-react';
 import { supabase } from '../../lib/supabase-client';
 import { FaEdit } from 'react-icons/fa';
 import { Tooltip } from 'react-tooltip';
@@ -131,7 +131,10 @@ export default function UserList() {
       
       console.log('Usuários carregados:', usersData);
       
+      console.log('[loadUsers] Usuários recebidos da API:', usersData); // Log antes de processar
+      
       const processedUsers = usersData.map(user => ({ ...user, plan_id: user.plan_id || null }));
+      console.log('[loadUsers] Usuários processados para o estado:', processedUsers.find(u => u.email === 'pontocomjunior10@gmail.com')); // Log específico
       setUsers(processedUsers);
     } catch (error: any) {
       console.error('Erro ao carregar usuários:', error);
@@ -425,40 +428,57 @@ export default function UserList() {
   };
 
   const handleUpdateLastSignIn = async () => {
+    console.log('[handleUpdateLastSignIn] Função iniciada.'); // Log 1: Início da função
     try {
       setUpdatingLastLogin(true);
       setError(null);
       
+      console.log('[handleUpdateLastSignIn] Obtendo sessão...'); // Log 2: Antes de getSession
       // Obter a sessão
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      
+      // Logar resultado de getSession
+      if (sessionError) {
+        console.error('[handleUpdateLastSignIn] Erro ao obter sessão:', sessionError);
+        throw new Error(`Erro ao obter sessão: ${sessionError.message}`);
+      }
+      if (!sessionData.session) {
+        console.error('[handleUpdateLastSignIn] Sessão não encontrada nos dados.');
         throw new Error('Sessão não encontrada');
       }
-      
+      console.log('[handleUpdateLastSignIn] Sessão obtida:', sessionData.session.access_token.substring(0, 10) + '...'); // Log 3: Sessão OK (log truncado)
+
+      console.log('[handleUpdateLastSignIn] Chamando API /api/users/update-last-sign-in...'); // Log 4: Antes do fetch
       // Chamar API para atualizar dados de último acesso
       const response = await fetch('/api/users/update-last-sign-in', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.data.session.access_token}`
+          'Authorization': `Bearer ${sessionData.session.access_token}`
         }
       });
       
+      console.log('[handleUpdateLastSignIn] Resposta da API recebida, status:', response.status); // Log 5: Após fetch
       const result = await response.json();
+      console.log('[handleUpdateLastSignIn] Corpo da resposta da API:', result); // Log 6: Corpo da resposta
       
       if (!response.ok) {
+        console.error('[handleUpdateLastSignIn] API retornou erro:', result);
         throw new Error(result.error || 'Erro ao atualizar dados de último acesso');
       }
       
+      console.log('[handleUpdateLastSignIn] API OK. Exibindo toast...'); // Log 7: API OK
       reactToast.success(`Dados de último acesso atualizados com sucesso. ${result.count || 'Vários'} usuários atualizados.`);
       
       // Recarregar a lista para exibir os novos dados
+      console.log('[handleUpdateLastSignIn] Chamando loadUsers...'); // Log 8 Ajustado
       await loadUsers();
     } catch (error: any) {
-      console.error('Erro ao atualizar dados de último acesso:', error);
+      console.error('[handleUpdateLastSignIn] Erro no bloco catch:', error); // Log 10: Erro geral
       setError(`Erro ao atualizar dados de último acesso: ${error.message}`);
       reactToast.error(`Erro ao atualizar dados de último acesso: ${error.message}`);
     } finally {
+      console.log('[handleUpdateLastSignIn] Bloco finally executado.'); // Log 11: Finally
       setUpdatingLastLogin(false);
     }
   };
@@ -533,6 +553,20 @@ export default function UserList() {
             >
               <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
             </button>
+            {/* Botão para Atualizar Último Login */}
+            <button
+              onClick={handleUpdateLastSignIn}
+              className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm transition-colors ${ 
+                updatingLastLogin
+                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed dark:bg-gray-700 dark:text-gray-400'
+                  : 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300 dark:hover:bg-blue-800'
+              }`}
+              disabled={updatingLastLogin}
+              title="Atualizar Último Login de Todos"
+            >
+              <Timer className={`w-4 h-4 ${updatingLastLogin ? 'animate-pulse' : ''}`} />
+              <span className="hidden sm:inline">Atualizar Logins</span>
+            </button>
             
             {currentUser?.role === 'ADMIN' && (
               <>
@@ -554,29 +588,6 @@ export default function UserList() {
                     <>
                       <MailCheck className="w-5 h-5" />
                       <span>Sincronizar com SendPulse</span>
-                    </>
-                  )}
-                </button>
-                
-                <button
-                  onClick={handleUpdateLastSignIn}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                    updatingLastLogin 
-                      ? 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900 dark:text-orange-300 dark:hover:bg-orange-800' 
-                      : 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300 dark:hover:bg-green-800'
-                  }`}
-                  disabled={updatingLastLogin}
-                  title="Atualizar dados de último acesso para todos os usuários"
-                >
-                  {updatingLastLogin ? (
-                    <>
-                      <Calendar className="w-5 h-5 animate-pulse" />
-                      <span>Atualizando...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Calendar className="w-5 h-5" />
-                      <span>Atualizar Último Acesso</span>
                     </>
                   )}
                 </button>

@@ -126,7 +126,7 @@ router.get('/', authenticateBasicUser, async (req, res) => {
           genre,
           name,
           (date + INTERVAL '3 hours')::date as adjusted_date
-        FROM music_log
+          FROM music_log
         WHERE (date + INTERVAL '3 hours')::date BETWEEN $1 AND $2
           ${filterClause} -- Cláusula de filtro dinâmica
       ),
@@ -135,8 +135,8 @@ router.get('/', authenticateBasicUser, async (req, res) => {
           artist,
           COUNT(*) as executions
         FROM adjusted_dates
-        GROUP BY artist
-        ORDER BY executions DESC
+          GROUP BY artist
+          ORDER BY executions DESC
         LIMIT $${limitArtistIndex}
       ),
       genre_counts AS (
@@ -151,13 +151,13 @@ router.get('/', authenticateBasicUser, async (req, res) => {
         LIMIT $${limitGenreIndex}
       ),
       song_counts AS (
-        SELECT
+          SELECT 
           song_title,
           artist,
-          COUNT(*) as executions
+            COUNT(*) as executions
         FROM adjusted_dates
         GROUP BY song_title, artist
-        ORDER BY executions DESC
+          ORDER BY executions DESC
         LIMIT $${limitSongIndex}
       ),
       radio_status AS (
