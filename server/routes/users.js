@@ -210,6 +210,76 @@ router.post('/remove', authenticateBasicUser, async (req, res) => {
   }
 });
 
+// Rota para obter o planId do usuário logado
+router.get('/my-plan', authenticateBasicUser, async (req, res) => {
+  console.log(`[${new Date().toISOString()}] [ROUTE ENTRY users.js] GET /my-plan for user: ${req.user?.id}`);
+  if (!req.user?.id) {
+    console.error(`[${new Date().toISOString()}] [users.js /my-plan] Erro: ID do usuário não encontrado na requisição após autenticação.`);
+    return res.status(401).json({ error: 'Usuário não autenticado.' });
+  }
+
+  const userId = req.user.id;
+
+  try {
+    // 1. Buscar metadados do Auth (tentativa primária, pode ter delay)
+    let authPlanId = null;
+    try {
+        const { data: userData, error: getUserError } = await supabaseAdmin.auth.admin.getUserById(userId);
+        if (getUserError) throw getUserError; // Propaga o erro para o catch principal
+        if (!userData?.user) throw new Error('Usuário não encontrado na API de Auth Admin.');
+        authPlanId = userData.user.user_metadata?.plan_id;
+        console.log(`[${new Date().toISOString()}] [users.js /my-plan] PlanId from Auth metadata: ${authPlanId}`);
+    } catch (authError) {
+        // Logar erro do Auth mas continuar para verificar DB
+        console.error(`[${new Date().toISOString()}] [users.js /my-plan] Erro ao buscar metadados Auth para usuário ${userId} (continuando para DB check):`, authError);
+        // Não retorna erro ainda, vamos tentar o DB
+    }
+
+    // 2. Buscar plan_id diretamente da tabela 'users' (fonte potencialmente mais rápida)
+    let dbPlanId = null;
+    try {
+        const { data: dbUserData, error: dbUserError } = await supabaseAdmin
+          .from('users')
+          .select('plan_id')
+          .eq('id', userId)
+          .maybeSingle(); // Usar maybeSingle para não dar erro se usuário não existir na tabela ainda
+
+        if (dbUserError) throw dbUserError; // Propaga erro do DB
+
+        if (dbUserData) {
+            dbPlanId = dbUserData.plan_id;
+            console.log(`[${new Date().toISOString()}] [users.js /my-plan] PlanId from DB table 'users': ${dbPlanId}`);
+        } else {
+            console.warn(`[${new Date().toISOString()}] [users.js /my-plan] Usuário ${userId} não encontrado na tabela 'users'.`);
+            // Se não existe na tabela users, authPlanId (se existir) é a melhor aposta
+        }
+    } catch (dbError) {
+        console.error(`[${new Date().toISOString()}] [users.js /my-plan] Erro ao buscar plan_id da tabela 'users' para ${userId}:`, dbError);
+        // Se o DB falhar, ainda podemos ter o authPlanId
+        if (authPlanId === null) {
+           // Se ambos falharam, retorna erro
+           return res.status(500).json({ error: 'Erro ao buscar dados do plano do usuário.', details: dbError.message });
+        }
+    }
+
+    // 3. Determinar o planId final (priorizar DB)
+    const finalPlanId = dbPlanId || authPlanId || 'trial'; // Prioriza DB, depois Auth, depois fallback
+
+    // Log de comparação se forem diferentes
+    if (dbPlanId !== null && authPlanId !== null && dbPlanId !== authPlanId) {
+        console.warn(`[${new Date().toISOString()}] [users.js /my-plan] Discrepância encontrada para usuário ${userId}: DB plan='${dbPlanId}', Auth plan='${authPlanId}'. Usando DB.`);
+    }
+
+    console.log(`[${new Date().toISOString()}] [users.js /my-plan] Retornando finalPlanId '${finalPlanId}' para usuário ${userId}.`);
+    res.status(200).json({ planId: finalPlanId });
+
+  } catch (error) {
+    // Catch para erros não tratados nas tentativas (ex: erro fatal no getUserById que foi propagado)
+    console.error(`[${new Date().toISOString()}] [users.js /my-plan] Erro GERAL ao buscar plano para usuário ${userId}:`, error);
+    res.status(500).json({ error: 'Erro interno do servidor ao buscar plano.', details: error.message });
+  }
+});
+
 // Rota para atualizar last_sign_in (ADMIN)
 router.post('/update-last-sign-in', authenticateBasicUser, async (req, res) => {
   console.log(`[${new Date().toISOString()}] [ROUTE ENTRY users.js] POST /update-last-sign-in`);

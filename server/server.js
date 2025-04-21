@@ -27,7 +27,6 @@ import cors from 'cors';
 import { format } from 'date-fns';
 import { authenticateBasicUser, authenticateUser } from './auth-middleware.js';
 import { createClient } from '@supabase/supabase-js';
-import { createCheckoutSession, handleWebhook } from './stripe.js';
 import { reportQuery } from './report-query.js';
 import registerRoutes from './index.js';
 import { pool } from './db.js'; // <-- Importar pool de db.js
@@ -444,7 +443,8 @@ const safeQuery = async (query, params = []) => {
 
 
 // Rotas públicas
-app.post('/api/create-checkout-session', createCheckoutSession);
+// Remove Stripe route
+// app.post('/api/create-checkout-session', createCheckoutSession);
 
 // Rota para verificar status do usuário
 app.post('/api/users/status', authenticateBasicUser, async (req, res) => {

@@ -236,6 +236,11 @@ const Dashboard = () => {
     fetchDashboardData(true);
   }, [currentUser, hasPreferences, fetchDashboardData]); // Adiciona fetchDashboardData como dependência
 
+  // ---> ADICIONAR useEffect AQUI <--- 
+  useEffect(() => {
+    console.log(`[Dashboard useEffect] planId changed to: ${planId}`);
+  }, [planId]); // Executa sempre que planId mudar
+
   if (!preferencesChecked) {
       console.log("[Dashboard] Waiting for preferences check...")
       return <div className="flex items-center justify-center h-64"><Loading /></div>;
@@ -447,7 +452,7 @@ const Dashboard = () => {
   return (
     <div className="dashboard-container p-4 md:p-6 space-y-6">
        {/* Alerta para Trial Ativo - Corrigir case */}
-       {planId === 'trial' && daysRemaining !== null && daysRemaining > 0 && (
+       {planId === 'TRIAL' && daysRemaining !== null && daysRemaining > 0 && (
          <Alert variant="default" className="border-blue-500 bg-blue-50 dark:bg-blue-900/30">
            <AlertCircle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
            <AlertTitle className="text-blue-800 dark:text-blue-300">Período de Teste Ativo</AlertTitle>
