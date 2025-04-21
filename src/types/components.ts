@@ -27,6 +27,9 @@ export interface RadioStatus {
   status: 'ONLINE' | 'OFFLINE';
   lastUpdate: string;
   isFavorite: boolean;
+  city?: string;
+  state?: string;
+  formato?: string;
 }
 
 export interface Radio {
