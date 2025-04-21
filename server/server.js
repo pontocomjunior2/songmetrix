@@ -84,6 +84,81 @@ const { syncUserWithSendPulse, syncUserWithBrevo } = sendPulseService;
 
 const app = express();
 
+// CONFIGURAÇÃO CORS - ADICIONAR AQUI
+const allowedOrigins = [
+    'http://localhost:5173', // Seu frontend Vite
+    // Adicione outras origens permitidas se necessário (ex: URL de produção)
+    // 'https://app.songmetrix.com.br' // URL antiga
+    'https://songmetrix.com.br' // URL de produção CORRETA
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Permitir requisições sem origin (ex: Postman, curl) OU se a origem está na lista
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.warn(`CORS: Origem não permitida bloqueada: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS', // Métodos permitidos
+  allowedHeaders: ['Content-Type', 'Authorization'], // Cabeçalhos permitidos
+  credentials: true // Se você precisar enviar cookies/auth headers
+};
+
+app.use(cors(corsOptions));
+// FIM DA CONFIGURAÇÃO CORS
+
+// ROTA TEMPORÁRIA - AGORA PARA RESETAR plan_id PARA TRIAL
+app.post('/api/temp/reset-plan-trial', authenticateBasicUser, async (req, res) => { // Mudar nome da rota
+    // Segurança básica: verificar se é admin ou usuário específico (ajuste conforme necessário)
+    if (req.user?.planId !== 'ADMIN' && req.user?.id !== '81e7583f-bc8e-40e1-a916-019834dae7a8') {
+         return res.status(403).json({ error: 'Acesso negado' });
+    }
+
+    const targetUserId = '81e7583f-bc8e-40e1-a916-019834dae7a8'; // ID do seu usuário de teste
+    const newPlanId = 'TRIAL'; // Definir para TRIAL
+
+    console.log(`[TEMP] Tentando definir plan_id='${newPlanId}' nos metadados do usuário ${targetUserId}`);
+
+    try {
+        // 1. Obter metadados atuais
+        const { data: userData, error: getError } = await supabaseAdmin.auth.admin.getUserById(targetUserId);
+        if (getError) throw getError;
+        if (!userData || !userData.user) return res.status(404).json({ error: 'Usuário alvo não encontrado.' });
+
+        const currentMetadata = userData.user.user_metadata || {};
+        console.log('[TEMP] Metadados atuais:', currentMetadata);
+
+        // 2. Verificar se já está TRIAL
+        if (currentMetadata.plan_id === newPlanId) {
+            console.log(`[TEMP] plan_id já é '${newPlanId}'. Nenhuma alteração necessária.`);
+             return res.status(200).json({ success: true, message: `plan_id já é '${newPlanId}'.` });
+        }
+
+        // 3. Criar novos metadados com plan_id atualizado
+        const newMetadata = { ...currentMetadata, plan_id: newPlanId };
+        console.log('[TEMP] Novos metadados a serem salvos:', newMetadata);
+
+        // 4. Atualizar metadados
+        const { data: updateData, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+            targetUserId,
+            { user_metadata: newMetadata }
+        );
+
+        if (updateError) throw updateError;
+
+        console.log(`[TEMP] Metadados atualizados com sucesso para ${targetUserId}. plan_id definido para '${newPlanId}'.`);
+        res.status(200).json({ success: true, message: `plan_id definido para '${newPlanId}' com sucesso.`, metadata: updateData.user?.user_metadata });
+
+    } catch (error) {
+        console.error(`[TEMP] Erro ao definir plan_id='${newPlanId}' para ${targetUserId}:`, error);
+        res.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
+    }
+});
+// FIM DA ROTA TEMPORÁRIA
+
 // MANTER O HANDLER COMPLETO DO WEBHOOK NO TOPO
 console.log('[DEBUG] Definindo rota POST /webhook/asaas (HANDLER COMPLETO NO TOPO)'); 
 
@@ -188,7 +263,7 @@ app.post('/webhook/asaas', express.raw({ type: 'application/json' }), async (req
 
         if (updateDbError) {
           console.error(`[Webhook Asaas] Erro ao atualizar status na tabela users para ${supabaseUserId}:`, updateDbError);
-        } else {
+    } else {
           console.log(`[Webhook Asaas] Resultado da atualização na tabela users:`, JSON.stringify(updateDbData)); 
         }
         */
@@ -210,6 +285,19 @@ app.post('/webhook/asaas', express.raw({ type: 'application/json' }), async (req
                console.error(`[Webhook Asaas] Erro ao atualizar metadados Auth para ${supabaseUserId}:`, updateMetaError);
             } else {
               console.log(`[Webhook Asaas] Resultado da atualização de metadados Auth:`, JSON.stringify(updateMetaData));
+              
+              // ADICIONAR: Atualizar plan_id também na tabela public.users
+              const { error: updateDbPlanError } = await supabaseAdmin
+                .from('users')
+                .update({ plan_id: 'ATIVO', updated_at: new Date().toISOString() }) // Atualizar plan_id aqui
+                .eq('id', supabaseUserId);
+
+              if (updateDbPlanError) {
+                  console.error(`Erro ao atualizar plan_id na tabela users para ${supabaseUserId}:`, updateDbPlanError);
+              } else {
+                  console.log(`plan_id ATIVO aplicado na tabela users para usuário ${supabaseUserId}.`);
+              }
+              // FIM DA ADIÇÃO
             }
         } 
         console.log(`[Webhook Asaas] plan_id ATIVO aplicado nos metadados para usuário ${supabaseUserId}`);
@@ -229,7 +317,7 @@ app.post('/webhook/asaas', express.raw({ type: 'application/json' }), async (req
 });
 // FIM DO HANDLER NO TOPO
 
-// Configurar body parser DEPOIS do handler do webhook
+// Configurar body parser DEPOIS do handler do webhook e DEPOIS do CORS
 app.use(express.json());
 
 // Log de todas as requisições (pode vir depois do express.json)
@@ -260,7 +348,7 @@ if (!fs.existsSync(uploadsDir)) {
   }
 }
 
-// Registrar as rotas
+// Registrar as rotas DEPOIS do CORS e body-parser
 registerRoutes(app);
 
 // Proxy para redirecionar requisições de email para o servidor de email
@@ -1195,7 +1283,7 @@ app.post('/api/simulate-trial-end', authenticateBasicUser, async (req, res) => {
   // A verificação de ADMIN deve ser feita DENTRO da rota agora
   if (req.user?.planId !== 'ADMIN') {
       return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
-  }
+    }
   try {
     const { userId } = req.body;
 
@@ -1487,7 +1575,7 @@ app.post('/api/users/update-status', authenticateBasicUser, async (req, res) => 
     const { error: updateDbError } = await supabaseAdmin
       .from('users')
       .update({
-        status: newStatus,
+        plan_id: newStatus, // Atualizar plan_id
         updated_at: new Date().toISOString()
       })
       .eq('id', userId);
@@ -1499,16 +1587,16 @@ app.post('/api/users/update-status', authenticateBasicUser, async (req, res) => 
 
     console.log(`Status do usuário ${userId} atualizado no banco de dados para ${newStatus}`);
 
-    // Certificar-se de que os metadados incluem o status
-    // Criamos um novo objeto com todos os metadados existentes + o novo status
+    // Certificar-se de que os metadados incluem o plan_id correto
+    // Criamos um novo objeto com todos os metadados existentes + o novo plan_id
     const currentMetadata = userData.user.user_metadata || {};
-    const updatedMetadata = { ...currentMetadata, status: newStatus };
+    const updatedMetadata = { ...currentMetadata, plan_id: newStatus }; // Usar plan_id aqui
     console.log(`Novos metadados para o usuário ${userId}:`, updatedMetadata);
 
     // Utilizar a API direta do Supabase para atualização completa dos metadados
     const { data: updateMetaData, error: updateMetaError } = await supabaseAdmin.auth.admin.updateUserById(
       userId,
-      { user_metadata: updatedMetadata }
+      { user_metadata: updatedMetadata } // Enviar metadados com plan_id atualizado
     );
     
     if (updateMetaError) {

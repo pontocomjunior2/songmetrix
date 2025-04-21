@@ -70,7 +70,6 @@ function App() {
       <Route path="/payment/success" element={<PaymentSuccess />} />
       <Route path="/payment/canceled" element={<PaymentCanceled />} />
       <Route path="/first-access" element={<FirstAccessRoute />} />
-      <Route path="/plans" element={<Plans />} />
       
       {/* Rotas Protegidas aninhadas */}
       <Route path="/" element={<RootRoute />}>
@@ -83,6 +82,7 @@ function App() {
         <Route path="radios" element={<Radios />} />
         <Route path="relatorios" element={<Relatorios />} />
         <Route path="spotify" element={<Spotify />} />
+        <Route path="plans" element={<Plans />} />
         {/* Rotas Admin */}
         <Route path="admin/users" element={<AdminRoute><UserList /></AdminRoute>} />
         <Route path="admin/abbreviations" element={<AdminRoute><RadioAbbreviations /></AdminRoute>} />

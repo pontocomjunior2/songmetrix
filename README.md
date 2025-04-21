@@ -16,6 +16,7 @@
 - [Contato](#contato)
 - [Gerenciamento de Metadados de Usuário](#gerenciamento-de-metadados-de-usuário)
 - [Scripts de Utilitário para Metadados](#scripts-de-utilitário-para-metadados)
+- [Tarefas Agendadas (Scheduled Tasks)](#tarefas-agendadas-scheduled-tasks)
 
 ## Visão Geral
 
@@ -202,6 +203,26 @@ Para habilitar este botão, você precisa:
 Este script preencherá o campo `last_sign_in_at` para todos os usuários existentes com base no valor do campo `updated_at` como uma estimativa do último acesso.
 
 Essa alteração permite rastrear o último acesso de cada usuário e exibir essa informação na tela de administração.
+
+## Tarefas Agendadas (Scheduled Tasks)
+
+### Expiração de Período Trial (`expire-trials`)
+
+Existe uma Supabase Edge Function localizada em `supabase/functions/expire-trials/index.ts` responsável por verificar usuários que estão no período de trial (`plan_id = 'TRIAL'`) e alterar seu plano para `FREE` após o período de 14 dias expirar. A função atualiza o `plan_id` tanto na tabela `public.users` quanto nos metadados de autenticação do Supabase (`user_metadata`).
+
+**Agendamento:**
+
+Esta função é executada automaticamente usando a extensão `pg_cron` do PostgreSQL, agendada diretamente via SQL Editor no dashboard do Supabase.
+
+*   **Frequência:** A cada 12 horas.
+*   **Horários (UTC):** 03:00 e 15:00.
+*   **Horários (São Paulo, GMT-3):** 00:00 (meia-noite) e 12:00 (meio-dia).
+*   **Comando de Agendamento (`pg_cron`):** O job `expire-trials-12hourly` executa um `SELECT net.http_post(...)` para invocar a URL da Edge Function. (Veja o SQL Editor ou a tabela `cron.job` para detalhes).
+
+**Configuração:**
+
+*   A função requer as variáveis de ambiente `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` configuradas nos Secrets da Edge Function no dashboard.
+*   A extensão `pg_cron` precisa estar habilitada no banco de dados.
 
 ---
 

@@ -107,19 +107,18 @@ export const authenticateBasicUser = async (req, res, next) => {
       console.log(`[AuthMiddleware] Condition MET: Plan '${userPlanId}' IS in allowedPlans.`);
       console.log(`[AuthMiddleware] Access GRANTED for user ${user.id} with plan ${userPlanId} to ${req.originalUrl}`);
       console.log(`[${new Date().toISOString()}] [AuthMiddleware] Chamando next() para rota permitida (ADMIN/ATIVO/TRIAL).`);
-      return next();
+      next();
     } else {
-        console.log(`[AuthMiddleware] Condition FAILED: Plan '${userPlanId}' IS NOT in allowedPlans.`);
-    }
-
-    // 2. Se for FREE (antigo trial expirado)... 
-    if (userPlanId === 'FREE') {
+      console.log(`[AuthMiddleware] Condition FAILED: Plan '${userPlanId}' IS NOT in allowedPlans.`);
+      // Se o plano não for permitido diretamente, VERIFICAMOS SE É FREE E ROTA PERMITIDA
+      // 2. Se for FREE (antigo trial expirado)... 
+      if (userPlanId === 'FREE') {
         const isAllowedRoute = freePlanAllowedGetRoutes.some(route => req.originalUrl.startsWith(route));
 
         if (isAllowedRoute && req.method === 'GET') {
             console.log(`[AuthMiddleware] Access GRANTED (read-only) for FREE plan user ${user.id} to ${req.originalUrl}`);
             console.log(`[${new Date().toISOString()}] [AuthMiddleware] Chamando next() para rota permitida (FREE Plan GET).`);
-            return next();
+            next();
         } else {
             console.log(`[AuthMiddleware] Access DENIED for FREE plan user ${user.id} to ${req.method} ${req.originalUrl} (Route/Method not allowed)`);
             return res.status(403).json({ 
@@ -128,16 +127,17 @@ export const authenticateBasicUser = async (req, res, next) => {
                 planId: userPlanId
             });
         }
+      } else {
+        // 3. Negar acesso para outros casos... (INATIVO já está em maiúsculas)
+        console.log(`[AuthMiddleware] Falling through to final DENY for plan: ${userPlanId}`);
+        console.log(`[AuthMiddleware] Access DENIED for user ${user.id} with invalid/inactive plan ${userPlanId} to ${req.originalUrl}`);
+        return res.status(403).json({ 
+            error: 'Acesso negado. Plano inválido ou inativo.', 
+            code: 'ACCESS_DENIED',
+            planId: userPlanId 
+        });
+      }
     }
-    
-    // 3. Negar acesso para outros casos... (INATIVO já está em maiúsculas)
-    console.log(`[AuthMiddleware] Falling through to final DENY for plan: ${userPlanId}`);
-    console.log(`[AuthMiddleware] Access DENIED for user ${user.id} with invalid/inactive plan ${userPlanId} to ${req.originalUrl}`);
-    return res.status(403).json({ 
-        error: 'Acesso negado. Plano inválido ou inativo.', 
-        code: 'ACCESS_DENIED',
-        planId: userPlanId 
-    });
 
   } catch (error) {
     console.error('[AuthMiddleware] Unexpected error:', error);
@@ -181,23 +181,29 @@ export const authenticateUser = async (req, res, next) => {
     if (dbError && dbError.code === 'PGRST116') {
       console.log('Usuário não encontrado no banco. Criando registro:', user.id);
       
-      // Verificar se é um usuário novo para determinar o status
+      // Ler plan_id dos metadados, se houver
+      const initialPlanIdFromMeta = user.user_metadata?.plan_id;
+      
+      // Verificar se é um usuário novo para determinar o plan_id inicial
       const createdAt = new Date(user.created_at);
       const now = new Date();
       const diffTime = Math.abs(now.getTime() - createdAt.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       const isNewUser = diffDays <= 14;
-      const initialStatus = isNewUser ? 'TRIAL' : 'INATIVO';
       
-      console.log(`Criando usuário com status ${initialStatus} (dias desde criação: ${diffDays})`);
+      // Definir plan_id inicial: Usar dos metadados se existir, senão TRIAL para novos, FREE para antigos
+      let initialPlanId = initialPlanIdFromMeta?.trim().toUpperCase() || 
+                          (isNewUser ? 'TRIAL' : 'FREE');
       
-      // Criar usuário no banco de dados
+      console.log(`Criando usuário com plan_id ${initialPlanId} (dias desde criação: ${diffDays}, meta: ${initialPlanIdFromMeta || 'N/A'})`);
+      
+      // Criar usuário no banco de dados com plan_id
       const { error: insertError } = await supabaseAdmin
         .from('users')
         .insert({
           id: user.id,
           email: user.email,
-          status: initialStatus,
+          plan_id: initialPlanId, // Inserir plan_id
           created_at: user.created_at || new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
@@ -231,50 +237,50 @@ export const authenticateUser = async (req, res, next) => {
     
     console.log(`User ${user.id} created ${diffDays} days ago. Is new user: ${isNewUser}`);
 
-    // Determinar o status correto
-    let correctStatus;
+    // Determinar o status correto -> AGORA plan_id correto
+    let correctPlanId; // Renomear variável
 
     // Se o usuário é novo, deve ser TRIAL (prioridade máxima)
     if (isNewUser) {
-      correctStatus = 'TRIAL';
-      console.log('Usuário novo, definindo status como TRIAL');
+      correctPlanId = 'TRIAL';
+      console.log('Usuário novo, definindo plan_id como TRIAL');
     } 
     // Se o usuário é ADMIN em qualquer lugar, manter como ADMIN
     else if (userStatus === 'ADMIN' || dbUser?.status === 'ADMIN') {
-      correctStatus = 'ADMIN';
-      console.log('Usuário é ADMIN, mantendo status');
+      correctPlanId = 'ADMIN';
+      console.log('Usuário é ADMIN, mantendo plan_id');
     }
     // Se o usuário é ATIVO em qualquer lugar, manter como ATIVO
     else if (userStatus === 'ATIVO' || dbUser?.status === 'ATIVO') {
-      correctStatus = 'ATIVO';
-      console.log('Usuário é ATIVO, mantendo status');
+      correctPlanId = 'ATIVO';
+      console.log('Usuário é ATIVO, mantendo plan_id');
     }
     // Se o usuário tem status TRIAL em qualquer lugar e ainda está no período de trial, manter como TRIAL
     else if ((userStatus === 'TRIAL' || dbUser?.status === 'TRIAL') && isNewUser) {
-      correctStatus = 'TRIAL';
-      console.log('Usuário está no período TRIAL, mantendo status');
+      correctPlanId = 'TRIAL';
+      console.log('Usuário está no período TRIAL, mantendo plan_id');
     }
     // Em todos os outros casos, o usuário é FREE (não mais INATIVO automaticamente)
     else {
-      correctStatus = 'FREE'; // Mudar default para FREE
-      console.log('Definindo status como FREE por padrão'); // Mensagem ajustada
+      correctPlanId = 'FREE'; // Mudar default para FREE
+      console.log('Definindo plan_id como FREE por padrão'); // Mensagem ajustada
     }
 
-    console.log('Status correto determinado:', correctStatus);
+    console.log('Plan ID correto determinado:', correctPlanId);
 
-    // Verificar se há inconsistência entre o status determinado e os registros
-    const needsMetadataUpdate = correctStatus !== userStatus;
-    const needsDatabaseUpdate = dbUser && correctStatus !== dbUser.status;
+    // Verificar se há inconsistência entre o plan_id determinado e os registros
+    const needsMetadataUpdate = correctPlanId !== userStatus;
+    const needsDatabaseUpdate = dbUser && correctPlanId !== dbUser.status;
 
-    // Se o status correto for diferente do que está nos metadados, atualizar
+    // Se o plan_id correto for diferente do que está nos metadados, atualizar
     if (needsMetadataUpdate) {
-      console.log('Atualizando status nos metadados de', userStatus, 'para', correctStatus);
+      console.log('Atualizando plan_id nos metadados de', userStatus, 'para', correctPlanId);
       
       try {
         // Atualizar metadados
         const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
           user.id,
-          { user_metadata: { ...user.user_metadata, status: correctStatus } }
+          { user_metadata: { ...user.user_metadata, status: correctPlanId } }
         );
 
         if (updateError) {
@@ -287,16 +293,16 @@ export const authenticateUser = async (req, res, next) => {
       }
     }
 
-    // Se o status correto for diferente do que está no banco, atualizar
+    // Se o plan_id correto for diferente do que está no banco, atualizar
     if (needsDatabaseUpdate) {
-      console.log('Atualizando status no banco de dados de', dbUser.status, 'para', correctStatus);
+      console.log('Atualizando plan_id no banco de dados de', dbUser.status, 'para', correctPlanId);
       
       try {
         // Atualizar na tabela users
         const { error: updateDbError } = await supabaseAdmin
           .from('users')
           .update({
-            status: correctStatus,
+            status: correctPlanId,
             updated_at: new Date().toISOString()
           })
           .eq('id', user.id);
@@ -318,7 +324,7 @@ export const authenticateUser = async (req, res, next) => {
           .from('auth_sync_queue')
           .insert({
             user_id: user.id,
-            status: correctStatus,
+            status: correctPlanId,
             processed: false,
             created_at: new Date().toISOString()
           })
@@ -334,14 +340,14 @@ export const authenticateUser = async (req, res, next) => {
       }
     }
 
-    // Permitir acesso à rota de criação de cobrança independentemente do status
+    // Permitir acesso à rota de criação de cobrança independentemente do status/plano
     if (req.originalUrl === '/api/payments/create-charge' && req.method === 'POST') {
-        console.log(`[AuthMiddleware] Access GRANTED for specific route ${req.method} ${req.originalUrl} for user ${user.id} with status ${correctStatus}`);
+        console.log(`[AuthMiddleware] Access GRANTED for specific route ${req.method} ${req.originalUrl} for user ${user.id} with determined plan ${correctPlanId}`);
         // Adicionar informações ao objeto user ANTES de chamar next()
         req.user = {
           id: user.id, 
           email: user.email,
-          planId: correctStatus, // Usar o status determinado
+          planId: correctPlanId, // Usar o planId determinado
           user_metadata: user.user_metadata // Incluir metadata original
         };
         return next(); 
@@ -401,14 +407,14 @@ export const authenticateUser = async (req, res, next) => {
     req.user = {
       id: user.id, 
       email: user.email,
-      planId: correctStatus, // Usar o status determinado
+      planId: correctPlanId, // Usar o plan_id determinado
       user_metadata: user.user_metadata, // Incluir metadata original
       dbStatus: dbUser?.status, // Incluir status do DB se necessário para outras rotas
-      correctStatus: correctStatus // Incluir status final se necessário para outras rotas
+      correctPlanId: correctPlanId // Incluir plan_id final se necessário para outras rotas
     };
     
     // Adicionar dias restantes do trial se aplicável
-    if (correctStatus === 'TRIAL') {
+    if (correctPlanId === 'TRIAL') {
       req.user.trial_days_remaining = Math.max(0, 14 - diffDays);
     }
     

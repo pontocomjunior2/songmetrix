@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { PrimaryButton } from '../Common/Button';
+import { IMaskInput } from 'react-imask';
+import { PrimaryButton, SecondaryButton } from '../Common/Button';
 import { CheckCircle, Star, Award, Zap, Clock, Shield, BarChart2, Users, Loader2, AlertCircle, Info } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase-client';
@@ -8,6 +9,18 @@ import { toast } from 'react-toastify';
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { cn } from '../../lib/utils';
 import { Badge } from "../ui/badge";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from "../ui/dialog";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import { ErrorAlert } from '../Common/Alert';
 
 // --- Interfaces --- (Definir tipos)
 
@@ -32,6 +45,7 @@ interface PlanCardProps {
   plan: Plan;
   onSubscribe: (planId: string) => void;
   isLoading: boolean;
+  isSelected: boolean;
 }
 
 // Estrutura dos planos
@@ -82,7 +96,7 @@ const planDetails: Plan[] = [
 ];
 
 // Componente Card do Plano (Recomendado criar em arquivo separado depois)
-const PlanCard: React.FC<PlanCardProps> = ({ plan, onSubscribe, isLoading }) => {
+const PlanCard: React.FC<PlanCardProps> = ({ plan, onSubscribe, isLoading, isSelected }) => {
   const formatPrice = (price: number): string => {
     return price.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
@@ -138,7 +152,7 @@ const PlanCard: React.FC<PlanCardProps> = ({ plan, onSubscribe, isLoading }) => 
           disabled={isLoading}
           className="w-full"
         >
-          {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : plan.buttonText}
+          {isLoading && isSelected ? <Loader2 className="h-5 w-5 animate-spin" /> : plan.buttonText}
         </PrimaryButton>
       </div>
     </div>
@@ -151,19 +165,46 @@ export default function Plans() {
   const { currentUser } = useAuth();
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  
+  const [isCpfModalOpen, setIsCpfModalOpen] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [cpfCnpj, setCpfCnpj] = useState('');
+  const [cpfCnpjLoading, setCpfCnpjLoading] = useState(false);
+  const [cpfCnpjError, setCpfCnpjError] = useState<string | null>(null);
+
   const message = location.state?.message || '';
   const isTrialExpired = location.state?.trialExpired || false;
 
-  const handleSubscription = useCallback(async (planId: string) => {
+  const handleSubscription = useCallback((planId: string) => {
     setError(null);
+    setCpfCnpjError(null);
+    setCpfCnpj('');
+
     if (!currentUser) {
         toast.error("Você precisa estar logado para assinar um plano.");
         navigate('/login');
         return;
     }
     
-    setLoadingPlan(planId);
+    setSelectedPlanId(planId);
+    setIsCpfModalOpen(true);
+
+  }, [currentUser, navigate]);
+
+  const handleConfirmAndPay = useCallback(async () => {
+    setCpfCnpjError(null);
+
+    const cleanedCpfCnpj = cpfCnpj.replace(/\D/g, '');
+    if (cleanedCpfCnpj.length !== 11 && cleanedCpfCnpj.length !== 14) {
+        setCpfCnpjError('CPF/CNPJ inválido. Verifique os números.');
+        return;
+    }
+
+    if (!selectedPlanId) {
+        setCpfCnpjError('Erro interno: Plano não selecionado.');
+        return;
+    }
+
+    setCpfCnpjLoading(true);
     try {
         const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
         if (sessionError || !sessionData.session) {
@@ -171,37 +212,60 @@ export default function Plans() {
         }
         const token = sessionData.session.access_token;
 
-        const response = await fetch('/api/payments/create-charge', {
+        console.log(`Atualizando cliente com CPF/CNPJ: ${cleanedCpfCnpj}`);
+        const updateResponse = await fetch('/api/customers/update-asaas', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ cpfCnpj: cleanedCpfCnpj })
+        });
+
+        const updateResult = await updateResponse.json();
+        if (!updateResponse.ok) {
+            throw new Error(updateResult.error || 'Falha ao atualizar dados do cliente no gateway.');
+        }
+        console.log('Dados do cliente atualizados no Asaas com sucesso.');
+
+        console.log(`Criando cobrança para o plano: ${selectedPlanId}`);
+        const chargeResponse = await fetch('/api/payments/create-charge', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify({ planId })
+            body: JSON.stringify({ planId: selectedPlanId })
         });
 
-        const result = await response.json();
-
-        if (!response.ok) {
-            throw new Error(result.error || 'Falha ao iniciar o processo de pagamento.');
+        const chargeResult = await chargeResponse.json();
+        if (!chargeResponse.ok) {
+            throw new Error(chargeResult.error || 'Falha ao criar cobrança no gateway de pagamento.');
         }
 
-        if (result.invoiceUrl) {
-            // Redirecionar para a página de pagamento do Asaas
-            window.location.href = result.invoiceUrl;
+        if (chargeResult.invoiceUrl) {
+            toast.success('Redirecionando para pagamento...');
+            window.location.href = chargeResult.invoiceUrl;
         } else {
-            throw new Error('URL de pagamento não recebida.');
+            throw new Error('URL de pagamento não recebida do gateway.');
         }
 
     } catch (err: any) {
-        console.error("Erro ao criar cobrança:", err);
+        console.error("Erro no processo de confirmação e pagamento:", err);
         const errorMessage = err.message || 'Ocorreu um erro inesperado.';
-        setError(errorMessage);
+        setCpfCnpjError(errorMessage);
         toast.error(`Erro: ${errorMessage}`);
-    } finally {
-        setLoadingPlan(null);
+        setCpfCnpjLoading(false);
     }
-  }, [currentUser, navigate]);
+
+  }, [cpfCnpj, selectedPlanId, currentUser, navigate]);
+
+  const inputClasses = cn(
+      "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+      cpfCnpjError ? "border-red-500 focus-visible:ring-red-500" : ""
+  );
+
+  const isLoading = !!loadingPlan || cpfCnpjLoading;
 
   const features = [
     {
@@ -255,63 +319,149 @@ export default function Plans() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
-      {/* Header */}
-      <div className="max-w-7xl mx-auto text-center">
-        <div className="mb-16">
-          <h1 className="text-4xl md:text-5xl font-extrabold text-gray-900 dark:text-white mb-6">
-             Escolha o Plano Ideal para sua Rádio
-          </h1>
-          <p className="mt-3 max-w-3xl mx-auto text-xl text-gray-600 dark:text-gray-300">
-            Potencialize sua programação com insights e dados precisos.
-          </p>
-          
-          {/* Mensagens de Estado (Trial Expirado, Erro, etc.) */}
-          {isTrialExpired && (
-             <Alert variant="destructive" className="mt-8 max-w-3xl mx-auto text-left">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Período de Teste Expirado</AlertTitle>
-                <AlertDescription>
-                   Seu período de avaliação gratuito terminou. Escolha um plano abaixo para continuar utilizando todos os recursos do Songmetrix.
-                </AlertDescription>
-             </Alert>
-          )}
+    <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900">
+      <main className="flex-grow container mx-auto px-4 py-12 sm:px-6 lg:px-8">
+
+        {(message || isTrialExpired) && (
+           <Alert variant={isTrialExpired ? "destructive" : "default"} className="mb-8">
+             <AlertCircle className="h-4 w-4" />
+              <AlertTitle>{isTrialExpired ? "Período de Testes Expirado" : "Informação"}</AlertTitle>
+              <AlertDescription>
+                {message || "Seu período de testes gratuito de 14 dias terminou. Para continuar usando o Songmetrix, por favor, escolha um plano abaixo."}
+              </AlertDescription>
+            </Alert>
+        )}
+
+         <div className="text-center mb-12">
+            <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 dark:text-white sm:text-5xl md:text-6xl">
+              Planos Flexíveis para sua Necessidade
+            </h1>
+            <p className="mt-3 max-w-md mx-auto text-base text-gray-500 dark:text-gray-400 sm:text-lg md:mt-5 md:text-xl md:max-w-3xl">
+              Escolha o plano que melhor se adapta ao tamanho e às ambições da sua estação.
+            </p>
+          </div>
+
           {error && (
-             <Alert variant="destructive" className="mt-8 max-w-3xl mx-auto text-left">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Erro ao Processar</AlertTitle>
-                <AlertDescription>{error}</AlertDescription>
-             </Alert>
+            <ErrorAlert message={`Erro ao carregar planos ou processar pagamento: ${error}`} onClose={() => setError(null)} />
           )}
-           {message && (
-             <Alert variant="default" className="mt-8 max-w-3xl mx-auto text-left border-blue-500 bg-blue-50 dark:bg-blue-900/30">
-                 <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                 <AlertTitle className="text-blue-800 dark:text-blue-300">Informação</AlertTitle>
-                 <AlertDescription className="text-blue-700 dark:text-blue-400">{message}</AlertDescription>
-             </Alert>
-          )}
-        </div>
-      </div>
 
-      {/* Nova Seção de Planos */}
-      <div className="max-w-7xl mx-auto mb-20">
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-3 items-stretch">
-          {planDetails.map((plan) => (
-            <PlanCard 
-              key={plan.id} 
-              plan={plan} 
-              onSubscribe={handleSubscription} 
-              isLoading={loadingPlan === plan.id}
-            />
-          ))}
-        </div>
-      </div>
+          <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
+            {planDetails.map((plan) => (
+              <PlanCard
+                key={plan.id}
+                plan={plan}
+                onSubscribe={handleSubscription}
+                isLoading={isLoading}
+                isSelected={isLoading && selectedPlanId === plan.id}
+              />
+            ))}
+          </div>
 
-      {/* Manter Recursos, Depoimentos, FAQs se desejar */}
-      {/* ... Seção Recursos ... */}
-      {/* ... Seção Depoimentos ... */}
-      {/* ... Seção FAQs ... */} 
-      
+          <section className="mt-20">
+            <div className="text-center mb-12">
+                <h2 className="text-3xl font-extrabold text-gray-900 dark:text-white">Funcionalidades Poderosas</h2>
+                <p className="mt-4 text-lg text-gray-600 dark:text-gray-300">Tudo que você precisa para otimizar sua programação.</p>
+            </div>
+            <div className="grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-4">
+                {features.map((feature, index) => (
+                  <div key={index} className="text-center p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md">
+                    <div className="flex items-center justify-center h-16 w-16 rounded-full bg-indigo-100 dark:bg-indigo-900 mx-auto mb-4">
+                        {feature.icon}
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">{feature.title}</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{feature.description}</p>
+                  </div>
+                ))}
+            </div>
+          </section>
+
+          <section className="mt-20 bg-gradient-to-r from-indigo-500 to-purple-600 py-16 rounded-lg shadow-xl">
+            <div className="text-center mb-12 px-4">
+                <h2 className="text-3xl font-extrabold text-white">O que Nossos Clientes Dizem</h2>
+                <p className="mt-4 text-lg text-indigo-100">Resultados reais de rádios como a sua.</p>
+            </div>
+            <div className="grid grid-cols-1 gap-12 md:grid-cols-2 max-w-4xl mx-auto px-4">
+                {testimonials.map((testimonial, index) => (
+                  <blockquote key={index} className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
+                    <p className="text-base text-gray-700 dark:text-gray-300 italic mb-4">"{testimonial.quote}"</p>
+                    <footer className="text-sm">
+                        <p className="font-semibold text-gray-900 dark:text-white">{testimonial.author}</p>
+                        <p className="text-gray-500 dark:text-gray-400">{testimonial.role}</p>
+                    </footer>
+                  </blockquote>
+                ))}
+            </div>
+          </section>
+
+          <section className="mt-20 max-w-3xl mx-auto">
+            <div className="text-center mb-12">
+                <h2 className="text-3xl font-extrabold text-gray-900 dark:text-white">Perguntas Frequentes</h2>
+            </div>
+            <div className="space-y-6">
+                {faqs.map((faq, index) => (
+                  <details key={index} className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm group">
+                    <summary className="flex justify-between items-center cursor-pointer font-medium text-gray-900 dark:text-white">
+                        {faq.question}
+                        <svg className="h-5 w-5 text-gray-500 group-open:rotate-180 transition-transform" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </summary>
+                    <p className="mt-3 text-sm text-gray-600 dark:text-gray-400">{faq.answer}</p>
+                  </details>
+                ))}
+            </div>
+          </section>
+
+      </main>
+
+      <Dialog open={isCpfModalOpen} onOpenChange={setIsCpfModalOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Confirmação de Dados</DialogTitle>
+            <DialogDescription>
+              Para prosseguir com a assinatura, precisamos do seu CPF ou CNPJ.
+              Estes dados são necessários para a emissão da cobrança.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            {cpfCnpjError && (
+              <ErrorAlert message={cpfCnpjError} onClose={() => setCpfCnpjError(null)} />
+            )}
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="cpfCnpj" className="text-right">
+                CPF/CNPJ
+              </Label>
+              <IMaskInput
+                mask={[
+                  { mask: '000.000.000-00' },
+                  { mask: '00.000.000/0000-00' }
+                ]}
+                radix="."
+                unmask={true}
+                onAccept={(value) => setCpfCnpj(value as string)}
+                id="cpfCnpj"
+                placeholder="Seu CPF ou CNPJ"
+                required
+                className={cn(inputClasses, "col-span-3")}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+             <SecondaryButton 
+                 type="button" 
+                 disabled={cpfCnpjLoading}
+                 onClick={() => setIsCpfModalOpen(false)}
+             >
+                    Cancelar
+                </SecondaryButton>
+            <PrimaryButton onClick={handleConfirmAndPay} disabled={cpfCnpjLoading}>
+              {cpfCnpjLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Confirmar e Continuar
+            </PrimaryButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }

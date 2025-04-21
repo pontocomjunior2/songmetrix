@@ -134,16 +134,26 @@ router.get('/status', authenticateBasicUser, async (req, res) => {
       const recentActivityQuery = `
         SELECT DISTINCT name
         FROM music_log
-        WHERE (date + time::time) > NOW() - INTERVAL '10 minutes'
+        WHERE ((date + time::time) AT TIME ZONE 'America/Sao_Paulo') > (NOW() - INTERVAL '10 minutes')
       `;
-      const recentActivity = await safeQuery(recentActivityQuery);
+      // TESTE: Executar diretamente sem safeQuery
+      console.log('[Radios Router /status] TESTE: Executando recentActivityQuery diretamente...');
+      let recentActivity;
+      try {
+          recentActivity = await pool.query(recentActivityQuery);
+          console.log('[Radios Router /status] TESTE: Execução direta retornou:', recentActivity?.rowCount, 'linhas');
+      } catch (directQueryError) {
+          console.error('[Radios Router /status] TESTE: Erro na execução direta:', directQueryError);
+          recentActivity = { rows: [] }; // Simular retorno vazio em caso de erro no teste
+      }
+      // FIM TESTE
+      // const recentActivity = await safeQuery(recentActivityQuery); // Linha original comentada
       const onlineRadiosSet = new Set(recentActivity.rows.map(row => row.name));
       console.log(`[Radios Router /status] Rádios com atividade recente (online): ${onlineRadiosSet.size}`);
 
       // Processar os resultados, definindo isFavorite com base no favoriteRadiosSet FINAL
       const radiosStatus = result.rows.map(row => {
         const isOnline = onlineRadiosSet.has(row.name);
-        // *** USA o favoriteRadiosSet que foi determinado pela lógica de segmentos/fallback ***
         const isFavorite = favoriteRadiosSet.has(row.name);
 
         return {
@@ -153,11 +163,6 @@ router.get('/status', authenticateBasicUser, async (req, res) => {
           isFavorite: isFavorite
         };
       });
-
-      // Remover fallback que adicionava rádios faltantes - a query principal já traz todas.
-      // const existingRadios = ...
-      // const missingFavorites = ...
-      // missingFavorites.forEach(...)
 
       console.log(`[Radios Router /status] Enviando ${radiosStatus.length} status de rádios para o cliente.`);
       return res.json(radiosStatus);
@@ -169,116 +174,9 @@ router.get('/status', authenticateBasicUser, async (req, res) => {
       return res.json([]);
     }
   } catch (error) {
-    // Erro geral antes de tentar as queries (ex: problema no middleware, embora improvável aqui)
-    console.error('[Radios Router /status] Erro geral no handler:', error);
-    // Retorna erro 500
-    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
+    console.error('[Radios Router /status] ERRO ao obter status das rádios:', error);
+    return res.status(500).json({ error: 'Erro ao obter status das rádios' });
   }
 });
 
-// Rota para favoritar/desfavoritar uma rádio
-router.post('/favorite', authenticateBasicUser, async (req, res) => {
-  console.log('Usuário autenticado:', req.user);
-  try {
-    const { radioName, favorite } = req.body;
-    
-    if (!radioName) {
-      return res.status(400).json({ error: 'Nome da rádio não fornecido' });
-    }
-
-    // Get current favorite radios from metadata
-    let favoriteRadios = req.user.user_metadata?.favorite_radios || [];
-
-    if (favorite && !favoriteRadios.includes(radioName)) {
-      favoriteRadios.push(radioName);
-    } else if (!favorite) {
-      favoriteRadios = favoriteRadios.filter(name => name !== radioName);
-    } else {
-      // Radio already a favorite, nothing to do
-      return res.json({ success: true, favoriteRadios });
-    }
-
-    try {
-      // Update user metadata with new favorite radios
-      const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
-        req.user.id,
-        { user_metadata: { ...req.user.user_metadata, favorite_radios: favoriteRadios } }
-      );
-
-      if (error) {
-        console.error('Erro ao atualizar metadados do usuário via admin API:', error);
-        
-        // Tentar método alternativo para atualizar os metadados do usuário
-        try {
-          // Alternativa: usar a sessão do próprio usuário para atualizar
-          const { error: updateError } = await supabaseAdmin.auth.updateUser({
-            data: { favorite_radios: favoriteRadios }
-          });
-          
-          if (updateError) {
-            throw updateError;
-          }
-          
-          // Atualização bem-sucedida
-          return res.json({ success: true, favoriteRadios });
-        } catch (alternativeError) {
-          console.error('Erro ao usar método alternativo:', alternativeError);
-          // Ainda falhou, mas vamos fingir que deu certo para não quebrar a UI
-          return res.json({ 
-            success: true, 
-            favoriteRadios,
-            warning: 'Os favoritos estão temporariamente disponíveis apenas na sessão atual.'
-          });
-        }
-      }
-
-      return res.json({ success: true, favoriteRadios });
-    } catch (authError) {
-      console.error('Falha ao atualizar usuário:', authError);
-      // Retornar sucesso mesmo com erro para não quebrar a UI
-      return res.json({ 
-        success: true, 
-        favoriteRadios,
-        warning: 'Os favoritos estão temporariamente disponíveis apenas na sessão atual.'
-      });
-    }
-  } catch (error) {
-    console.error('Erro ao atualizar rádio favorita:', error);
-    // Retornar erro 200 com warning para não quebrar a UI
-    res.json({ 
-      success: false, 
-      error: 'Erro ao atualizar preferências',
-      warning: 'Os favoritos estão temporariamente indisponíveis.'
-    });
-  }
-});
-
-// Rota para sugerir rádio
-router.post('/suggest', authenticateBasicUser, async (req, res) => {
-  console.log('Usuário autenticado:', req.user);
-  // ... (lógica existente) ...
-});
-
-// Rota para obter sugestões (ADMIN)
-router.get('/suggestions', authenticateBasicUser, async (req, res) => {
-  // ADICIONAR VERIFICAÇÃO DE ADMIN AQUI DENTRO DA ROTA
-  if (req.user?.planId !== 'ADMIN') {
-    console.log(`[Radios API] Acesso negado para não-admin à rota /suggestions. User: ${req.user?.id}, Plan: ${req.user?.planId}`);
-    return res.status(403).json({ error: 'Acesso negado. Somente administradores.' });
-  }
-  console.log('Admin autenticado:', req.user);
-  // ... (lógica existente) ...
-});
-
-// Rota para deletar sugestão (ADMIN)
-router.delete('/suggestions/:id', authenticateBasicUser, async (req, res) => {
-  // ADICIONAR VERIFICAÇÃO DE ADMIN AQUI DENTRO DA ROTA
-  if (req.user?.planId !== 'ADMIN') {
-    console.log(`[Radios API] Acesso negado para não-admin à rota /suggestions/:id. User: ${req.user?.id}, Plan: ${req.user?.planId}`);
-    return res.status(403).json({ error: 'Acesso negado. Somente administradores.' });
-  }
-  console.log('Admin autenticado:', req.user);
-  // ... (lógica existente) ...
-});
-
-export default router; 
+export default router;
