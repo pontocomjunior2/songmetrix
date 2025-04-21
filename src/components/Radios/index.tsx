@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Star, Radio, Loader2, ArrowUpDown, Search } from 'lucide-react';
+import { Star, Radio, Loader2, ArrowUpDown, Search, MapPin, Music3 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase-client';
 import { RadioStatus } from '../../types/components';
@@ -220,6 +220,18 @@ export default function Radios() {
                   </Button>
                 </TableHead>
               )}
+              <TableHead>
+                <span className="flex items-center gap-1 font-medium pl-2">
+                  <MapPin className="h-4 w-4" />
+                  Localização
+                </span>
+              </TableHead>
+              <TableHead>
+                <span className="flex items-center gap-1 font-medium pl-2">
+                  <Music3 className="h-4 w-4" />
+                  Formato
+                </span>
+              </TableHead>
               <TableHead className="text-right">Favorito</TableHead>
             </TableRow>
           </TableHeader>
@@ -233,8 +245,9 @@ export default function Radios() {
             ) : (
               filteredRadios.map((radio) => {
                 const { full: fullDate, relative: relativeDate } = formatLastUpdate(radio.lastUpdate);
+                const rowClass = radio.isFavorite ? 'bg-blue-50 dark:bg-blue-900/20' : '';
                 return (
-                  <TableRow key={radio.name}>
+                  <TableRow key={radio.name} className={rowClass}>
                     <TableCell>
                       <Radio className="h-4 w-4 text-gray-600 dark:text-gray-400" />
                     </TableCell>
@@ -264,6 +277,16 @@ export default function Radios() {
                         </span>
                       </TableCell>
                     )}
+                    <TableCell>
+                      <div className="text-sm text-muted-foreground">
+                        {radio.city && radio.state ? `${radio.city}, ${radio.state}` : radio.city || radio.state || 'N/D'}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm text-muted-foreground">
+                        {radio.formato || 'N/D'}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-right">
                       <button
                         onClick={() => toggleFavorite(radio.name, radio.isFavorite)}

@@ -106,13 +106,16 @@ router.get('/status', authenticateBasicUser, async (req, res) => {
         GROUP BY name
       ),
       all_radios AS (
-        SELECT name, created_at, updated_at FROM streams ORDER BY name
+        SELECT name, created_at, updated_at, cidade, estado, formato FROM streams ORDER BY name
       )
       SELECT
         r.name,
         l.last_update,
         r.created_at,
-        r.updated_at
+        r.updated_at,
+        r.cidade,
+        r.estado,
+        r.formato
       FROM all_radios r
       LEFT JOIN latest_entries l ON r.name = l.name
       ORDER BY r.name;
@@ -160,7 +163,10 @@ router.get('/status', authenticateBasicUser, async (req, res) => {
           name: row.name,
           status: isOnline ? 'ONLINE' : 'OFFLINE',
           lastUpdate: row.last_update || row.updated_at || row.created_at,
-          isFavorite: isFavorite
+          isFavorite: isFavorite,
+          city: row.cidade,
+          state: row.estado,
+          formato: row.formato
         };
       });
 
