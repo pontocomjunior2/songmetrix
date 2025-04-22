@@ -55,23 +55,34 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Exemplo: checkSessionActive geralmente não depende de estado interno.
   const checkSessionActive = useCallback(async (): Promise<boolean> => {
     try {
+      // LOG ADICIONAL 1
+      console.log('[AuthContext] checkSessionActive - Calling supabase.auth.getSession()...');
       const { data, error } = await supabase.auth.getSession();
+      // LOG ADICIONAL 2
+      console.log('[AuthContext] checkSessionActive - getSession() result:', { data: !!data?.session, error });
       if (error) return false;
       return !!data.session;
     } catch (e) {
+      // LOG ADICIONAL 3
+      console.error('[AuthContext] checkSessionActive - CAUGHT ERROR:', e);
       return false;
     }
-  }, []); // Array de dependência vazio
+  }, []);
 
   // Envolver refreshUserData em useCallback
   const refreshUserData = useCallback(async (): Promise<boolean> => {
+    console.log('[AuthContext] refreshUserData - STARTING');
     isRefreshing.current = true;
     let shouldSetLoadingTrue = false;
     let success = false;
 
     try {
+      console.log('[AuthContext] refreshUserData - Checking session...');
       const isSessionActive = await checkSessionActive();
+      console.log(`[AuthContext] refreshUserData - Session active: ${isSessionActive}`);
+
       if (!isSessionActive) {
+        console.log('[AuthContext] refreshUserData - No active session, clearing state.');
         if (isMounted.current) {
           setCurrentUser(null);
           setPlanId(null);
@@ -82,10 +93,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         success = false;
       } else {
         shouldSetLoadingTrue = true;
-        if (isMounted.current) setLoading(true);
+        if (isMounted.current) {
+          console.log('[AuthContext] refreshUserData - Setting loading true.');
+          setLoading(true);
+        }
+        console.log('[AuthContext] refreshUserData - Calling supabase.auth.getUser()...');
         const { data: { user }, error: authError } = await supabase.auth.getUser();
+        console.log('[AuthContext] refreshUserData - supabase.auth.getUser() FINISHED.');
 
         if (authError || !user) {
+          console.error('[AuthContext] refreshUserData - Error getting user or user not found:', authError);
           if (isMounted.current) {
             setCurrentUser(null);
             setPlanId(null);
@@ -95,9 +112,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }
           success = false;
         } else {
-          // --- LER DADOS DO METADATA - APENAS OS NECESSÁRIOS AGORA ---
           const userMetadata = user.user_metadata || {};
-          console.log('[AuthContext] User metadata (from getUser):', userMetadata);
+          console.log('[AuthContext] refreshUserData - User data received:', { id: user.id, metadata: userMetadata });
           // O planId virá da nova API, ler apenas trialEndsAt e segments aqui
           const dbTrialEndsAt = userMetadata.trial_ends_at;
           const dbFavoriteSegments = userMetadata.favorite_segments as string[] | undefined;
@@ -108,19 +124,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           // let currentPlanId = ...
           // if (currentPlanId === 'trial' && trialEnd ...) { ... }
 
-          console.log(`[AuthContext] refreshUserData: Setting user state. Plan from metadata: ${dbPlanId}`);
+          console.log(`[AuthContext] refreshUserData - BEFORE setCurrentUser.`);
           if (isMounted.current) {
-            setCurrentUser(user); // Atualiza o usuário
+            setCurrentUser(user);
+            console.log('[AuthContext] refreshUserData - AFTER setCurrentUser call.');
             setPlanId(dbPlanId);
             setTrialEndsAt(dbTrialEndsAt); // Definir trialEndsAt do metadata
             setFavoriteSegments(dbFavoriteSegments || null); // Definir estado dos segmentos
             setError(null);
+          } else {
+            console.log('[AuthContext] refreshUserData - Component unmounted, skipping state updates.');
           }
           success = true; // Indica que o usuário básico foi carregado
         }
       }
     } catch (error) {
-      console.error("[AuthContext] refreshUserData: Unexpected error.", error);
+      console.error("[AuthContext] refreshUserData - CAUGHT ERROR in try block:", error);
       if (isMounted.current) {
         setCurrentUser(null);
         setPlanId(null);
@@ -137,9 +156,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setIsInitialized(true);
       }
       isRefreshing.current = false; 
+      console.log('[AuthContext] refreshUserData - FINISHED');
     }
     return success;
-  }, [checkSessionActive]);
+  }, [checkSessionActive, currentUser]);
 
   // Função para enviar email de boas-vindas
   const sendWelcomeEmail = useCallback(async (): Promise<boolean> => {
@@ -232,6 +252,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     refreshUserData(); 
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log(`[AuthContext] onAuthStateChange received event: ${event}. Session provided:`, !!session);
       if (event === 'INITIAL_SESSION') {
         // Lógica para tratar sessão inicial (se houver)
         console.log('[AuthContext] onAuthStateChange: INITIAL_SESSION event.');
@@ -265,8 +286,48 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       } 
       // *** ADICIONAR LÓGICA PARA USER_UPDATED ***
       else if (event === 'USER_UPDATED') {
-        console.log('[AuthContext] onAuthStateChange: USER_UPDATED event received. Refreshing user data...');
-        await refreshUserData(); // Isso já chama setPlanIdWithLog internamente
+        console.log('[AuthContext] onAuthStateChange: USER_UPDATED event received.');
+        
+        // TENTAR USAR DADOS DO EVENTO DIRETAMENTE
+        if (session && session.user) {
+            console.log('[AuthContext] USER_UPDATED: User data found in event session. Updating state directly.');
+            const userFromEvent = session.user;
+            const userMetadata = userFromEvent.user_metadata || {};
+            const dbPlanId = (userMetadata.plan_id || 'FREE').trim().toUpperCase(); // Usar plan_id e tratar
+            const dbTrialEndsAt = userMetadata.trial_ends_at;
+            const dbFavoriteSegments = userMetadata.favorite_segments as string[] | undefined;
+            
+            // Lógica de verificação de trial expirado (igual a de refreshUserData)
+            let finalPlanId = dbPlanId;
+            if (finalPlanId === 'TRIAL' && dbTrialEndsAt) {
+              const now = new Date();
+              const trialEnd = new Date(dbTrialEndsAt);
+              if (trialEnd < now) {
+                console.log(`[AuthContext] USER_UPDATED: Trial expired for user ${userFromEvent.id}. Setting planId to FREE.`);
+                finalPlanId = 'FREE';
+              }
+            }
+            
+            if (isMounted.current) {
+              console.log(`[AuthContext] USER_UPDATED: Updating state with user ${userFromEvent.id}, plan ${finalPlanId}`);
+              setCurrentUser(userFromEvent); // Usar usuário do evento
+              setPlanId(finalPlanId);
+              setTrialEndsAt(dbTrialEndsAt);
+              setFavoriteSegments(dbFavoriteSegments || null);
+              setError(null);
+              // Potencialmente setar loading? Geralmente não necessário aqui.
+              // setLoading(false); 
+            } else {
+                 console.log('[AuthContext] USER_UPDATED: Component unmounted, skipping direct state update.');
+            }
+        } else {
+            // FALLBACK: Se o evento não trouxe o usuário, tentar refreshUserData (com delay)
+            console.warn('[AuthContext] USER_UPDATED: User data NOT found in event session. Falling back to refreshUserData...');
+            await new Promise(resolve => setTimeout(resolve, 200)); // Manter delay como segurança
+            console.log('[AuthContext] onAuthStateChange: Calling refreshUserData after delay (fallback)...');
+            await refreshUserData(); 
+            console.log('[AuthContext] onAuthStateChange: refreshUserData FINISHED after USER_UPDATED event (fallback).');
+        }
       }
        // *** ADICIONAR LÓGICA PARA TOKEN_REFRESHED ***
        else if (event === 'TOKEN_REFRESHED') {
@@ -302,13 +363,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         try {
           // 1. Chamar a API para buscar os segmentos
+          // ** Garantir que a sessão e o token existam antes de chamar **
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
+          if (!token) {
+             throw new Error('Token de autenticação não encontrado para a migração.');
+          }
+          
           const response = await fetch('/api/radios/segments-map', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              // Adicionar token de autorização se a API exigir (authenticateBasicUser faz isso no backend?
-              // Assumindo que o middleware de autenticação cuida disso no backend
-              // 'Authorization': `Bearer ${session?.access_token}`
+              // Incluindo o cabeçalho Authorization
+              'Authorization': `Bearer ${token}` 
             },
             body: JSON.stringify({ radioNames: metadata.favorite_radios })
           });
