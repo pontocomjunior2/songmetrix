@@ -12,17 +12,17 @@ import { syncUserWithSendPulse, type UserData as SendPulseUserData } from '../..
 import { Input } from '../ui/input';
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '../ui/table';
 
-// Adicionar mapeamento de plan_id para exibição
+// Atualizar mapeamento de plan_id para exibição (CHAVES em MAIÚSCULAS)
 const PLAN_DISPLAY_NAMES: { [key: string]: string } = {
   ADMIN: 'Admin',
-  TRIAL: 'Trial',
-  expired_trial: 'Trial Expirado',
-  ATIVO: 'Ativo',
-  // Adicionar outros planos aqui conforme necessário (ex: 'premium': 'Premium')
+  TRIAL: 'Teste',       // Chave em maiúsculas
+  FREE: 'Gratuito',
+  ATIVO: 'Ativo',       // Plano pago (Chave já estava em maiúsculas)
+  INATIVO: 'Inativo',     // Definido pelo Admin (Chave já estava em maiúsculas)
 };
 
-// Definir os plan_ids que o admin pode selecionar
-const SELECTABLE_PLANS = ['TRIAL', 'expired_trial', 'ATIVO', 'ADMIN'];
+// Definir os plan_ids que o admin pode selecionar manualmente (VALORES em MAIÚSCULAS)
+const SELECTABLE_PLANS = ['FREE', 'TRIAL', 'ATIVO', 'INATIVO']; // Usar maiúsculas
 
 // Atualizar interface User para remover 'status' se não for mais necessário
 interface User {
@@ -361,7 +361,7 @@ export default function UserList() {
   };
 
   const handleSimulateTrialEnd = async (userId: string) => {
-    if (window.confirm('Tem certeza que deseja simular o fim do período de teste para este usuário? Isso irá alterar o status para INATIVO.')) {
+    if (window.confirm('Tem certeza que deseja simular o fim do período de teste para este usuário? Isso irá alterar o status para Gratuito (FREE).')) {
       try {
         setError('');
         setUpdatingUserId(userId);
@@ -398,10 +398,10 @@ export default function UserList() {
         
         // Atualizar a lista de usuários localmente
         setUsers(users.map(user => 
-          user.id === userId ? { ...user, plan_id: 'INATIVO' } : user
+          user.id === userId ? { ...user, plan_id: 'FREE' } : user
         ));
         
-        reactToast.success('Período de teste encerrado com sucesso');
+        reactToast.success('Período de teste encerrado, usuário movido para Gratuito (FREE)');
         
         // Recarregar a lista para garantir que temos os dados mais atualizados
         await loadUsers();
@@ -531,8 +531,8 @@ export default function UserList() {
               className="rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 px-3 py-2 text-sm"
             >
               <option value="ALL">Todos Status</option>
-              {Object.entries(PLAN_DISPLAY_NAMES).map(([planId, displayName]) => (
-                <option key={planId} value={planId}>{displayName}</option>
+              {SELECTABLE_PLANS.concat(['ADMIN']).filter((v, i, a) => a.indexOf(v) === i).map(planId => (
+                <option key={planId} value={planId}>{PLAN_DISPLAY_NAMES[planId] || planId}</option>
               ))}
             </select>
             <div className="relative">
@@ -661,7 +661,7 @@ export default function UserList() {
             </TableHeader>
             <TableBody>
               {filteredUsers.map(user => (
-                <TableRow key={user.id}>
+                <TableRow key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                   <TableCell className="font-medium">
                     <div className="flex items-center">
                       <UserAvatar 
@@ -693,22 +693,21 @@ export default function UserList() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    {updatingUserId === user.id ? (
-                      <Loading size="small" />
-                    ) : (
-                      <select
-                        value={user.plan_id || ''}
-                        onChange={(e) => handlePlanChange(user.id, e.target.value)}
-                        disabled={updatingUserId === user.id}
-                        className="p-1 border rounded bg-transparent"
-                      >
-                        {SELECTABLE_PLANS.map(planId => (
-                           <option key={planId} value={planId}>
-                             {PLAN_DISPLAY_NAMES[planId] || planId} 
-                           </option>
-                        ))}
-                      </select>
-                    )}
+                    <select
+                      value={user.plan_id || ''} 
+                      onChange={(e) => handlePlanChange(user.id, e.target.value)}
+                      disabled={updatingUserId === user.id}
+                      className="p-1 text-xs border rounded bg-white dark:bg-gray-700 dark:text-white dark:border-gray-600 focus:ring-1 focus:ring-blue-500 focus:outline-none disabled:opacity-50 w-full md:w-auto"
+                    >
+                      <option value={user.plan_id || ''} disabled hidden>
+                         {PLAN_DISPLAY_NAMES[user.plan_id || ''] || user.plan_id || 'N/A'}
+                      </option>
+                      {SELECTABLE_PLANS.map(plan => (
+                        <option key={plan} value={plan}>
+                          {PLAN_DISPLAY_NAMES[plan] || plan}
+                        </option>
+                      ))}
+                    </select>
                   </TableCell>
                   <TableCell>{formatDate(user.created_at)}</TableCell>
                   <TableCell>{formatDateTime(user.last_sign_in_at)}</TableCell>
