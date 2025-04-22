@@ -15,7 +15,6 @@ export default function FirstAccessRoute() {
 
   useEffect(() => {
     let isMounted = true;
-    console.log('[FirstAccessRoute] useEffect running. currentUser:', !!currentUser);
     const checkPreferences = async () => {
       if (!currentUser) {
          setLoadingCheck(false);
@@ -26,13 +25,11 @@ export default function FirstAccessRoute() {
       setLoadingCheck(true);
       try {
         const hasPrefs = await userHasPreferences();
-        console.log('[FirstAccessRoute] useEffect - userHasPreferences result:', hasPrefs);
         if (isMounted) {
           setHasInitialPrefs(hasPrefs);
           setCheckedInitialPrefs(true);
           setLoadingCheck(false);
           if (hasPrefs) {
-            console.log('[FirstAccessRoute] useEffect - Preferences found/updated, navigating to dashboard...');
             navigate('/dashboard', { replace: true });
           }
         }
@@ -51,20 +48,15 @@ export default function FirstAccessRoute() {
   }, [currentUser, navigate]);
 
   const handleSaveSegments = useCallback(async (selectedSegments: string[]) => {
-    console.log(">>> handleSaveSegments ENTERED");
-    console.log("Segmentos recebidos para salvar:", selectedSegments);
     if (!selectedSegments || selectedSegments.length === 0) {
       toast.info("Selecione pelo menos um formato de rádio para continuar.");
       return;
     }
 
     try {
-      console.log('>>> handleSaveSegments - BEFORE await updateFavoriteSegments');
       await updateFavoriteSegments(selectedSegments);
-      console.log('>>> handleSaveSegments - AFTER await updateFavoriteSegments (Success)');
       toast.success('Preferências salvas!');
     } catch (error) {
-      console.error(">>> handleSaveSegments - CAUGHT ERROR:", error);
       toast.error("Erro ao salvar suas preferências. Tente novamente.");
     }
   }, [updateFavoriteSegments]);
@@ -74,7 +66,6 @@ export default function FirstAccessRoute() {
   }
 
   if (checkedInitialPrefs && hasInitialPrefs) {
-    console.log('[FirstAccessRoute] Rendering fallback Navigate to dashboard (already had prefs).');
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -95,6 +86,5 @@ export default function FirstAccessRoute() {
     );
   }
 
-  console.warn('[FirstAccessRoute] Reached final return, possibly unexpected state.');
   return <Loading />;
 }

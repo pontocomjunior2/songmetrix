@@ -55,34 +55,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Exemplo: checkSessionActive geralmente não depende de estado interno.
   const checkSessionActive = useCallback(async (): Promise<boolean> => {
     try {
-      // LOG ADICIONAL 1
-      console.log('[AuthContext] checkSessionActive - Calling supabase.auth.getSession()...');
       const { data, error } = await supabase.auth.getSession();
-      // LOG ADICIONAL 2
-      console.log('[AuthContext] checkSessionActive - getSession() result:', { data: !!data?.session, error });
       if (error) return false;
       return !!data.session;
     } catch (e) {
-      // LOG ADICIONAL 3
-      console.error('[AuthContext] checkSessionActive - CAUGHT ERROR:', e);
       return false;
     }
   }, []);
 
   // Envolver refreshUserData em useCallback
   const refreshUserData = useCallback(async (): Promise<boolean> => {
-    console.log('[AuthContext] refreshUserData - STARTING');
     isRefreshing.current = true;
     let shouldSetLoadingTrue = false;
     let success = false;
 
     try {
-      console.log('[AuthContext] refreshUserData - Checking session...');
       const isSessionActive = await checkSessionActive();
-      console.log(`[AuthContext] refreshUserData - Session active: ${isSessionActive}`);
 
       if (!isSessionActive) {
-        console.log('[AuthContext] refreshUserData - No active session, clearing state.');
         if (isMounted.current) {
           setCurrentUser(null);
           setPlanId(null);
@@ -94,15 +84,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       } else {
         shouldSetLoadingTrue = true;
         if (isMounted.current) {
-          console.log('[AuthContext] refreshUserData - Setting loading true.');
           setLoading(true);
         }
-        console.log('[AuthContext] refreshUserData - Calling supabase.auth.getUser()...');
         const { data: { user }, error: authError } = await supabase.auth.getUser();
-        console.log('[AuthContext] refreshUserData - supabase.auth.getUser() FINISHED.');
 
         if (authError || !user) {
-          console.error('[AuthContext] refreshUserData - Error getting user or user not found:', authError);
           if (isMounted.current) {
             setCurrentUser(null);
             setPlanId(null);
@@ -113,33 +99,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           success = false;
         } else {
           const userMetadata = user.user_metadata || {};
-          console.log('[AuthContext] refreshUserData - User data received:', { id: user.id, metadata: userMetadata });
-          // O planId virá da nova API, ler apenas trialEndsAt e segments aqui
           const dbTrialEndsAt = userMetadata.trial_ends_at;
           const dbFavoriteSegments = userMetadata.favorite_segments as string[] | undefined;
-          // --- LER E DEFINIR planId DO METADATA ---
-          const dbPlanId = userMetadata.plan_id || 'FREE'; // Ler plan_id, fallback para 'FREE'
+          const dbPlanId = userMetadata.plan_id || 'FREE';
 
-          // REMOVER LÓGICA DE CÁLCULO DE planId daqui
-          // let currentPlanId = ...
-          // if (currentPlanId === 'trial' && trialEnd ...) { ... }
-
-          console.log(`[AuthContext] refreshUserData - BEFORE setCurrentUser.`);
           if (isMounted.current) {
             setCurrentUser(user);
-            console.log('[AuthContext] refreshUserData - AFTER setCurrentUser call.');
             setPlanId(dbPlanId);
-            setTrialEndsAt(dbTrialEndsAt); // Definir trialEndsAt do metadata
-            setFavoriteSegments(dbFavoriteSegments || null); // Definir estado dos segmentos
+            setTrialEndsAt(dbTrialEndsAt);
+            setFavoriteSegments(dbFavoriteSegments || null);
             setError(null);
           } else {
-            console.log('[AuthContext] refreshUserData - Component unmounted, skipping state updates.');
           }
-          success = true; // Indica que o usuário básico foi carregado
+          success = true;
         }
       }
     } catch (error) {
-      console.error("[AuthContext] refreshUserData - CAUGHT ERROR in try block:", error);
       if (isMounted.current) {
         setCurrentUser(null);
         setPlanId(null);
@@ -155,8 +130,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (!isInitialized && isMounted.current) {
         setIsInitialized(true);
       }
-      isRefreshing.current = false; 
-      console.log('[AuthContext] refreshUserData - FINISHED');
+      isRefreshing.current = false;
     }
     return success;
   }, [checkSessionActive, currentUser]);
@@ -171,53 +145,45 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        console.warn("Tentativa de enviar email de boas-vindas sem sessão ativa.");
         return false;
       }
 
-      console.log('Tentando enviar email de boas-vindas para:', currentUser.email);
       const response = await fetch(`${EMAIL_SERVER_URL}/api/email/send-welcome`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}` // Usar token da sessão atual
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({ userId: currentUser.id })
       });
 
       if (!response.ok) {
         const errorBody = await response.text();
-        console.error('Erro ao enviar email de boas-vindas:', response.status, errorBody);
         toast.error('Erro ao enviar email de boas-vindas.');
         return false;
       }
 
       const result = await response.json();
-      console.log('Email de boas-vindas enviado com sucesso:', result);
       toast.success('Email de boas-vindas enviado!');
-      hasWelcomeEmailBeenSent.current = true; // Marca como enviado para esta sessão
+      hasWelcomeEmailBeenSent.current = true;
       return true;
 
     } catch (error) {
-      console.error('Erro na função sendWelcomeEmail:', error);
       toast.error('Falha ao processar envio do email de boas-vindas.');
       return false;
     }
-  }, [currentUser]); // Depende de currentUser
+  }, [currentUser]);
 
   // Nova função para atualizar segmentos (MOVIDA PARA CIMA)
   const updateFavoriteSegments = useCallback(async (segments: string[]) => {
     if (!currentUser) {
-      console.error("Tentativa de atualizar segmentos preferidos sem usuário logado.");
       toast.error("Você precisa estar logado para salvar preferências.");
       return;
     }
     try {
       const { data, error } = await supabase.auth.updateUser({
-        data: { // Atualiza user_metadata
+        data: {
           favorite_segments: segments
-          // Opcional: limpar favorite_radios aqui? Talvez melhor na migração.
-          // favorite_radios: null
         }
       });
       if (error) {
@@ -225,7 +191,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         throw error;
       }
       if (data.user && isMounted.current) {
-        console.log("Metadados de segmentos atualizados no Auth.");
         setCurrentUser(prevUser => prevUser ? { ...prevUser, user_metadata: data.user!.user_metadata } : null);
         setFavoriteSegments(segments);
         toast.success("Formatos preferidos salvos!");
@@ -242,7 +207,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const metadata = currentUser.user_metadata || {};
     const hasSegments = metadata.favorite_segments && Array.isArray(metadata.favorite_segments) && metadata.favorite_segments.length > 0;
     const hasRadios = metadata.favorite_radios && Array.isArray(metadata.favorite_radios) && metadata.favorite_radios.length > 0;
-    console.log(`[userHasPreferences] Has Segments: ${hasSegments}, Has Radios: ${hasRadios}`);
     return hasSegments || hasRadios;
   }, [currentUser]);
 
@@ -252,22 +216,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     refreshUserData(); 
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log(`[AuthContext] onAuthStateChange received event: ${event}. Session provided:`, !!session);
       if (event === 'INITIAL_SESSION') {
-        // Lógica para tratar sessão inicial (se houver)
-        console.log('[AuthContext] onAuthStateChange: INITIAL_SESSION event.');
         if (session && !isInitialized && isMounted.current) {
-          console.log('[AuthContext] Initial session found. Refreshing user data...');
           await refreshUserData(); 
         } else if (!session && !isInitialized && isMounted.current) {
-          // Se não há sessão inicial e ainda não inicializou, marca como inicializado
           setIsInitialized(true);
         }
-        return; // Importante retornar após tratar INITIAL_SESSION
+        return;
       }
 
       if (event === 'SIGNED_IN') {
-        // IGNORAR COMPLETAMENTE O EVENTO SIGNED_IN AQUI
         console.log('[AuthContext] onAuthStateChange: SIGNED_IN event received. IGNORING - login function handles refresh.');
       } 
       
@@ -278,65 +236,41 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           setPlanId(null);
           setTrialEndsAt(null);
           setFavoriteSegments(null);
-          setError(null);
           setLoading(false);
-          // Resetar isInitialized pode ser necessário dependendo do fluxo desejado pós-logout
-          // setIsInitialized(false); 
         }
       } 
-      // *** ADICIONAR LÓGICA PARA USER_UPDATED ***
       else if (event === 'USER_UPDATED') {
-        console.log('[AuthContext] onAuthStateChange: USER_UPDATED event received.');
-        
-        // TENTAR USAR DADOS DO EVENTO DIRETAMENTE
         if (session && session.user) {
-            console.log('[AuthContext] USER_UPDATED: User data found in event session. Updating state directly.');
             const userFromEvent = session.user;
             const userMetadata = userFromEvent.user_metadata || {};
-            const dbPlanId = (userMetadata.plan_id || 'FREE').trim().toUpperCase(); // Usar plan_id e tratar
+            const dbPlanId = (userMetadata.plan_id || 'FREE').trim().toUpperCase();
             const dbTrialEndsAt = userMetadata.trial_ends_at;
             const dbFavoriteSegments = userMetadata.favorite_segments as string[] | undefined;
             
-            // Lógica de verificação de trial expirado (igual a de refreshUserData)
             let finalPlanId = dbPlanId;
             if (finalPlanId === 'TRIAL' && dbTrialEndsAt) {
               const now = new Date();
               const trialEnd = new Date(dbTrialEndsAt);
               if (trialEnd < now) {
-                console.log(`[AuthContext] USER_UPDATED: Trial expired for user ${userFromEvent.id}. Setting planId to FREE.`);
                 finalPlanId = 'FREE';
               }
             }
             
             if (isMounted.current) {
-              console.log(`[AuthContext] USER_UPDATED: Updating state with user ${userFromEvent.id}, plan ${finalPlanId}`);
-              setCurrentUser(userFromEvent); // Usar usuário do evento
+              setCurrentUser(userFromEvent);
               setPlanId(finalPlanId);
               setTrialEndsAt(dbTrialEndsAt);
               setFavoriteSegments(dbFavoriteSegments || null);
               setError(null);
-              // Potencialmente setar loading? Geralmente não necessário aqui.
-              // setLoading(false); 
             } else {
-                 console.log('[AuthContext] USER_UPDATED: Component unmounted, skipping direct state update.');
             }
         } else {
-            // FALLBACK: Se o evento não trouxe o usuário, tentar refreshUserData (com delay)
-            console.warn('[AuthContext] USER_UPDATED: User data NOT found in event session. Falling back to refreshUserData...');
-            await new Promise(resolve => setTimeout(resolve, 200)); // Manter delay como segurança
-            console.log('[AuthContext] onAuthStateChange: Calling refreshUserData after delay (fallback)...');
-            await refreshUserData(); 
-            console.log('[AuthContext] onAuthStateChange: refreshUserData FINISHED after USER_UPDATED event (fallback).');
+            await new Promise(resolve => setTimeout(resolve, 200));
+            await refreshUserData();
         }
       }
-       // *** ADICIONAR LÓGICA PARA TOKEN_REFRESHED ***
-       else if (event === 'TOKEN_REFRESHED') {
-         console.log('[AuthContext] onAuthStateChange: TOKEN_REFRESHED event received. Refreshing user data...');
-         // É importante refrescar aqui também caso os metadados tenham sido atualizados externamente
-         await refreshUserData(); // Isso já chama setPlanIdWithLog internamente
-       }
-      else {
-        console.log(`[AuthContext] onAuthStateChange: Unhandled event: ${event}`);
+      else if (event === 'TOKEN_REFRESHED') {
+        await refreshUserData();
       }
     });
 
@@ -344,13 +278,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       subscription?.unsubscribe();
       isMounted.current = false;
     };
-  }, []); // Array vazio aqui
+  }, []);
 
   // Efeito para tentar migração de rádios para segmentos (EXISTENTE, AGORA APÓS AS FUNÇÕES QUE USA)
   useEffect(() => {
     const attemptMigration = async () => {
       if (!currentUser || !isInitialized || migrationAttempted.current) {
-        // Só roda se inicializado, com usuário e se ainda não tentou
         return;
       }
 
@@ -358,12 +291,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const needsMigration = !metadata.favorite_segments?.length && metadata.favorite_radios?.length > 0;
 
       if (needsMigration) {
-        migrationAttempted.current = true; // Marca que a tentativa foi feita
+        migrationAttempted.current = true;
         console.log(`[AuthContext Migration] Usuário ${currentUser.id} precisa de migração. Rádios antigas:`, metadata.favorite_radios);
 
         try {
-          // 1. Chamar a API para buscar os segmentos
-          // ** Garantir que a sessão e o token existam antes de chamar **
           const { data: { session } } = await supabase.auth.getSession();
           const token = session?.access_token;
           if (!token) {
@@ -374,7 +305,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              // Incluindo o cabeçalho Authorization
               'Authorization': `Bearer ${token}` 
             },
             body: JSON.stringify({ radioNames: metadata.favorite_radios })
@@ -389,11 +319,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           console.log('[AuthContext Migration] Segmentos mapeados:', mappedSegments);
 
           if (mappedSegments.length > 0) {
-            // 2. Atualizar os metadados com os novos segmentos
             await updateFavoriteSegments(mappedSegments);
             console.log('[AuthContext Migration] Segmentos salvos com sucesso.');
 
-            // 3. Opcional: Limpar favorite_radios antigos
             try {
               const { error: cleanupError } = await supabase.auth.updateUser({
                 data: { favorite_radios: null }
@@ -402,7 +330,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 console.warn('[AuthContext Migration] Falha ao limpar favorite_radios antigos:', cleanupError);
               } else {
                 console.log('[AuthContext Migration] favorite_radios antigos removidos.');
-                // Atualiza currentUser localmente para refletir a remoção
                 setCurrentUser(prevUser => {
                   if (!prevUser) return null;
                   const newMeta = { ...prevUser.user_metadata };
@@ -419,10 +346,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         } catch (migrationError) {
           console.error('[AuthContext Migration] Falha durante o processo de migração:', migrationError);
           toast.error('Houve um problema ao atualizar suas preferências antigas.');
-          // Não re-tenta automaticamente para evitar loops
         }
       } else {
-         // Se não precisa de migração, marca como tentado para não verificar de novo
          if (currentUser && isInitialized && !migrationAttempted.current) {
             migrationAttempted.current = true;
          }
@@ -431,14 +356,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     attemptMigration();
 
-  }, [currentUser, isInitialized, updateFavoriteSegments]); // Correto
+  }, [currentUser, isInitialized, updateFavoriteSegments]);
 
   // Envolver login em useCallback
   const login = useCallback(async (email: string, password: string): Promise<{ error: CustomAuthError | null }> => {
     let loginError: CustomAuthError | null = null;
     if (isMounted.current) {
       setError(null);
-      setLoading(true); // <-- Iniciar loading aqui
+      setLoading(true);
     }
 
     try {
@@ -450,7 +375,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (signInError) {
          loginError = new CustomAuthError(signInError.message || 'Falha no login.');
          if (isMounted.current) setError(loginError.message);
-         throw loginError; // Jogar o erro para o catch tratar o loading/error state
+         throw loginError;
       }
 
       if (!data?.user) {
@@ -459,28 +384,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
          throw loginError;
       }
 
-      // *** LOGIN BEM SUCEDIDO NO SUPABASE AUTH ***
       console.log('[AuthContext] Login successful in Supabase Auth.');
 
-      // Sempre chamar refreshUserData após login/signup bem-sucedido
       const refreshSuccess = await refreshUserData();
 
-      // Lógica de envio de email de boas-vindas (manter ou ajustar se necessário)
       if (refreshSuccess && isMounted.current && !hasWelcomeEmailBeenSent.current) {
          await sendWelcomeEmail();
-         // ... (lógica de navegação e estado)
       }
       
       console.log('[AuthContext] Login process complete. Navigating to dashboard...');
       navigate('/dashboard');
 
-      return { error: null }; // Indicar sucesso no login
+      return { error: null };
 
     } catch (err: any) {
       loginError = err instanceof CustomAuthError ? err : new CustomAuthError(err.message || 'Erro desconhecido no login');
       if (isMounted.current) {
         setError(loginError.message);
-        // Certificar que currentUser e planId são resetados em caso de erro no login
         setCurrentUser(null);
         setPlanId(null);
         setTrialEndsAt(null);
@@ -489,10 +409,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return { error: loginError };
     } finally {
        if (isMounted.current) {
-         setLoading(false); // <-- Terminar loading no finally
+         setLoading(false);
        }
     }
-  }, [refreshUserData, error, navigate, currentUser, sendWelcomeEmail]); // Adicionar currentUser como dependência devido ao fallback
+  }, [refreshUserData, error, navigate, currentUser, sendWelcomeEmail]);
 
   // Envolver logout em useCallback
   const logout = useCallback(async () => {
@@ -508,24 +428,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setLoading(true);
     setError(null);
     try {
-      // Definir data de fim do trial
       const trialEndDate = new Date();
       trialEndDate.setDate(trialEndDate.getDate() + 14);
 
-      // Opções para o signUp, incluindo metadata e URL de redirecionamento
       const signUpOptions = {
         options: {
-          emailRedirectTo: getAuthRedirectOptions().emailRedirectTo, // Usa a função centralizada
-          data: { // user_metadata inicial
+          emailRedirectTo: getAuthRedirectOptions().emailRedirectTo,
+          data: {
             full_name: fullName,
             whatsapp: whatsapp,
-            plan_id: 'trial', // <-- INCLUIR AQUI
-            trial_ends_at: trialEndDate.toISOString() // <-- INCLUIR AQUI
+            plan_id: 'trial',
+            trial_ends_at: trialEndDate.toISOString()
           }
         }
       };
 
-      // Tenta criar o usuário no Supabase Auth
       const { data, error: signUpAuthError } = await supabase.auth.signUp({
         email,
         password,
@@ -533,47 +450,32 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       });
 
       if (signUpAuthError) {
-        throw signUpAuthError; // Joga o erro para o catch tratar
+        throw signUpAuthError;
       }
 
-      // Verifica se o usuário foi criado e se a confirmação é necessária
       const userCreated = data.user;
-      const confirmationRequired = data.session === null && data.user !== null; // Indica que email de confirmação foi enviado
+      const confirmationRequired = data.session === null && data.user !== null;
 
       if (userCreated) {
         console.log(`Usuário ${email} criado no Auth. ID: ${userCreated.id}. Confirmação necessária: ${confirmationRequired}`);
-
-        // REMOVER Bloco de inserção na tabela 'users' 
-        /*
-        try {
-            // ... (código .from('users').insert(...) removido) ...
-        } catch (profileInsertError: any) {
-           console.error("Erro capturado durante a inserção do perfil:", profileInsertError);
-           throw profileInsertError;
-        }
-        */
         console.log(`Metadados iniciais (plan_id, trial_ends_at) definidos durante signUp para ${userCreated.id}.`);
 
-        // Preparar resposta de sucesso
         if (confirmationRequired) {
           return {
             error: null,
             confirmation_sent: true,
-            should_redirect: true, // Pode redirecionar para uma página de "Verifique seu email"
+            should_redirect: true,
             message: 'Cadastro realizado! Verifique seu email para ativar sua conta.'
           };
         } else {
-          // Se a confirmação não for necessária (auto-confirm ativado no Supabase)
-          // O listener 'SIGNED_IN' será disparado, fará o refreshUserData e redirecionará.
           return {
             error: null,
             confirmation_sent: false,
-            should_redirect: false, // O listener cuidará do redirect
+            should_redirect: false,
             message: 'Conta criada com sucesso!'
           };
         }
       } else {
-        // Caso inesperado: signUp não retornou erro, mas não criou usuário nem sessão.
         console.warn('Supabase signUp retornou sem erro, usuário ou sessão.');
         throw new CustomAuthError('Falha inesperada durante o cadastro.');
       }
@@ -583,38 +485,34 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       let errorMessage = 'Ocorreu um erro durante o cadastro.';
       if (err instanceof AuthError || err instanceof CustomAuthError) {
           errorMessage = err.message;
-          // Tratar erros específicos, ex: usuário já existe
           if (errorMessage.includes('User already registered')) {
               errorMessage = 'Este email já está cadastrado. Tente fazer login.';
           } else if (errorMessage.includes('profile')) {
-              // Mensagem do erro de criação de perfil
               errorMessage = err.message;
           }
       }
       setError(errorMessage);
       return {
-        error: err, // Retorna o objeto de erro original
-        message: errorMessage // Retorna a mensagem tratada
+        error: err,
+        message: errorMessage
       };
     } finally {
       if (isMounted.current) {
         setLoading(false);
       }
     }
-  }, []); // Remover dependências como getAuthRedirectOptions se ela for pura
+  }, []);
 
   // Envolver updateFavoriteRadios em useCallback
   const updateFavoriteRadios = useCallback(async (radios: string[]) => {
     if (!currentUser) {
-      console.error("Tentativa de atualizar favoritas sem usuário logado.");
       toast.error("Você precisa estar logado para salvar favoritas.");
       return;
     }
 
     try {
-      // Atualizar APENAS os metadados no Supabase Auth
       const { data, error } = await supabase.auth.updateUser({
-        data: { // Atualiza user_metadata
+        data: {
           favorite_radios: radios
         }
       });
@@ -624,19 +522,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         throw error;
       }
 
-      // Atualiza o currentUser localmente se a atualização no Auth foi bem sucedida
       if (data.user && isMounted.current) {
-          console.log("Metadados de favoritas atualizados no Auth.");
-          // É importante atualizar o objeto currentUser local para refletir a mudança
-          // sem precisar de um refresh completo da sessão/dados.
           setCurrentUser(prevUser => prevUser ? { ...prevUser, user_metadata: data.user!.user_metadata } : null);
           toast.success("Rádios favoritas salvas!");
       }
 
     } catch (error) {
-      // Erro já logado e notificado
     }
-  }, [currentUser]); // Depende de currentUser
+  }, [currentUser]);
 
   // Use useMemo para o valor do contexto para evitar re-renderizações desnecessárias
   const contextValue = useMemo(() => ({

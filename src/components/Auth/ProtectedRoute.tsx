@@ -17,21 +17,15 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const navigate = useNavigate();
   const [checkingPreferences, setCheckingPreferences] = useState(true);
 
-  console.log('[ProtectedRoute] Rendering. Initialized:', isInitialized, 'Loading:', authLoading, 'User:', !!currentUser, 'planId:', planId, 'Location:', location.pathname, 'CheckingPrefs:', checkingPreferences);
-
   useEffect(() => {
     let isMounted = true;
-
     if (isInitialized && currentUser) {
       setCheckingPreferences(true);
-      console.log('[ProtectedRoute] useEffect - Checking preferences...');
       const check = async () => {
         try {
           const hasPrefs = await userHasPreferences();
-          console.log('[ProtectedRoute] useEffect - hasPreferences result:', hasPrefs);
           if (isMounted) {
             if (!hasPrefs && location.pathname !== '/first-access') {
-              console.log('[ProtectedRoute] useEffect - No preferences found, navigating to /first-access.');
               navigate('/first-access', { replace: true });
             } else {
               setCheckingPreferences(false);
@@ -42,22 +36,18 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
           if (isMounted) {
             setCheckingPreferences(false);
           }
-        } finally {
-          console.log('[ProtectedRoute] useEffect - Preference check attempt finished.');
         }
       };
       check();
     } else if (isInitialized && !currentUser) {
       setCheckingPreferences(false);
     }
-
     return () => {
       isMounted = false;
     };
   }, [isInitialized, currentUser, userHasPreferences, location.pathname, navigate]);
 
   if (!isInitialized || authLoading || checkingPreferences) {
-    console.log(`[ProtectedRoute] Condition: Loading. Initialized=${!isInitialized}, AuthLoading=${authLoading}, CheckingPrefs=${checkingPreferences}. Showing loader.`);
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -69,7 +59,6 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (isInitialized && authError && !currentUser) {
-    console.log('[ProtectedRoute] Condition: Initialized, Auth Error, No User. Showing error page.');
     return (
       <div className="min-h-screen flex items-center justify-center">
          <div className="text-center p-6 bg-card rounded-lg shadow-md border border-destructive">
@@ -102,10 +91,8 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const isAdminPlan = planId === 'ADMIN';
 
   if (isAdminRoute && !isAdminPlan) {
-    console.log('[ProtectedRoute] Condition: Admin Route, Not Admin Plan. Navigating to /dashboard.');
     return <Navigate to="/dashboard" replace />;
   }
 
-  console.log('[ProtectedRoute] Condition: Authorized & Preferences OK / Navigating or on /first-access. Rendering children.');
   return <>{children}</>;
 }

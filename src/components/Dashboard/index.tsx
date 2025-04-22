@@ -94,7 +94,6 @@ const DashboardUpsellNotice: React.FC = () => (
 );
 
 const Dashboard = () => {
-  console.log('[Dashboard] Rendering...');
   const [topSongs, setTopSongs] = useState<TopSong[]>([]);
   const [artistData, setArtistData] = useState<ArtistData[]>([]);
   const [genreDistribution, setGenreDistribution] = useState<GenreDistribution[]>([]);
@@ -110,7 +109,6 @@ const Dashboard = () => {
   
   const CACHE_TTL = 2 * 60 * 1000;
   const isDevelopment = import.meta.env.MODE === 'development';
-  console.log('Ambiente:', import.meta.env.MODE);
 
   // Adicionar estados para as métricas
   const [totalExecutions, setTotalExecutions] = useState<number>(0);
@@ -121,10 +119,8 @@ const Dashboard = () => {
   const daysRemaining = useMemo(() => calculateDaysRemaining(trialEndsAt), [trialEndsAt]);
 
   const fetchDashboardData = useCallback(async (forceRefresh = false) => {
-    console.log('[Dashboard] fetchDashboardData called...');
     if (!currentUser || !hasPreferences) { 
-      console.log('[Dashboard] fetchDashboardData: Skipping fetch (no user or no preferences).');
-       if (preferencesChecked && !hasPreferences) {
+      if (preferencesChecked && !hasPreferences) {
            setLoading(false);
       }
       return;
@@ -133,7 +129,6 @@ const Dashboard = () => {
     let isMounted = true; // Usado internamente para cleanup simulado, já que não podemos pegar do useEffect
 
     try {
-      console.log('[Dashboard] Starting fetch...');
       setLoading(true);
       setError(null);
       const { data: { session } } = await supabase.auth.getSession();
@@ -143,19 +138,14 @@ const Dashboard = () => {
       }
 
       const limitParams = 'limit_songs=5&limit_artists=5&limit_genres=5';
-      console.log(`[Dashboard] Fetching /api/dashboard?${limitParams}`);
 
       const dashboardResponse = await fetch(`/api/dashboard?${limitParams}`, {
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
       });
 
-      // Como não estamos mais no useEffect, a verificação de isMounted não é mais necessária aqui
-      // if (!isMounted) return;
-
       if (!dashboardResponse.ok) throw new Error(`Falha ao carregar dashboard: ${dashboardResponse.statusText}`);
 
       const dashboardData = await dashboardResponse.json();
-      console.log('[Dashboard] API call successful. Data:', dashboardData);
 
       // Processar dados recebidos
       setTopSongs(dashboardData.topSongs || []);
@@ -197,8 +187,6 @@ const Dashboard = () => {
       console.error('[Dashboard] fetchDashboardData: Error:', error);
       setError('Falha ao carregar dados do dashboard');
     } finally {
-      console.log('[Dashboard] Fetch attempt finished.');
-      // Usar isMounted aqui é complexo fora do useEffect, então simplesmente setamos os estados
       setLoading(false);
       setIsRefreshing(false);
     }
@@ -211,15 +199,12 @@ const Dashboard = () => {
 
   useEffect(() => {
     let isMounted = true;
-    console.log('[Dashboard] useEffect [checkPrefs] RUNNING. currentUser:', !!currentUser);
     const checkPrefs = async () => {
         if (currentUser) {
             const userPrefs = await userHasPreferences(); 
-            console.log('[Dashboard] useEffect [checkPrefs] - userHasPreferences returned:', userPrefs);
             if (!isMounted) return;
             setHasPreferences(userPrefs);
             if (!userPrefs) {
-                 console.log('[Dashboard] useEffect [checkPrefs] - No preferences found initially.');
             }
         } else {
              if (!isMounted) return;
@@ -235,12 +220,9 @@ const Dashboard = () => {
 
   // useEffect para chamar fetchDashboardData na montagem/mudança de dependências
   useEffect(() => {
-    console.log(`[Dashboard] useEffect [fetchData] RUNNING. preferencesChecked: ${preferencesChecked}, hasPreferences (local state): ${hasPreferences}`);
     if (preferencesChecked && hasPreferences) {
-      console.log('[Dashboard] useEffect [fetchData] - Condition MET. Calling fetchDashboardData...');
       fetchDashboardData();
     } else {
-       console.log('[Dashboard] useEffect [fetchData] - Condition NOT MET. Skipping fetch.');
        if (preferencesChecked && !hasPreferences) {
          setLoading(false); 
        }
@@ -250,10 +232,8 @@ const Dashboard = () => {
   // handleRefresh agora pode chamar fetchDashboardData diretamente
   const handleRefresh = useCallback(() => {
     if (!currentUser || !hasPreferences) {
-      console.log("[Dashboard] Refresh skipped: No user or preferences.");
       return;
     }
-    console.log("[Dashboard] Refresh triggered - Calling fetchDashboardData...");
     setIsRefreshing(true);
     fetchDashboardData(true);
   }, [currentUser, hasPreferences, fetchDashboardData]);
@@ -264,12 +244,10 @@ const Dashboard = () => {
   }, [planId]); // Executa sempre que planId mudar
 
   if (!preferencesChecked) {
-      console.log("[Dashboard] Rendering: Waiting for preferences check...")
       return <div className="flex items-center justify-center h-64"><Loading /></div>;
   }
 
   if (loading) {
-    console.log("[Dashboard] Loading dashboard data...")
     return (
       <div className="flex items-center justify-center h-64">
          <Loading />
@@ -467,9 +445,6 @@ const Dashboard = () => {
       )}
     </div>
   ));
-
-  console.log('[Dashboard] Rendering final UI. Data counts:', { songs: topSongs.length, artists: artistData.length, genres: genreDistribution.length, activeRadios: activeRadios.length });
-  console.log('[Dashboard] Current planId:', planId, 'Trial ends at:', trialEndsAt, 'Days remaining:', daysRemaining);
 
   return (
     <div className="dashboard-container p-4 md:p-6 space-y-6">
