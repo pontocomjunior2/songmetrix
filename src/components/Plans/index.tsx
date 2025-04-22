@@ -381,16 +381,32 @@ export default function Plans() {
 
   const faqs = [
     {
-      question: "Como o Songmetrix pode ajudar minha rádio?",
-      answer: "O Songmetrix fornece dados em tempo real sobre execuções musicais, permitindo que você tome decisões estratégicas sobre sua programação, acompanhe tendências e se destaque da concorrência."
+      question: "O que é o SongMetrix?",
+      answer: "O SongMetrix é uma plataforma de monitoramento de execuções musicais em rádios. Ajudamos artistas, gravadoras e profissionais da música a entender onde e quando suas músicas estão tocando."
     },
     {
-      question: "Por quanto tempo o desconto promocional estará disponível?",
-      answer: "O desconto de lançamento de 75% é por tempo limitado. Recomendamos que você aproveite esta oportunidade o quanto antes para garantir o melhor preço."
+      question: "Qual a diferença entre os planos?",
+      answer: "Oferecemos um período de Teste (Trial) de 14 dias com acesso completo. Após isso, você pode continuar no plano Gratuito (Free) com acesso limitado aos rankings e rádios, ou assinar o plano Ativo (Mensal) para desbloquear todas as funcionalidades: Tempo Real, Relatórios detalhados, todas as rádios, etc." // Inclui Trial, Free e Ativo (Mensal)
+    },
+    {
+      question: "O que acontece após o período de Teste (Trial)?",
+      answer: "Se você não assinar o plano Ativo (Mensal) ao final dos 14 dias de teste, sua conta será automaticamente convertida para o plano Gratuito (Free), mantendo o acesso básico."
+    },
+    {
+      question: "Como funciona o pagamento da assinatura Ativa?",
+      answer: "A assinatura do plano Ativo (Mensal) é cobrada mensalmente via Cartão de Crédito, PIX ou Boleto, processados de forma segura pela plataforma Asaas." // Confirma mensal e Asaas
     },
     {
       question: "Posso cancelar minha assinatura a qualquer momento?",
-      answer: "Sim, você pode cancelar sua assinatura quando quiser. Não há taxas de cancelamento ou contratos de longo prazo obrigatórios."
+      answer: "Sim, a assinatura mensal pode ser cancelada a qualquer momento, sem multas. Seu acesso permanecerá ativo até o final do ciclo mensal já pago."
+    },
+    {
+      question: "Quais rádios são monitoradas?",
+      answer: "Monitoramos uma ampla rede de rádios FMs e online em diversas regiões do Brasil. A lista completa está disponível na seção 'Rádios' dentro da plataforma." // Mais específico
+    },
+     {
+      question: "Com que frequência os dados são atualizados?",
+      answer: "A função 'Tempo Real' (plano Ativo) mostra execuções quase instantaneamente. Os dados para Rankings e Relatórios são processados e atualizados diariamente." // Esclarece a frequência
     }
   ];
   // -------- FIM DAS CONSTANTES DE DADOS --------
