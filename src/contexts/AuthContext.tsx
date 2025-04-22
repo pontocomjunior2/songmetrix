@@ -101,15 +101,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           // O planId virá da nova API, ler apenas trialEndsAt e segments aqui
           const dbTrialEndsAt = userMetadata.trial_ends_at;
           const dbFavoriteSegments = userMetadata.favorite_segments as string[] | undefined;
+          // --- LER E DEFINIR planId DO METADATA ---
+          const dbPlanId = userMetadata.plan_id || 'FREE'; // Ler plan_id, fallback para 'FREE'
 
           // REMOVER LÓGICA DE CÁLCULO DE planId daqui
           // let currentPlanId = ...
           // if (currentPlanId === 'trial' && trialEnd ...) { ... }
 
-          console.log('[AuthContext] refreshUserData: Setting base user state (currentUser, trialEndsAt, segments).');
+          console.log(`[AuthContext] refreshUserData: Setting user state. Plan from metadata: ${dbPlanId}`);
           if (isMounted.current) {
             setCurrentUser(user); // Atualiza o usuário
-            // NÃO definir planId aqui
+            setPlanId(dbPlanId);
             setTrialEndsAt(dbTrialEndsAt); // Definir trialEndsAt do metadata
             setFavoriteSegments(dbFavoriteSegments || null); // Definir estado dos segmentos
             setError(null);
@@ -261,7 +263,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           // setIsInitialized(false); 
         }
       } 
-
+      // *** ADICIONAR LÓGICA PARA USER_UPDATED ***
+      else if (event === 'USER_UPDATED') {
+        console.log('[AuthContext] onAuthStateChange: USER_UPDATED event received. Refreshing user data...');
+        await refreshUserData(); // Isso já chama setPlanIdWithLog internamente
+      }
+       // *** ADICIONAR LÓGICA PARA TOKEN_REFRESHED ***
+       else if (event === 'TOKEN_REFRESHED') {
+         console.log('[AuthContext] onAuthStateChange: TOKEN_REFRESHED event received. Refreshing user data...');
+         // É importante refrescar aqui também caso os metadados tenham sido atualizados externamente
+         await refreshUserData(); // Isso já chama setPlanIdWithLog internamente
+       }
+      else {
+        console.log(`[AuthContext] onAuthStateChange: Unhandled event: ${event}`);
+      }
     });
 
     return () => {
@@ -380,56 +395,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // *** LOGIN BEM SUCEDIDO NO SUPABASE AUTH ***
       console.log('[AuthContext] Login successful in Supabase Auth.');
 
-      // 1. Tentar carregar dados básicos do usuário (sem definir planId ainda)
+      // Sempre chamar refreshUserData após login/signup bem-sucedido
       const refreshSuccess = await refreshUserData();
-      if (!refreshSuccess) {
-          loginError = new CustomAuthError(error || 'Falha ao carregar dados básicos do usuário após login.');
-          if (isMounted.current) setError(loginError.message);
-          throw loginError;
+
+      // Lógica de envio de email de boas-vindas (manter ou ajustar se necessário)
+      if (refreshSuccess && isMounted.current && !hasWelcomeEmailBeenSent.current) {
+         await sendWelcomeEmail();
+         // ... (lógica de navegação e estado)
       }
-
-      // 2. Buscar o planId ATUALIZADO do backend
-      console.log('[AuthContext] Fetching current planId from backend...');
-      try {
-          const { data: { session } } = await supabase.auth.getSession(); // Pegar token atual
-          if (!session?.access_token) throw new Error('Token não encontrado para buscar plano.');
-
-          const response = await fetch('/api/users/my-plan', { // Usar a nova rota
-              headers: {
-                  'Authorization': `Bearer ${session.access_token}`
-              }
-          });
-          if (!response.ok) {
-              const errorBody = await response.text();
-              throw new Error(`Falha ao buscar plano: ${response.status} ${errorBody}`);
-          }
-          const { planId: backendPlanId } = await response.json();
-          console.log(`[AuthContext] Received planId from backend: ${backendPlanId}`);
-
-          // 3. Definir o planId no estado
-          if (isMounted.current) {
-              setPlanId(backendPlanId);
-              console.log(`[AuthContext] Final planId set to: ${backendPlanId}`);
-          }
-
-      } catch (planFetchError: any) {
-          console.error('[AuthContext] Error fetching planId from backend:', planFetchError);
-          // Decidir como tratar: Usar um fallback? Mostrar erro? Por enquanto, loga e continua.
-          // Poderia tentar ler dos metadados como fallback, mas pode estar desatualizado.
-          if (isMounted.current) {
-              // Definir um estado de erro ou um planId padrão/fallback?
-              // setError('Falha ao verificar o plano de assinatura.');
-              // setPlanId(currentUser?.user_metadata?.plan_id || 'trial'); // Fallback para metadados (pode estar errado)
-              setError(null); // Optando por não mostrar erro de plano, pode impactar a UI
-              setPlanId(currentUser?.user_metadata?.plan_id || 'trial'); // Fallback
-              console.warn('[AuthContext] Using fallback planId from possibly outdated metadata.');
-          }
-      }
-
-      // Navegar apenas após tudo (incluindo busca do plano)
+      
       console.log('[AuthContext] Login process complete. Navigating to dashboard...');
       navigate('/dashboard');
-      return { error: null }; // Sucesso total
+
+      return { error: null }; // Indicar sucesso no login
 
     } catch (err: any) {
       loginError = err instanceof CustomAuthError ? err : new CustomAuthError(err.message || 'Erro desconhecido no login');
@@ -447,7 +425,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
          setLoading(false); // <-- Terminar loading no finally
        }
     }
-  }, [refreshUserData, error, navigate, currentUser]); // Adicionar currentUser como dependência devido ao fallback
+  }, [refreshUserData, error, navigate, currentUser, sendWelcomeEmail]); // Adicionar currentUser como dependência devido ao fallback
 
   // Envolver logout em useCallback
   const logout = useCallback(async () => {

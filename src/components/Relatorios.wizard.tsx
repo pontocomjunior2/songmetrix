@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Select from 'react-select';
 import { useAuth } from '../hooks/useAuth';
-import { Loader2, FileDown, MapPin, Radio, ChevronRight, InfoIcon, Music } from 'lucide-react';
+import { Loader2, FileDown, MapPin, Radio, ChevronRight, InfoIcon, Music, Lock } from 'lucide-react';
 import moment from 'moment';
 import { jsPDF } from 'jspdf';
 import autoTable, { CellInput } from 'jspdf-autotable';
@@ -11,6 +11,9 @@ import PopularityIndicator from './Relatorios/components/PopularityIndicator';
 import { useForm, Controller } from 'react-hook-form';
 import { Stepper, type Step } from './ui/stepper';
 import { cn } from '../lib/utils';
+import { Link } from 'react-router-dom';
+import { Alert, AlertDescription, AlertTitle } from './ui/alert';
+import { Button } from './ui/button';
 
 import './Ranking/styles/Ranking.css';
 
@@ -97,8 +100,41 @@ const wizardSteps: Step[] = [
   { label: "Período e Chart" }
 ];
 
+// Componente de Upsell para Relatórios
+const UpsellNoticeRelatorios: React.FC = () => (
+  <div className="flex justify-center items-center h-[calc(100vh-200px)]">
+    <Alert variant="default" className="max-w-lg border-primary bg-primary/5">
+      <Lock className="h-5 w-5 text-primary" />
+      <AlertTitle className="font-bold text-lg text-primary">Relatórios Detalhados Exclusivos</AlertTitle>
+      <AlertDescription className="mt-2">
+        Gere relatórios personalizados por rádio, cidade ou estado para análises aprofundadas.
+        <br />
+        Assine um plano para desbloquear esta poderosa ferramenta de inteligência de mercado.
+      </AlertDescription>
+      <Button asChild className="mt-4">
+        <Link to="/plans">Ver Planos de Assinatura</Link>
+      </Button>
+    </Alert>
+  </div>
+);
+
 const RelatoriosWizard: React.FC = () => {
-  const { currentUser, planId } = useAuth();
+  const { currentUser, planId, loading: authLoading, isInitialized } = useAuth();
+  
+  // --- VERIFICAÇÃO DE CARREGAMENTO E PLANO PRIMEIRO ---
+  if (!isInitialized || authLoading) {
+     return (
+       <div className="flex justify-center items-center h-[calc(100vh-200px)]">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+       </div>
+     );
+  }
+
+  if (planId === 'FREE') {
+    return <UpsellNoticeRelatorios />;
+  }
+  // --- FIM DA VERIFICAÇÃO ---
+
   const [currentStep, setCurrentStep] = useState(1);
   const [selectedReportType, setSelectedReportType] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

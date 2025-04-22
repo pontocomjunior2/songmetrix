@@ -137,7 +137,7 @@ const MainLayout: React.FC = () => {
                     {!isMobile && (
                       <span className="text-sm text-gray-700 dark:text-gray-200 flex items-center">
                         {currentUser.email}
-                        {planId === 'expired_trial' && (
+                        {planId === 'FREE' && (
                           <Badge variant="secondary" className="ml-2 px-1.5 py-0.5 text-xs">
                             Free
                           </Badge>
@@ -158,7 +158,7 @@ const MainLayout: React.FC = () => {
                           <div className="px-4 py-2 text-sm text-gray-700 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
                             <span>{currentUser.email}</span>
                             <div>
-                              {planId === 'expired_trial' && (
+                              {planId === 'FREE' && (
                                 <Badge variant="secondary" className="px-1.5 py-0.5 text-xs">
                                   Free
                                 </Badge>
