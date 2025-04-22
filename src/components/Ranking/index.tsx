@@ -12,17 +12,47 @@ import { MultiValue } from 'react-select';
 import { Loader2 } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 import { Search } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Alert, AlertDescription, AlertTitle } from '../ui/alert';
+import { Button } from '../ui/button';
+import { Info, Lock } from 'lucide-react';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { Select as UISelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { MultiSelect as MultiSelectComponent } from 'react-multi-select-component';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
+import { Calendar as CalendarIcon } from 'lucide-react';
 
 interface SelectOption {
   value: string;
   label: string;
 }
 
+// Componente de Upsell (pode ser reutilizado ou definido localmente)
+const UpsellNoticeRanking: React.FC = () => (
+  <div className="flex justify-center items-center h-[calc(100vh-200px)]">
+    <Alert variant="default" className="max-w-lg border-primary bg-primary/5">
+      <Lock className="h-5 w-5 text-primary" />
+      <AlertTitle className="font-bold text-lg text-primary">Descubra as Músicas Mais Tocadas</AlertTitle>
+      <AlertDescription className="mt-2">
+        Acesse o ranking completo das músicas e artistas com mais execuções nas rádios monitoradas.
+        <br />
+        Assine um plano para ter acesso a esta análise estratégica e otimizar sua programação.
+      </AlertDescription>
+      <Button asChild className="mt-4">
+        <Link to="/plans">Ver Planos de Assinatura</Link>
+      </Button>
+    </Alert>
+  </div>
+);
+
 export default function Ranking() {
-  const { currentUser } = useAuth();
+  const { currentUser, planId } = useAuth();
+  console.log('[Ranking Component] Rendering. planId:', planId);
   const { theme } = useTheme();
   const isDarkMode = theme === 'dark';
   const [loading, setLoading] = useState(false);
+
   const [rankingData, setRankingData] = useState<RankingItem[]>([]);
   const [selectedRadios, setSelectedRadios] = useState<SelectOption[]>([]);
   const [radiosOptions, setRadiosOptions] = useState<SelectOption[]>([]);
@@ -304,6 +334,7 @@ export default function Ranking() {
     setSelectedRadios([]);
   };
 
+  // Se não for FREE, renderiza o conteúdo normal
   return (
     <div className="p-4 space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700">

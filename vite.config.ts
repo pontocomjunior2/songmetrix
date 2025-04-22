@@ -5,7 +5,8 @@ import path from 'path';
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   // Carregar variáveis de ambiente com base no modo
-  const env = loadEnv(mode, process.cwd(), '');
+  const env = loadEnv(mode, process.cwd());
+  console.log('[vite.config.ts] Loaded env:', env);
   const isProduction = mode === 'production';
   
   console.log('Modo:', mode);

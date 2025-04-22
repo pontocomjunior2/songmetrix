@@ -4,6 +4,9 @@ import { useAuth } from '../../hooks/useAuth';
 import { Loader2 } from 'lucide-react';
 // import { supabase } from '../../lib/supabase-client'; // Não parece ser mais necessário aqui
 
+// Definir rotas que exigem um plano pago (não FREE)
+// const PAID_ROUTES = ['/realtime', '/ranking', '/relatorios'];
+
 interface ProtectedRouteProps {
   children: React.ReactNode;
 }
@@ -49,6 +52,16 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     console.error(`[ProtectedRoute] CRITICAL: Navigating to /login! State: isInitialized=${isInitialized}, currentUser=${currentUser}, planId=${planId}, authLoading=${authLoading}, authError=${authError}`);
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
+
+  // --- VERIFICAÇÃO DE PLANO PARA ROTAS PAGAS --- 
+  // const isPaidRoute = PAID_ROUTES.includes(location.pathname);
+  // const isFreePlan = planId === 'FREE';
+
+  // if (isPaidRoute && isFreePlan) {
+  //   console.log(`[ProtectedRoute] Condition: Paid Route (${location.pathname}), Free Plan. Navigating to /plans.`);
+  //   return <Navigate to="/plans" state={{ from: location, message: 'Você precisa de um plano pago para acessar esta página.' }} replace />;
+  // } 
+  // --- FIM DA VERIFICAÇÃO DE PLANO ---
 
   const isAdminRoute = location.pathname.startsWith('/admin');
   const isAdminPlan = planId === 'ADMIN';

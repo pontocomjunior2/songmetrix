@@ -306,15 +306,151 @@ app.post('/webhook/asaas', express.raw({ type: 'application/json' }), async (req
       }
       */
 
+      // Atualizar plano (Auth metadata e tabela users)
+      if (newPlanId) {
+        console.log(`[Webhook Asaas] Tentando ATIVAR/ATUALIZAR plano para ${newPlanId} para usuário ${supabaseUserId}`);
+        try {
+            await updateUserPlan(supabaseUserId, newPlanId);
+            console.log(`[Webhook Asaas] Plano do usuário ${supabaseUserId} atualizado para ${newPlanId} com sucesso.`);
+            // Sincronizar após atualização bem-sucedida
+            await syncUserWithSendPulse({ id: supabaseUserId, email: userEmail, plan_id: newPlanId }); // Passar plan_id atualizado
+        } catch (updateError) {
+            console.error(`[Webhook Asaas] Erro ao atualizar plano para ${newPlanId} para usuário ${supabaseUserId}:`, updateError);
+        }
+      } else {
+          console.warn(`[Webhook Asaas] Não foi possível determinar o novo plan_id para o pagamento ${paymentId}`);
+      }
+
+    // --- ADICIONAR LÓGICA PARA DESATIVAÇÃO ---
+    } else if (
+        // eventType === 'SUBSCRIPTION_EXPIRED' || // REMOVER ESTE
+        eventType === 'SUBSCRIPTION_INACTIVATED' || // ADICIONAR ESTE
+        eventType === 'PAYMENT_OVERDUE' ||        
+        eventType === 'SUBSCRIPTION_DELETED' ||   
+        eventType === 'PAYMENT_CHARGEBACK_REQUESTED' 
+    ) {
+        console.log(`[Webhook Asaas] Evento de DESATIVAÇÃO/INATIVAÇÃO recebido: ${eventType}`);
+
+        // Extrair ID do cliente Asaas (pode variar ligeiramente por evento)
+        let asaasCustomerId;
+        if (event.payment) {
+            asaasCustomerId = event.payment.customer;
+        } else if (event.subscription) {
+            asaasCustomerId = event.subscription.customer;
+        } else if (event.chargeback) { // Para PAYMENT_CHARGEBACK_REQUESTED
+             // Verificar estrutura exata do payload chargeback - pode ser event.payment.customer
+             asaasCustomerId = event.chargeback.customer || event.payment?.customer; 
+        } else {
+             // Tentar obter de um campo genérico 'customer' se existir
+             asaasCustomerId = event.customer;
+        }
+
+        if (!asaasCustomerId) {
+            console.warn(`[Webhook Asaas - ${eventType}] Evento sem ID do cliente Asaas. Payload:`, JSON.stringify(event));
+            return; // Não podemos prosseguir
+        }
+
+        console.log(`[Webhook Asaas - ${eventType}] Tentando DESATIVAR plano (definir como FREE) para cliente Asaas ${asaasCustomerId}`);
+
+        // Encontrar usuário Supabase pelo asaas_customer_id
+        const { data: user, error: findError } = await supabaseAdmin
+            .from('users')
+            .select('id, plan_id') // Selecionar plan_id atual para log
+            .eq('asaas_customer_id', asaasCustomerId)
+            .single();
+
+        if (findError) {
+            // Logar erro, mas não retornar erro 500 para Asaas (já respondemos 200)
+            console.error(`[Webhook Asaas - ${eventType}] Erro ao buscar usuário com asaas_customer_id ${asaasCustomerId}:`, findError);
+            return; // Parar processamento deste evento
+        }
+
+        if (!user) {
+            console.warn(`[Webhook Asaas - ${eventType}] Usuário Supabase não encontrado para cliente Asaas ${asaasCustomerId}`);
+            return; // Parar processamento deste evento
+        }
+
+        const supabaseUserId = user.id;
+        const currentPlanId = user.plan_id;
+        
+        // Evitar downgrade desnecessário se já for FREE
+        if (currentPlanId === 'FREE') {
+            console.log(`[Webhook Asaas - ${eventType}] Usuário ${supabaseUserId} já está com plano 'FREE'. Nenhuma ação necessária.`);
+            return;
+        }
+
+        console.log(`[Webhook Asaas - ${eventType}] Usuário Supabase ${supabaseUserId} encontrado. Plano atual: ${currentPlanId}. Definindo plano como 'FREE'.`);
+
+        // Definir plano como 'FREE'
+        const newPlanId = 'FREE';
+
+        // Atualizar metadados do Auth e tabela 'users'
+        try {
+            await updateUserPlan(supabaseUserId, newPlanId); // Passar 'FREE'
+            console.log(`[Webhook Asaas - ${eventType}] Plano do usuário ${supabaseUserId} definido como 'FREE' com sucesso.`);
+            // NÃO sincronizar com SendPulse/Brevo em caso de desativação por padrão
+        } catch (updateError) {
+            console.error(`[Webhook Asaas - ${eventType}] Erro ao definir plano como 'FREE' para usuário ${supabaseUserId}:`, updateError);
+        }
+
     } else {
-      console.log(`[Webhook Asaas] Evento ${eventType} não relevante para ativação.`);
+        // Evento não tratado explicitamente
+        console.log(`[Webhook Asaas] Evento ${eventType} recebido, mas não há ação definida para ele.`);
     }
 
-  } catch (processingError) {
-    console.error('[Webhook Asaas] Erro ao processar evento após resposta OK:', processingError);
+  } catch (err) {
+    // Logar erro no processamento do evento, mas não enviar erro 500 para Asaas
+    console.error('[Webhook Asaas] Erro ao processar evento após resposta OK:', err);
   }
 });
-// FIM DO HANDLER NO TOPO
+
+// Função auxiliar para atualizar o plano do usuário (Metadados + Tabela)
+async function updateUserPlan(userId, newPlanId) {
+    if (!supabaseAdmin || !userId || !newPlanId) {
+        throw new Error('updateUserPlan: Parâmetros inválidos.');
+    }
+
+    console.log(`[updateUserPlan] Atualizando plano para '${newPlanId}' para usuário ${userId}`);
+
+    // 1. Atualizar Metadados do Auth
+    console.log(`[updateUserPlan] Buscando metadados atuais do Auth para ${userId}`);
+    const { data: authUserData, error: getAuthError } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (getAuthError) {
+        console.error(`[updateUserPlan] Erro ao buscar usuário no Auth ${userId}:`, getAuthError);
+        throw new Error(`Falha ao buscar dados de autenticação do usuário: ${getAuthError.message}`);
+    }
+    if (!authUserData || !authUserData.user) {
+         console.error(`[updateUserPlan] Usuário ${userId} não encontrado no Auth.`);
+        throw new Error('Usuário não encontrado na autenticação.');
+    }
+
+    const currentMetadata = authUserData.user.user_metadata || {};
+    const newMetadata = { ...currentMetadata, plan_id: newPlanId };
+    console.log(`[updateUserPlan] Atualizando metadados do Auth para ${userId}:`, newMetadata);
+    const { error: updateAuthError } = await supabaseAdmin.auth.admin.updateUserById(
+        userId,
+        { user_metadata: newMetadata }
+    );
+    if (updateAuthError) {
+        console.error(`[updateUserPlan] Erro ao atualizar metadados do Auth para ${userId}:`, updateAuthError);
+        throw new Error(`Falha ao atualizar metadados de autenticação: ${updateAuthError.message}`);
+    }
+    console.log(`[updateUserPlan] Metadados do Auth atualizados para ${userId}.`);
+
+    // 2. Atualizar Tabela 'users'
+    console.log(`[updateUserPlan] Atualizando tabela 'users' para ${userId}`);
+    const { error: updateTableError } = await supabaseAdmin
+        .from('users')
+        .update({ plan_id: newPlanId, updated_at: new Date().toISOString() })
+        .eq('id', userId);
+
+    if (updateTableError) {
+        console.error(`[updateUserPlan] Erro ao atualizar tabela 'users' para ${userId}:`, updateTableError);
+        throw new Error(`Falha ao atualizar tabela de usuários: ${updateTableError.message}`);
+    }
+    console.log(`[updateUserPlan] Tabela 'users' atualizada para ${userId}.`);
+    console.log(`[updateUserPlan] Plano para usuário ${userId} atualizado com sucesso para '${newPlanId}' em ambos os locais.`);
+}
 
 // Configurar body parser DEPOIS do handler do webhook e DEPOIS do CORS
 app.use(express.json());
@@ -2478,5 +2614,11 @@ app.post('/api/radios/segments-map', authenticateBasicUser, async (req, res) => 
     console.error('POST /api/radios/segments-map - Erro inesperado no handler:', error);
     res.status(500).json({ message: 'Erro interno do servidor', error: error.message });
   }
+});
+
+// Middleware de tratamento de erros genérico (manter no final)
+app.use((err, req, res, next) => {
+  console.error("Erro não tratado:", err.stack);
+  res.status(500).send('Algo deu errado!');
 });
 

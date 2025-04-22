@@ -247,6 +247,107 @@ export const createCharge = async (customerId, chargeDetails) => {
 };
 
 /**
+ * Cria uma nova assinatura no Asaas.
+ *
+ * @param {string} customerId - O ID do cliente Asaas.
+ * @param {object} subscriptionDetails - Detalhes da assinatura.
+ * @param {number} subscriptionDetails.value - O valor a ser cobrado por ciclo.
+ * @param {string} subscriptionDetails.cycle - O ciclo da assinatura (e.g., MONTHLY, SEMIANNUALLY, YEARLY).
+ * @param {string} subscriptionDetails.description - Descrição da assinatura.
+ * @param {string} [subscriptionDetails.billingType="UNDEFINED"] - Tipo de cobrança (BOLETO, CREDIT_CARD, PIX, UNDEFINED).
+ * @param {string} [subscriptionDetails.externalReference=null] - Referência externa.
+ * @param {string} [subscriptionDetails.nextDueDate=null] - Data do próximo vencimento (calculada pelo Asaas se null).
+ * @param {object} [subscriptionDetails.discount=null] - Detalhes do desconto (opcional).
+ * @param {object} [subscriptionDetails.fine=null] - Detalhes da multa (opcional).
+ * @param {object} [subscriptionDetails.interest=null] - Detalhes dos juros (opcional).
+ * @returns {Promise<object|null>} Os dados da assinatura criada ou null em caso de erro.
+ */
+export const createSubscription = async (customerId, subscriptionDetails) => {
+    const {
+        value,
+        cycle,
+        description,
+        billingType = 'UNDEFINED',
+        externalReference = null,
+        nextDueDate = null,
+        discount = null,
+        fine = null,
+        interest = null
+    } = subscriptionDetails;
+
+    if (!customerId || !value || !cycle || !description) {
+        console.error('[AsaasService] Dados incompletos para criar assinatura:', {
+            customerId,
+            value,
+            cycle,
+            description
+        });
+        return null;
+    }
+
+    const subscriptionPayload = {
+        customer: customerId,
+        value,
+        cycle,
+        description,
+        billingType,
+        ...(externalReference && { externalReference }),
+        ...(nextDueDate && { nextDueDate }),
+        ...(discount && { discount }),
+        ...(fine && { fine }),
+        ...(interest && { interest })
+    };
+
+    console.log('[AsaasService] Criando assinatura Asaas com payload:', JSON.stringify(subscriptionPayload, null, 2));
+
+    try {
+        const api = getAsaasAPI();
+        // Endpoint para assinaturas é /v3/subscriptions
+        const response = await api.post('/api/v3/subscriptions', subscriptionPayload);
+        console.log('Assinatura Asaas criada com sucesso:', response.data.id);
+        return response.data; // Retorna o objeto completo da assinatura
+    } catch (error) {
+        console.error('Erro ao criar assinatura Asaas:', error.response?.data || error.message);
+        if (error.response) {
+            console.error('[createSubscription ERROR] Status:', error.response.status);
+            console.error('[createSubscription ERROR] Headers:', error.response.headers);
+        }
+        return null;
+    }
+};
+
+/**
+ * Busca as cobranças associadas a uma assinatura no Asaas.
+ *
+ * @param {string} subscriptionId - O ID da assinatura Asaas.
+ * @returns {Promise<object[]|null>} Um array com os objetos das cobranças ou null em caso de erro.
+ */
+export const getSubscriptionPayments = async (subscriptionId) => {
+  if (!subscriptionId) {
+    console.error('ID da assinatura não fornecido para buscar cobranças.');
+    return null;
+  }
+
+  console.log(`Buscando cobranças para a assinatura Asaas ID: ${subscriptionId}`);
+
+  try {
+    const api = getAsaasAPI();
+    // Endpoint para listar cobranças de uma assinatura
+    // Adicionar parâmetros de paginação se necessário (ex: ?limit=1)
+    const response = await api.get(`/api/v3/subscriptions/${subscriptionId}/payments`);
+    console.log(`Cobranças encontradas para assinatura ${subscriptionId}:`, response.data?.data?.length || 0);
+    return response.data?.data || []; // Retorna o array 'data' da resposta
+  } catch (error) {
+    console.error(`Erro ao buscar cobranças para assinatura ${subscriptionId}:`, error.response?.data || error.message);
+    if (error.response) {
+      console.error('[getSubscriptionPayments ERROR] Status:', error.response.status);
+      console.error('[getSubscriptionPayments ERROR] Headers:', error.response.headers);
+    }
+    return null;
+  }
+};
+
+/**
  * Atualiza dados de um cliente existente no Asaas.
  *
  * @param {string} userId - O ID do usuário Supabase.
@@ -318,5 +419,89 @@ export const updateAsaasCustomer = async (userId, customerData) => {
             console.error('[updateAsaasCustomer ERROR] Headers:', error.response.headers);
         }
         return false; // Falha
+    }
+};
+
+/**
+ * Cria uma nova cobrança parcelada via cartão de crédito (usando token) no Asaas.
+ *
+ * @param {string} customerId - O ID do cliente Asaas.
+ * @param {object} installmentDetails - Detalhes do parcelamento.
+ * @param {number} installmentDetails.value - O valor TOTAL da compra.
+ * @param {number} installmentDetails.installmentCount - O número de parcelas desejado.
+ * @param {string} installmentDetails.description - Descrição do parcelamento.
+ * @param {string} installmentDetails.dueDate - Data de vencimento da primeira parcela (YYYY-MM-DD).
+ * @param {string} installmentDetails.creditCardToken - O token do cartão obtido via API de tokenização.
+ * @param {object} installmentDetails.creditCardHolderInfo - Informações do titular do cartão.
+ * @param {string} installmentDetails.creditCardHolderInfo.name - Nome do titular.
+ * @param {string} installmentDetails.creditCardHolderInfo.email - Email do titular.
+ * @param {string} installmentDetails.creditCardHolderInfo.cpfCnpj - CPF/CNPJ do titular.
+ * @param {string} [installmentDetails.creditCardHolderInfo.postalCode] - CEP.
+ * @param {string} [installmentDetails.creditCardHolderInfo.addressNumber] - Número do endereço.
+ * @param {string} [installmentDetails.creditCardHolderInfo.addressComplement] - Complemento.
+ * @param {string} [installmentDetails.creditCardHolderInfo.phone] - Telefone.
+ * @param {string} [installmentDetails.creditCardHolderInfo.mobilePhone] - Celular.
+ * @param {string} [installmentDetails.externalReference=null] - Referência externa.
+ * @returns {Promise<object|null>} Os dados do parcelamento criado ou null em caso de erro.
+ */
+export const createInstallmentWithToken = async (customerId, installmentDetails) => {
+    const {
+        value,
+        installmentCount,
+        description,
+        dueDate,
+        creditCardToken,
+        creditCardHolderInfo,
+        externalReference = null,
+    } = installmentDetails;
+
+    // Validações essenciais
+    if (!customerId || !value || !installmentCount || !description || !dueDate || !creditCardToken || !creditCardHolderInfo) {
+        console.error('[AsaasService] Dados incompletos para criar parcelamento com token:', {
+            customerId, value, installmentCount, description, dueDate, creditCardToken, creditCardHolderInfo
+        });
+        return null;
+    }
+    if (!creditCardHolderInfo.name || !creditCardHolderInfo.email || !creditCardHolderInfo.cpfCnpj) {
+        console.error('[AsaasService] Dados do titular do cartão incompletos (Nome, Email, CPF/CNPJ são obrigatórios).');
+        return null;
+    }
+
+    const payload = {
+        customer: customerId,
+        billingType: 'CREDIT_CARD', // Obrigatório para este fluxo
+        totalValue: value, // API de installments usa totalValue para > 1 parcela
+        installmentCount,
+        dueDate, // Vencimento da *primeira* parcela
+        description,
+        creditCardToken,
+        creditCardHolderInfo,
+        ...(externalReference && { externalReference }),
+        // chargeType: 'AUTHORIZATION', // Remover para captura imediata
+        // installmentValue: ... // Deixar Asaas calcular
+        // remoteIp: ... // Opcional, mas recomendado se tiver
+    };
+
+    console.log('[AsaasService] Criando parcelamento Asaas com Token:', JSON.stringify(payload, null, 2));
+
+    try {
+        const api = getAsaasAPI();
+        // Usar o endpoint /v3/installments 
+        // A documentação sugere POST /v3/installments ou POST /v3/installments/creditCard
+        // O payload que montamos parece mais alinhado com /v3/installments, 
+        // mas incluindo os dados do cartão (token + holderInfo) para processamento direto.
+        // Vamos tentar /v3/installments primeiro.
+        const response = await api.post('/api/v3/installments', payload);
+        console.log('[AsaasService] Parcelamento Asaas com token criado com sucesso:', response.data?.id);
+        return response.data; // Retorna o objeto completo do parcelamento
+    } catch (error) {
+        console.error('[AsaasService] Erro ao criar parcelamento Asaas com token:', error.response?.data || error.message);
+        if (error.response) {
+            console.error('[createInstallmentWithToken ERROR] Status:', error.response.status);
+            console.error('[createInstallmentWithToken ERROR] Headers:', error.response.headers);
+            console.error('[createInstallmentWithToken ERROR] Data:', error.response.data);
+        }
+        // Retornar o objeto de erro do Asaas para a rota poder tratar
+        return { error: true, details: error.response?.data || { message: error.message } }; 
     }
 }; 
