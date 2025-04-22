@@ -1,16 +1,19 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { useAuth } from '../../hooks/useAuth';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import Loading from '../Common/Loading';
 import { ErrorAlert } from '../Common/Alert';
 import UserAvatar from '../Common/UserAvatar';
 import { toast as reactToast } from 'react-toastify'; // Importing toast for notifications
-import { Trash2, Clock, RefreshCw, MailCheck, Database, Calendar, Search, Timer } from 'lucide-react';
+import { Trash2, Clock, RefreshCw, MailCheck, Database, Calendar, Search, Timer, TimerOff, Hourglass } from 'lucide-react';
 import { supabase } from '../../lib/supabase-client';
 import { FaEdit } from 'react-icons/fa';
 import { Tooltip } from 'react-tooltip';
 import { syncUserWithSendPulse, type UserData as SendPulseUserData } from '../../utils/sendpulse-service';
 import { Input } from '../ui/input';
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '../ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Button } from '../ui/button';
+import { Loader2 } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
 
 // Atualizar mapeamento de plan_id para exibição (CHAVES em MAIÚSCULAS)
 const PLAN_DISPLAY_NAMES: { [key: string]: string } = {
@@ -73,47 +76,14 @@ export default function UserList() {
   const [syncResults, setSyncResults] = useState<any | null>(null);
   const [updatingLastLogin, setUpdatingLastLogin] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const { currentUser } = useAuth();
+  const { currentUser, loading: authLoading, isInitialized } = useAuth();
   const [syncingUsers, setSyncingUsers] = useState<string[]>([]);
+  const [updatingPlanId, setUpdatingPlanId] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadUsers();
-  }, []);
+  // Combinar estado de loading local com o do Auth
+  const isLoading = loading || authLoading || !isInitialized;
 
-  useEffect(() => {
-    filterUsers();
-  }, [users, planFilter, searchTerm]);
-
-  // Limpar recursos ao desmontar o componente
-  useEffect(() => {
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, []);
-
-  const filterUsers = () => {
-    let tempUsers = users;
-
-    // 1. Filtrar por plano
-    if (planFilter !== 'ALL') {
-      tempUsers = tempUsers.filter(user => user.plan_id === planFilter);
-    }
-
-    // 2. Filtrar por termo de busca (nome ou email)
-    if (searchTerm) {
-      const lowerCaseSearchTerm = searchTerm.toLowerCase();
-      tempUsers = tempUsers.filter(user => 
-        (user.full_name && user.full_name.toLowerCase().includes(lowerCaseSearchTerm)) ||
-        (user.email && user.email.toLowerCase().includes(lowerCaseSearchTerm))
-      );
-    }
-
-    setFilteredUsers(tempUsers);
-  };
-
-  const loadUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
@@ -150,34 +120,108 @@ export default function UserList() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    // Apenas buscar usuários se a autenticação estiver inicializada
+    if (isInitialized) {
+        fetchUsers();
+    }
+  }, [fetchUsers, isInitialized]);
+
+  useEffect(() => {
+    filterUsers();
+  }, [users, planFilter, searchTerm]);
+
+  // Limpar recursos ao desmontar o componente
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  const filterUsers = () => {
+    let tempUsers = users;
+
+    // 1. Filtrar por plano
+    if (planFilter !== 'ALL') {
+      tempUsers = tempUsers.filter(user => user.plan_id === planFilter);
+    }
+
+    // 2. Filtrar por termo de busca (nome ou email)
+    if (searchTerm) {
+      const lowerCaseSearchTerm = searchTerm.toLowerCase();
+      tempUsers = tempUsers.filter(user => 
+        (user.full_name && user.full_name.toLowerCase().includes(lowerCaseSearchTerm)) ||
+        (user.email && user.email.toLowerCase().includes(lowerCaseSearchTerm))
+      );
+    }
+
+    setFilteredUsers(tempUsers);
   };
 
-  const handlePlanChange = async (userId: string, newPlanId: string) => {
-    setUpdatingUserId(userId);
-    setLoading(true);
-    setError(null);
-    try {
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ plan_id: newPlanId })
-        .eq('id', userId);
+  const handlePlanChange = useCallback(async (userId: string, newPlanId: string) => {
+    console.log(`Attempting to change plan for user ${userId} to ${newPlanId}`);
 
-      if (updateError) {
-        throw updateError;
+    // Obter o token da sessão atual do supabase
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+    if (sessionError || !sessionData.session?.access_token) {
+      console.error('Erro ao obter token de autenticação:', sessionError);
+      setError('Token de autenticação não encontrado ou inválido. Faça login novamente.');
+      return;
+    }
+    const token = sessionData.session.access_token;
+
+    setUpdatingPlanId(userId);
+    try {
+      const response = await fetch(`/api/admin/users/${userId}/plan`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          // Usar o token obtido
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ planId: newPlanId })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: response.statusText }));
+        throw new Error(errorData.message || 'Falha ao atualizar plano');
       }
 
-      await loadUsers();
-      reactToast.success(`Plano do usuário atualizado para ${PLAN_DISPLAY_NAMES[newPlanId] || newPlanId}`);
+      const updatedUserResponse = await response.json(); // API retorna { success: true, user: { id, plan_id } } ou similar
+      console.log('Plano atualizado com sucesso (API Response):', updatedUserResponse);
 
-    } catch (error: any) {
-      console.error("Erro ao atualizar plano do usuário:", error);
-      setError("Falha ao atualizar plano do usuário: " + error.message);
-      reactToast.error("Falha ao atualizar plano do usuário: " + error.message);
+      // Atualizar o estado local do usuário (ARRAY)
+      setUsers((prevUsers) =>
+        prevUsers.map((user) => {
+          if (user.id === userId) {
+            // Retorna o usuário modificado
+            return {
+              ...user,
+              plan_id: newPlanId, // Atualiza o plan_id diretamente no objeto User
+              // Se a API retornasse o objeto user completo, poderia usar: ...updatedUserResponse.user
+            };
+          }
+          // Retorna o usuário original se não for o que foi modificado
+          return user;
+        })
+      );
+
+      // Encontrar email para a mensagem (opcional, apenas para UX)
+      const userEmail = users.find(u => u.id === userId)?.email || userId;
+      reactToast.success(`Plano do usuário ${userEmail} atualizado para ${PLAN_DISPLAY_NAMES[newPlanId] || newPlanId}.`);
+
+    } catch (err: any) {
+      console.error('Erro ao atualizar plano do usuário:', err);
+      setError(`Erro ao atualizar plano: ${err.message}`);
     } finally {
-      setUpdatingUserId(null);
-      setLoading(false);
+      setUpdatingPlanId(null);
     }
-  };
+  }, [users]); // Adicionar users como dependência por causa da busca de email no toast
 
   const handleSyncAllUsers = async () => {
     try {
@@ -345,7 +389,7 @@ export default function UserList() {
           throw new Error(errorMessage);
         }
 
-        await loadUsers();
+        await fetchUsers();
         reactToast.success('Usuário removido com sucesso');
 
       } catch (error: any) {
@@ -360,65 +404,37 @@ export default function UserList() {
     }
   };
 
-  const handleSimulateTrialEnd = async (userId: string) => {
-    if (window.confirm('Tem certeza que deseja simular o fim do período de teste para este usuário? Isso irá alterar o status para Gratuito (FREE).')) {
+  const handleSimulateTrialEnd = useCallback(async (userId: string, userName: string | null) => {
+    if (window.confirm(`Tem certeza que deseja simular o fim do período de teste para ${userName || userId}? Isso irá alterar o status para Gratuito (FREE).`)) {
       try {
-        setError('');
-        setUpdatingUserId(userId);
-        
-        // Encontrar o usuário atual para referência
-        const userToUpdate = users.find(u => u.id === userId);
-        if (!userToUpdate) {
-          throw new Error('Usuário não encontrado na lista');
-        }
-        
-        console.log(`Simulando fim do período trial para o usuário ${userId} (status atual: ${userToUpdate.plan_id})`);
-        
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          throw new Error('Sessão não encontrada');
-        }
-        
-        const response = await fetch('/api/simulate-trial-end', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`
-          },
-          body: JSON.stringify({ userId })
-        });
-        
-        const result = await response.json();
-        
-        if (!response.ok) {
-          throw new Error(result.error || 'Erro ao simular fim do período de teste');
-        }
-        
-        console.log('Resposta do servidor:', result);
-        
-        // Atualizar a lista de usuários localmente
-        setUsers(users.map(user => 
-          user.id === userId ? { ...user, plan_id: 'FREE' } : user
-        ));
-        
-        reactToast.success('Período de teste encerrado, usuário movido para Gratuito (FREE)');
-        
-        // Recarregar a lista para garantir que temos os dados mais atualizados
-        await loadUsers();
+        await handlePlanChange(userId, 'FREE');
+        reactToast.success(`Período de teste encerrado, usuário movido para Gratuito (FREE)`);
       } catch (error: any) {
         console.error('Erro ao simular fim do período de teste:', error);
         setError('Erro ao simular fim do período de teste: ' + error.message);
         reactToast.error('Erro ao simular fim do período de teste: ' + error.message);
-      } finally {
-        setUpdatingUserId(null);
       }
     }
-  };
+  }, [handlePlanChange]);
+
+  const handleEndTrialNow = useCallback(async (userId: string) => {
+    const user = users.find(u => u.id === userId);
+    if (!user) return;
+
+    if (window.confirm(`Tem certeza que deseja encerrar manualmente o período de teste para ${user.email || userId}? O status será alterado para Gratuito (FREE).`)) {
+      try {
+        await handlePlanChange(userId, 'FREE');
+        reactToast.success(`Período de teste encerrado manualmente para ${user.email || userId}. Status alterado para Gratuito.`);
+      } catch (error) {
+        console.error('Falha ao tentar encerrar o trial manualmente via handlePlanChange', error);
+      }
+    }
+  }, [users, handlePlanChange]);
 
   const handleRefresh = async () => {
     try {
       setRefreshing(true);
-      await loadUsers();
+      await fetchUsers();
       reactToast.success('Lista de usuários atualizada com sucesso');
     } catch (error) {
       reactToast.error('Erro ao atualizar lista de usuários');
@@ -472,7 +488,7 @@ export default function UserList() {
       
       // Recarregar a lista para exibir os novos dados
       console.log('[handleUpdateLastSignIn] Chamando loadUsers...'); // Log 8 Ajustado
-      await loadUsers();
+      await fetchUsers();
     } catch (error: any) {
       console.error('[handleUpdateLastSignIn] Erro no bloco catch:', error); // Log 10: Erro geral
       setError(`Erro ao atualizar dados de último acesso: ${error.message}`);
@@ -515,7 +531,7 @@ export default function UserList() {
     );
   };
 
-  if (loading) {
+  if (isLoading) {
     return <Loading size="large" message="Carregando usuários..." />;
   }
   
@@ -693,21 +709,23 @@ export default function UserList() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <select
-                      value={user.plan_id || ''} 
-                      onChange={(e) => handlePlanChange(user.id, e.target.value)}
-                      disabled={updatingUserId === user.id}
-                      className="p-1 text-xs border rounded bg-white dark:bg-gray-700 dark:text-white dark:border-gray-600 focus:ring-1 focus:ring-blue-500 focus:outline-none disabled:opacity-50 w-full md:w-auto"
+                    <Select
+                      value={user.plan_id || ''}
+                      onValueChange={(newPlan) => handlePlanChange(user.id, newPlan)}
+                      disabled={!currentUser || updatingPlanId === user.id}
                     >
-                      <option value={user.plan_id || ''} disabled hidden>
-                         {PLAN_DISPLAY_NAMES[user.plan_id || ''] || user.plan_id || 'N/A'}
-                      </option>
-                      {SELECTABLE_PLANS.map(plan => (
-                        <option key={plan} value={plan}>
-                          {PLAN_DISPLAY_NAMES[plan] || plan}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="w-full md:w-[150px] text-xs h-8">
+                        <SelectValue placeholder="Alterar..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SELECTABLE_PLANS.map((planValue) => (
+                           <SelectItem key={planValue} value={planValue}>
+                             {PLAN_DISPLAY_NAMES[planValue] || planValue}
+                           </SelectItem>
+                         ))}
+                      </SelectContent>
+                    </Select>
+                    {updatingPlanId === user.id && <Loader2 className="animate-spin h-4 w-4 ml-2 inline-block" />}
                   </TableCell>
                   <TableCell>{formatDate(user.created_at)}</TableCell>
                   <TableCell>{formatDateTime(user.last_sign_in_at)}</TableCell>
@@ -715,10 +733,10 @@ export default function UserList() {
                     {user.whatsapp || <span className="text-gray-400">Não informado</span>}
                   </TableCell>
                   <TableCell>
-                    <div className="flex space-x-2">
+                    <div className="flex items-center space-x-1">
                       <button 
                         onClick={() => handleSyncUserWithSendPulse(user)}
-                        disabled={syncingUsers.includes(user.id) || !user.email} // Desabilitar se não tiver email
+                        disabled={syncingUsers.includes(user.id) || !user.email}
                         title={!user.email ? "Usuário sem email" : "Sincronizar com SendPulse"}
                         className="p-1 text-blue-600 hover:text-blue-800 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
@@ -726,12 +744,32 @@ export default function UserList() {
                       </button>
                       <button 
                         onClick={() => handleRemoveUser(user.id)} 
-                        disabled={updatingUserId === user.id} // Exemplo: desabilitar se estiver atualizando plano
+                        disabled={!currentUser || updatingPlanId === user.id}
                         title="Remover Usuário"
                         className="p-1 text-red-600 hover:text-red-800 disabled:opacity-50"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
+                      <button
+                        onClick={() => handleSimulateTrialEnd(user.id, user.full_name || user.email)}
+                        disabled={!currentUser || updatingPlanId === user.id}
+                        className="p-1 text-yellow-600 hover:text-yellow-800 disabled:opacity-50"
+                        title="Simular Fim do Período de Teste (Muda para Gratuito)"
+                      >
+                        <Hourglass className="w-4 h-4" />
+                      </button>
+                      {user.plan_id?.toUpperCase() === 'TRIAL' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleEndTrialNow(user.id)}
+                          disabled={!currentUser || updatingPlanId === user.id}
+                          className="ml-1 text-red-600 hover:text-red-800 h-6 w-6"
+                          title="Encerrar período de teste imediatamente (Muda para Gratuito)"
+                        >
+                          <TimerOff className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

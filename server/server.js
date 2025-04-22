@@ -1792,827 +1792,125 @@ app.post('/api/users/update-status', authenticateBasicUser, async (req, res) => 
 
     console.log(`Status do usuário ${userId} atualizado com sucesso para ${newStatus}`);
 
-    return res.status(200).json({ 
-      message: 'Status do usuário atualizado com sucesso',
+    // Retornar resposta ANTES de sair do handler da rota /api/users/update-status
+    res.status(200).json({
+      message: `Status do usuário ${userId} atualizado com sucesso para ${newStatus}`,
       userId,
-      newStatus,
       oldStatus: currentStatus,
-      sendPulseSync: sendPulseSyncResult
+      newStatus: newStatus,
+      sendPulseSyncResult
     });
 
   } catch (error) {
-    console.error('Erro ao processar atualização de status:', error);
-    return res.status(500).json({ 
-      error: 'Erro interno ao processar atualização de status',
-      message: error.message
-    });
+    console.error(`Erro ao atualizar status do usuário ${userId}:`, error);
+    res.status(500).json({ error: 'Erro interno do servidor ao atualizar status' });
   }
-});
+}); // <-- FECHAR O HANDLER DA ROTA /api/users/update-status AQUI
 
-// Rota para verificar o status de um usuário específico (Admin)
-app.get('/api/users/check-status/:userId', authenticateBasicUser, async (req, res) => {
-  // A verificação de ADMIN deve ser feita DENTRO da rota agora
-  if (req.user?.planId !== 'ADMIN') {
-      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
-  }
-  try {
-    // Verificar se o usuário é administrador
-    if (req.user.user_metadata?.status !== 'ADMIN') {
-      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
-    }
-
-    const userId = req.params.userId;
-
-    if (!userId) {
-      return res.status(400).json({ error: 'ID do usuário é obrigatório' });
-    }
-
-    // Obter os metadados do usuário
-    const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId);
-    
-    if (userError) {
-      return res.status(500).json({ error: 'Erro ao obter metadados do usuário', details: userError });
-    }
-
-    // Obter dados do usuário na tabela users
-    const { data: dbUser, error: dbError } = await supabaseAdmin
-      .from('users')
-      .select('id, email, status, created_at, updated_at')
-      .eq('id', userId)
-      .single();
-      
-    if (dbError) {
-      return res.status(500).json({ error: 'Erro ao obter dados do usuário no banco', details: dbError });
-    }
-
-    // Verificar se o usuário foi criado nos últimos 7 dias
-    const createdAt = new Date(userData.user.created_at);
-    const now = new Date();
-    const diffTime = Math.abs(now.getTime() - createdAt.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    const isNewUser = diffDays <= 14;
-
-    res.status(200).json({ 
-      userId,
-      email: userData.user.email,
-      metadataStatus: userData.user.user_metadata?.status || 'Não definido',
-      dbStatus: dbUser?.status || 'Não encontrado',
-      createdAt: userData.user.created_at,
-      diffDays,
-      isNewUser,
-      shouldBeTrial: isNewUser
-    });
-  } catch (error) {
-    console.error('Erro ao verificar status do usuário:', error);
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-// Rota para corrigir o status de todos os usuários novos (Admin)
-app.post('/api/users/fix-new-users', authenticateBasicUser, async (req, res) => {
-  // A verificação de ADMIN deve ser feita DENTRO da rota agora
-  if (req.user?.planId !== 'ADMIN') {
-      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
-  }
-  try {
-    // Verificar se o usuário é administrador
-    if (req.user.user_metadata?.status !== 'ADMIN') {
-      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
-    }
-
-    // Obter todos os usuários da tabela users
-    const { data: usersList, error: fetchError } = await supabaseAdmin
-      .from('users')
-      .select('id, email, status, created_at, updated_at');
-
-    if (fetchError) {
-      return res.status(500).json({ error: 'Erro ao obter lista de usuários', details: fetchError });
-    }
-
-    const updates = [];
-    const errors = [];
-
-    // Para cada usuário, verificar e corrigir o status
-    for (const user of usersList) {
-      try {
-        // Obter os metadados do usuário
-        const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(user.id);
-        
-        if (userError) {
-          console.error(`Erro ao obter metadados do usuário ${user.id}:`, userError);
-          errors.push({
-            id: user.id,
-            email: user.email,
-            error: 'Erro ao obter metadados',
-            details: userError
-          });
-          continue;
-        }
-        
-        // Verificar se o status nos metadados é diferente do banco
-        const metadataStatus = userData?.user?.user_metadata?.status;
-        
-        if (metadataStatus !== user.status) {
-          console.log(`Corrigindo metadados do usuário ${user.id} (${user.email}) de ${metadataStatus} para ${user.status}`);
-          
-          // Atualizar os metadados
-          const { error: updateMetaError } = await supabaseAdmin.auth.admin.updateUserById(
-            user.id,
-            { user_metadata: { ...userData.user.user_metadata, status: user.status } }
-          );
-          
-          if (updateMetaError) {
-            console.error(`Erro ao atualizar metadados do usuário ${user.id}:`, updateMetaError);
-            errors.push({
-              id: user.id,
-              email: user.email,
-              error: 'Erro ao atualizar metadados',
-              details: updateMetaError
-            });
-            continue;
-          }
-          
-          updates.push({
-            id: user.id,
-            email: user.email,
-            oldStatus: metadataStatus,
-            newStatus: user.status
-          });
-        }
-      } catch (error) {
-        console.error(`Erro ao processar usuário ${user.id}:`, error);
-        errors.push({
-          id: user.id,
-          email: user.email,
-          error: 'Erro ao processar usuário',
-          details: error.message
-        });
-      }
-    }
-
-    res.status(200).json({ 
-      message: 'Correção de status concluída',
-      updates,
-      errors
-    });
-  } catch (error) {
-    console.error('Erro ao corrigir status dos usuários:', error);
-    res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-// Rota para processar a fila de sincronização (Admin)
-app.post('/api/users/process-sync-queue', authenticateBasicUser, async (req, res) => {
-  // A verificação de ADMIN deve ser feita DENTRO da rota agora
-  if (req.user?.planId !== 'ADMIN') {
-      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
-  }
-  try {
-    // Verificar se o usuário é administrador
-    if (req.user.user_metadata?.status !== 'ADMIN') {
-      console.log('Tentativa não autorizada de processar fila de sincronização:', req.user.id);
-      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
-    }
-
-    console.log('Iniciando processamento da fila de sincronização');
-
-    // Obter os registros não processados da fila de sincronização
-    const { data: queueItems, error: fetchError } = await supabaseAdmin
-      .from('auth_sync_queue')
-      .select('user_id, status')
-      .eq('processed', false)
-      .order('created_at', { ascending: true });
-
-    if (fetchError) {
-      console.error('Erro ao obter fila de sincronização:', fetchError);
-      return res.status(500).json({ error: 'Erro ao obter fila de sincronização', details: fetchError });
-    }
-
-    if (!queueItems || queueItems.length === 0) {
-      console.log('Nenhum item encontrado na fila de sincronização');
-      return res.status(200).json({ 
-        message: 'Nenhum item encontrado na fila de sincronização',
-        processed: 0,
-        errors: 0
-      });
-    }
-
-    console.log(`Encontrados ${queueItems.length} itens para processar na fila de sincronização`);
-
-    const results = {
-      success: [],
-      errors: []
-    };
-
-    // Processar cada item da fila
-    for (const item of queueItems) {
-      try {
-        console.log(`Processando usuário ${item.user_id}, status=${item.status}`);
-        
-        // Obter os metadados do usuário
-        const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(item.user_id);
-        
-        if (userError) {
-          console.error(`Erro ao obter metadados do usuário ${item.user_id}:`, userError);
-          results.errors.push({
-            user_id: item.user_id,
-            error: 'Erro ao obter metadados do usuário',
-            details: userError
-          });
-          continue;
-        }
-
-        if (!userData || !userData.user) {
-          console.error(`Usuário ${item.user_id} não encontrado`);
-          results.errors.push({
-            user_id: item.user_id,
-            error: 'Usuário não encontrado'
-          });
-          
-          // Marcar como processado mesmo com erro para não ficar tentando indefinidamente
-          await supabaseAdmin
-            .from('auth_sync_queue')
-            .update({
-              processed: true,
-              updated_at: new Date().toISOString()
-            })
-            .eq('user_id', item.user_id);
-            
-          continue;
-        }
-
-        // Atualizar os metadados
-        const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-          item.user_id,
-          { user_metadata: { ...userData.user.user_metadata, status: item.status } }
-        );
-        
-        if (updateError) {
-          console.error(`Erro ao atualizar metadados do usuário ${item.user_id}:`, updateError);
-          results.errors.push({
-            user_id: item.user_id,
-            error: 'Erro ao atualizar metadados do usuário',
-            details: updateError
-          });
-          continue;
-        }
-
-        // Atualizar também na tabela users para garantir consistência
-        const { error: updateDbError } = await supabaseAdmin
-          .from('users')
-          .update({
-            status: item.status,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', item.user_id);
-          
-        if (updateDbError) {
-          console.error(`Erro ao atualizar status do usuário ${item.user_id} no banco:`, updateDbError);
-          // Não interrompe o processo, pois o principal (metadados) já foi atualizado
-        }
-
-        // Marcar o item como processado
-        const { error: updateQueueError } = await supabaseAdmin
-          .from('auth_sync_queue')
-          .update({
-            processed: true,
-            updated_at: new Date().toISOString()
-          })
-          .eq('user_id', item.user_id);
-          
-        if (updateQueueError) {
-          console.error(`Erro ao atualizar fila de sincronização para o usuário ${item.user_id}:`, updateQueueError);
-          results.errors.push({
-            user_id: item.user_id,
-            error: 'Erro ao atualizar fila de sincronização',
-            details: updateQueueError
-          });
-          continue;
-        }
-
-        console.log(`Usuário ${item.user_id} processado com sucesso, status=${item.status}`);
-        results.success.push({
-          user_id: item.user_id,
-          status: item.status
-        });
-      } catch (error) {
-        console.error(`Erro ao processar usuário ${item.user_id}:`, error);
-        results.errors.push({
-          user_id: item.user_id,
-          error: 'Erro ao processar usuário',
-          details: error.message
-        });
-      }
-    }
-
-    console.log(`Processamento concluído: ${results.success.length} sucessos, ${results.errors.length} erros`);
-
-    res.status(200).json({ 
-      message: 'Processamento da fila de sincronização concluído',
-      processed: results.success.length,
-      errors: results.errors.length,
-      results
-    });
-  } catch (error) {
-    console.error('Erro ao processar fila de sincronização:', error);
-    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
-  }
-});
-
-// Rota para sincronizar novos usuários para TRIAL (Admin)
-app.post('/api/users/sync-new-users', authenticateBasicUser, async (req, res) => {
-  // A verificação de ADMIN deve ser feita DENTRO da rota agora
-  if (req.user?.planId !== 'ADMIN') {
-      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
-  }
-  try {
-    // Verificar se o usuário é administrador
-    if (req.user.user_metadata?.status !== 'ADMIN') {
-      console.log('Tentativa não autorizada de sincronizar novos usuários:', req.user.id);
-      return res.status(403).json({ error: 'Apenas administradores podem usar esta função' });
-    }
-
-    console.log('Iniciando sincronização de metadados de usuários');
-
-    // Buscar todos os usuários
-    const { data: allUsers, error: fetchError } = await supabaseAdmin
-      .from('users')
-      .select('id, email, status, created_at');
-
-    if (fetchError) {
-      console.error('Erro ao buscar usuários:', fetchError);
-      return res.status(500).json({ error: 'Erro ao buscar usuários', details: fetchError });
-    }
-
-    if (!allUsers || allUsers.length === 0) {
-      console.log('Nenhum usuário encontrado');
-      return res.status(200).json({ 
-        message: 'Nenhum usuário encontrado',
-        updated: 0
-      });
-    }
-
-    console.log(`Encontrados ${allUsers.length} usuários para verificar metadados`);
-
-    const results = {
-      success: [],
-      errors: []
-    };
-
-    // Verificar cada usuário
-    for (const user of allUsers) {
-      try {
-        console.log(`Verificando metadados do usuário ${user.id}`);
-
-        // Obter os metadados do usuário
-        const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(user.id);
-        
-        if (userError) {
-          console.error(`Erro ao obter metadados do usuário ${user.id}:`, userError);
-          results.errors.push({
-            user_id: user.id,
-            error: 'Erro ao obter metadados do usuário',
-            details: userError
-          });
-          continue;
-        }
-
-        if (!userData || !userData.user) {
-          console.error(`Usuário ${user.id} não encontrado`);
-          results.errors.push({
-            user_id: user.id,
-            error: 'Usuário não encontrado'
-          });
-          continue;
-        }
-
-        // Verificar se o status nos metadados é diferente do banco
-        const metadataStatus = userData.user.user_metadata?.status;
-        
-        if (metadataStatus !== user.status) {
-          console.log(`Atualizando metadados do usuário ${user.id} de ${metadataStatus || 'indefinido'} para ${user.status}`);
-          
-          // Atualizar os metadados
-          const { error: updateMetaError } = await supabaseAdmin.auth.admin.updateUserById(
-            user.id,
-            { user_metadata: { ...userData.user.user_metadata, status: user.status } }
-          );
-          
-          if (updateMetaError) {
-            console.error(`Erro ao atualizar metadados do usuário ${user.id}:`, updateMetaError);
-            results.errors.push({
-              user_id: user.id,
-              error: 'Erro ao atualizar metadados do usuário',
-              details: updateMetaError
-            });
-            continue;
-          }
-
-          // Adicionar à fila de sincronização para garantir
-          const { error: queueError } = await supabaseAdmin
-            .from('auth_sync_queue')
-            .insert({
-              user_id: user.id,
-              status: user.status,
-              processed: false,
-              created_at: new Date().toISOString()
-            })
-            .select();
-            
-          if (queueError) {
-            console.error(`Erro ao adicionar usuário ${user.id} à fila de sincronização:`, queueError);
-            // Não interrompe o processo, pois as atualizações principais já foram feitas
-          }
-
-          console.log(`Usuário ${user.id} atualizado com sucesso para ${user.status}`);
-          results.success.push({
-            user_id: user.id,
-            email: user.email,
-            oldStatus: metadataStatus,
-            newStatus: user.status
-          });
-        }
-      } catch (error) {
-        console.error(`Erro ao processar usuário ${user.id}:`, error);
-        results.errors.push({
-          user_id: user.id,
-          error: 'Erro ao processar usuário',
-          details: error.message
-        });
-      }
-    }
-
-    console.log(`Sincronização concluída: ${results.success.length} sucessos, ${results.errors.length} erros`);
-
-    res.status(200).json({ 
-      message: 'Sincronização de metadados de usuários concluída',
-      updated: results.success.length,
-      errors: results.errors.length,
-      results
-    });
-  } catch (error) {
-    console.error('Erro ao sincronizar metadados de usuários:', error);
-    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
-  }
-});
-
-// Rota para remover um usuário (Admin)
-app.post('/api/users/remove', authenticateBasicUser, async (req, res) => {
-  // LOG ADICIONADO AQUI (PRIMEIRA LINHA)
-  console.log(`[${new Date().toISOString()}] [ROUTE ENTRY] /api/users/remove`);
-
-  // Resposta simples para teste
-  res.status(200).send('Teste da rota /api/users/remove alcançado.');
-
-});
-
-// Rota para forçar a atualização de status para TRIAL para usuários novos (Admin)
-app.post('/api/users/force-trial-status', authenticateBasicUser, async (req, res) => {
- // A verificação de ADMIN deve ser feita DENTRO da rota agora
-  if (req.user?.planId !== 'ADMIN') {
-      return res.status(403).json({ error: 'Apenas administradores podem realizar esta operação' });
-  }
-  try {
-    // Verificar se é administrador
-    if (req.user?.status !== 'ADMIN') {
-      return res.status(403).json({ error: 'Apenas administradores podem realizar esta operação' });
-    }
-
-    // Buscar usuários criados nos últimos 7 dias
-    const { data: newUsers, error: userError } = await supabaseAdmin
-      .from('users')
-      .select('id, email, status, created_at')
-      .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-      .order('created_at', { ascending: false });
-
-    if (userError) {
-      console.error('Erro ao buscar usuários novos:', userError);
-      return res.status(500).json({ error: 'Erro ao buscar usuários novos', details: userError });
-    }
-
-    const results = {
-      success: [],
-      unchanged: [],
-      errors: []
-    };
-
-    // Atualizar cada usuário para TRIAL
-    for (const user of newUsers) {
-      // Pular usuários que já estão com status TRIAL
-      if (user.status === 'TRIAL') {
-        results.unchanged.push({
-          user_id: user.id,
-          email: user.email,
-          status: user.status
-        });
-        continue;
-      }
-
-      // Atualizar no banco de dados
-      const { error: updateDbError } = await supabaseAdmin
-        .from('users')
-        .update({
-          status: 'TRIAL',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
-
-      if (updateDbError) {
-        console.error(`Erro ao atualizar status do usuário ${user.id} no banco:`, updateDbError);
-        results.errors.push({
-          user_id: user.id,
-          email: user.email,
-          error: 'Erro ao atualizar status no banco de dados'
-        });
-        continue;
-      }
-
-      // Obter dados do usuário na auth
-      const { data: userData, error: userDataError } = await supabaseAdmin.auth.admin.getUserById(user.id);
-
-      if (userDataError) {
-        console.error(`Erro ao buscar dados do usuário ${user.id}:`, userDataError);
-        results.errors.push({
-          user_id: user.id,
-          email: user.email,
-          error: 'Erro ao buscar dados do usuário na autenticação'
-        });
-        continue;
-      }
-
-      // Atualizar os metadados
-      const updatedMetadata = { ...userData.user.user_metadata, status: 'TRIAL' };
-      const { error: updateMetaError } = await supabaseAdmin.auth.admin.updateUserById(
-        user.id,
-        { user_metadata: updatedMetadata }
-      );
-
-      if (updateMetaError) {
-        console.error(`Erro ao atualizar metadados do usuário ${user.id}:`, updateMetaError);
-        results.errors.push({
-          user_id: user.id,
-          email: user.email,
-          error: 'Erro ao atualizar metadados do usuário'
-        });
-        continue;
-      }
-
-      // Adicionar à fila de sincronização
-      const { error: queueError } = await supabaseAdmin
-        .from('auth_sync_queue')
-        .insert({
-          user_id: user.id,
-          status: 'TRIAL',
-          processed: false,
-          created_at: new Date().toISOString()
-        })
-        .select();
-
-      if (queueError) {
-        console.error(`Erro ao adicionar usuário ${user.id} à fila de sincronização:`, queueError);
-        // Não interrompe o processo, pois as atualizações principais já foram feitas
-      }
-
-      console.log(`Status do usuário ${user.id} atualizado com sucesso de ${user.status} para TRIAL`);
-      results.success.push({
-        user_id: user.id,
-        email: user.email,
-        old_status: user.status,
-        new_status: 'TRIAL'
-      });
-    }
-
-    return res.status(200).json({
-      message: 'Processo de atualização de status concluído',
-      summary: {
-        total_users: newUsers.length,
-        updated: results.success.length,
-        unchanged: results.unchanged.length,
-        errors: results.errors.length
-      },
-      results
-    });
-  } catch (error) {
-    console.error('Erro durante a atualização de status:', error);
-    return res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
-  }
-});
-
-// Rota para sincronizar manualmente usuários com o SendPulse (Admin)
-app.post('/api/sendpulse/sync-users', authenticateBasicUser, async (req, res) => {
-  // A verificação de ADMIN deve ser feita DENTRO da rota agora
-  if (req.user?.planId !== 'ADMIN') {
-      return res.status(403).json({ error: 'Apenas administradores podem sincronizar usuários com o SendPulse' });
-  }
-  // Verificar se o usuário é administrador
-  if (req.user.role !== 'ADMIN') {
-    console.error('Tentativa de sincronização não autorizada:', req.user.id);
-    return res.status(403).json({
-      success: false,
-      error: 'Apenas administradores podem sincronizar usuários com o SendPulse'
-    });
-  }
-
-  // ... existing code ...
-});
-
-// Rota de webhook para sincronizar novos usuários com o SendPulse
-app.post('/api/sendpulse/webhook', async (req, res) => {
-  // ... existing code ...
-});
-
-// Endpoint para sincronizar um usuário com o SendPulse
-app.post('/api/sendpulse/sync-user', async (req, res) => {
-  // Log da requisição
-  console.log('📩 Recebendo request para sincronizar usuário com SendPulse:', req.body.email);
-  // ... existing code ...
-});
-
-// Endpoint para sincronizar todos os usuários com o SendPulse (apenas para ADMIN)
-app.post('/api/sendpulse/sync-all-users', authenticateBasicUser, async (req, res) => {
-  // A verificação de ADMIN deve ser feita DENTRO da rota agora
-  if (req.user?.planId !== 'ADMIN') {
-      return res.status(403).json({ error: 'Apenas administradores podem sincronizar usuários com o SendPulse' });
-  }
-  // ... resto da lógica ...
-});
-
-// Rota para definir plan_id='ADMIN' para um usuário (ADMIN ONLY)
-app.post('/admin/users/:userId/set-admin-plan', authenticateBasicUser, async (req, res) => {
-  // Verificar se o requisitante é ADMIN
-  if (req.user?.planId !== 'ADMIN') {
-      console.log(`[set-admin-plan] Acesso negado para não-admin. User: ${req.user?.id}, Plan: ${req.user?.planId}`);
-      return res.status(403).json({ error: 'Acesso negado. Somente administradores.' });
-  }
-
-  const targetUserId = req.params.userId;
-  console.log(`[set-admin-plan] Admin ${req.user.id} tentando definir plan_id=ADMIN para usuário ${targetUserId}`);
-
-  try {
-    // Obter metadados atuais para mesclar
-    const { data: userData, error: getError } = await supabaseAdmin.auth.admin.getUserById(targetUserId);
-
-    if (getError) {
-        console.error(`[set-admin-plan] Erro ao buscar usuário ${targetUserId}:`, getError);
-        return res.status(500).json({ error: 'Erro ao buscar usuário alvo.', details: getError.message });
-    }
-
-    if (!userData || !userData.user) {
-        return res.status(404).json({ error: 'Usuário alvo não encontrado.' });
-    }
-
-    // Mesclar metadados existentes com o novo plan_id
-    const currentMetadata = userData.user.user_metadata || {};
-    const newMetadata = {
-        ...currentMetadata,
-        plan_id: 'ADMIN'
-    };
-
-    // Atualizar metadados
-    const { data: updateData, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-      targetUserId,
-      { user_metadata: newMetadata }
-    );
-
-    if (updateError) {
-      console.error(`[set-admin-plan] Erro ao atualizar metadados para ${targetUserId}:`, updateError);
-      return res.status(500).json({ error: 'Erro ao atualizar metadados.', details: updateError.message });
-    }
-
-    console.log(`[set-admin-plan] Metadados atualizados com sucesso para ${targetUserId}:`, updateData.user?.user_metadata);
-    res.status(200).json({ success: true, message: `Plan ID 'ADMIN' definido para ${targetUserId}`, metadata: updateData.user?.user_metadata });
-
-  } catch (error) {
-    console.error(`[set-admin-plan] Erro inesperado para ${targetUserId}:`, error);
-    res.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
-  }
-});
-
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-});
-
-// Atualizar último acesso dos usuários (Admin)
-app.post('/api/users/update-last-sign-in', authenticateBasicUser, async (req, res) => {
- // A verificação de ADMIN deve ser feita DENTRO da rota agora
-  if (req.user?.planId !== 'ADMIN') {
-      return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem executar esta ação.' });
-  }
-  try {
-    // Verificar se o usuário é administrador
-    const { data: userData, error: userError } = await supabaseAdmin
-      .from('users')
-      .select('status')
-      .eq('id', req.user.id)
-      .single();
-
-    if (userError || userData?.status !== 'ADMIN') {
-      return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem executar esta ação.' });
-    }
-
-    // Atualizar o campo last_sign_in_at para todos os usuários que não têm esse campo preenchido
-    const { data, error: updateError } = await supabaseAdmin
-      .rpc('update_users_last_sign_in');
-
-    if (updateError) {
-      console.error('Erro ao atualizar last_sign_in_at:', updateError);
-      return res.status(500).json({ error: `Erro ao atualizar dados: ${updateError.message}` });
-    }
-
-    // Contar quantos registros foram atualizados
-    const count = data && data.updated_count ? data.updated_count : 0;
-
-    return res.status(200).json({ 
-      success: true, 
-      message: 'Dados de último acesso atualizados com sucesso',
-      count: count 
-    });
-  } catch (error) {
-    console.error('Erro ao processar requisição de atualização de último acesso:', error);
-    return res.status(500).json({ error: `Erro interno do servidor: ${error.message}` });
-  }
-});
+// ===== ROTAS MOVIDAS PARA FORA DO HANDLER ANTERIOR =====
 
 // Rota para buscar segmentos/formatos únicos das rádios
-app.get('/api/segments', authenticateBasicUser, async (req, res) => { // Usando authenticateBasicUser como outras rotas GET
-  console.log('GET /api/segments - Requisição recebida.');
+app.get('/api/segments', authenticateBasicUser, async (req, res) => {
   try {
-    const querySql = `
-      SELECT DISTINCT formato
-      FROM streams
-      WHERE formato IS NOT NULL AND formato <> ''
-      ORDER BY formato
+    const query = `
+      SELECT DISTINCT segmento as segment
+      FROM music_log
+      WHERE segmento IS NOT NULL
+      ORDER BY segmento
     `;
-
-    // Usando a função safeQuery existente
-    const result = await safeQuery(querySql);
-
-    if (!result || !result.rows) {
-       // safeQuery retorna { rows: [] } em caso de erro, mas verificamos por segurança
-       console.error('GET /api/segments - Erro ou resultado inesperado da safeQuery.');
-       return res.status(500).json({ message: 'Erro ao buscar formatos no banco de dados.' });
-    }
-
-    const uniqueFormats = result.rows.map(row => row.formato);
-    console.log('GET /api/segments - Formatos encontrados:', uniqueFormats);
-
-    return res.status(200).json(uniqueFormats);
-
+    const result = await safeQuery(query);
+    const segments = result.rows.map(row => row.segment);
+    res.json(segments);
   } catch (error) {
-    // Embora safeQuery capture erros de query, capturamos outros erros potenciais aqui
-    console.error('GET /api/segments - Erro inesperado no handler:', error);
-    res.status(500).json({ message: 'Erro interno do servidor', error: error.message });
+    console.error('GET /api/segments - Erro:', error);
+    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
   }
 });
 
-// Rota para mapear nomes de rádios para seus segmentos/formatos únicos (POST específico)
-app.post('/api/radios/segments-map', authenticateBasicUser, async (req, res) => { // Requer autenticação básica
-  console.log('POST /api/radios/segments-map - Requisição recebida.');
-  const { radioNames } = req.body; // Espera um array { radioNames: ["Radio A", "Radio B"] }
-
-  // Validação básica da entrada
-  if (!Array.isArray(radioNames) || radioNames.length === 0) {
-    console.log('POST /api/radios/segments-map - Erro: radioNames inválido ou vazio.');
-    return res.status(400).json({ message: 'A propriedade "radioNames" deve ser um array não vazio de strings.' });
-  }
-
-  // Sanitizar nomes das rádios (remover espaços extras, etc.) - opcional, mas recomendado
-  const sanitizedRadioNames = radioNames.map(name => String(name).trim()).filter(Boolean);
-
-  if (sanitizedRadioNames.length === 0) {
-     console.log('POST /api/radios/segments-map - Erro: Nomes de rádios resultaram em array vazio após sanitização.');
-     return res.status(400).json({ message: 'Nomes de rádios inválidos fornecidos.' });
-  }
-
-  console.log(`POST /api/radios/segments-map - Buscando formatos para ${sanitizedRadioNames.length} rádios.`);
-
+// Rota para mapear nomes de rádios para seus segmentos/formatos únicos
+app.post('/api/radios/segments-map', authenticateBasicUser, async (req, res) => {
   try {
-    const querySql = `
-      SELECT DISTINCT formato
-      FROM streams
-      WHERE name = ANY($1::text[]) -- Usar o operador ANY para arrays PostgreSQL
-        AND formato IS NOT NULL
-        AND formato <> ''
-      ORDER BY formato
-    `;
-
-    // Usar a função safeQuery existente, passando o array como parâmetro
-    const result = await safeQuery(querySql, [sanitizedRadioNames]); // Passar o array diretamente
-
-    if (!result || !result.rows) {
-       console.error('POST /api/radios/segments-map - Erro ou resultado inesperado da safeQuery.');
-       return res.status(500).json({ message: 'Erro ao buscar formatos no banco de dados.' });
+    const { radioNames } = req.body; // Espera um array de nomes de rádio
+    if (!Array.isArray(radioNames) || radioNames.length === 0) {
+      return res.status(400).json({ error: 'Lista de nomes de rádio é obrigatória.' });
     }
 
-    const uniqueFormats = result.rows.map(row => row.formato);
-    console.log(`POST /api/radios/segments-map - Formatos encontrados para as rádios fornecidas: ${uniqueFormats.length}`, uniqueFormats);
+    // Usa ANY para buscar segmentos para múltiplos nomes de rádio de uma vez
+    const query = `
+      SELECT name, ARRAY_AGG(DISTINCT segmento) as segments
+      FROM music_log
+      WHERE name = ANY($1::text[]) AND segmento IS NOT NULL
+      GROUP BY name;
+    `;
 
-    return res.status(200).json(uniqueFormats); // Retorna o array de formatos
+    const result = await safeQuery(query, [radioNames]);
+    const segmentsMap = result.rows.reduce((acc, row) => {
+      acc[row.name] = row.segments; // Mapeia nome da rádio para array de segmentos
+      return acc;
+    }, {});
+
+    // Para rádios que não foram encontradas, retorna um array vazio
+    radioNames.forEach(name => {
+      if (!segmentsMap[name]) {
+        segmentsMap[name] = [];
+      }
+    });
+
+    res.json(segmentsMap);
+  } catch (error) {
+    console.error('POST /api/radios/segments-map - Erro:', error);
+    res.status(500).json({ error: 'Erro interno do servidor', details: error.message });
+  }
+});
+
+// ROTA PARA ATUALIZAR PLANO (ADMIN)
+app.put('/api/admin/users/:userId/plan', authenticateBasicUser, async (req, res) => {
+  // ADICIONAR verificação de admin AQUI
+  if (req.user?.planId !== 'ADMIN') {
+    console.warn(`[API PUT /admin/users/:userId/plan] Tentativa de acesso não autorizada por usuário ${req.user?.id} (plano: ${req.user?.planId})`);
+    return res.status(403).json({ error: 'Acesso negado. Somente administradores.' });
+  }
+
+  const { userId } = req.params;
+  const { planId: newPlanId } = req.body;
+
+  console.log(`[API PUT /admin/users/:userId/plan] Recebido para User ${userId}, Novo Plano: ${newPlanId} por Admin ${req.user.id}`); // Logar admin ID
+
+  const ALLOWED_PLANS_FOR_ADMIN_SET = ['FREE', 'TRIAL', 'ATIVO', 'INATIVO', 'ADMIN'];
+  if (!newPlanId || !ALLOWED_PLANS_FOR_ADMIN_SET.includes(newPlanId.toUpperCase())) {
+    console.warn('[API PUT /admin/users/:userId/plan] Tentativa de definir plano inválido:', newPlanId);
+    return res.status(400).json({ error: 'Plano inválido fornecido.' });
+  }
+
+  try {
+    // ** REUTILIZAR A FUNÇÃO updateUserPlan **
+    await updateUserPlan(userId, newPlanId.toUpperCase()); // Garante que está em maiúsculas
+    console.log(`[API PUT /admin/users/:userId/plan] Plano atualizado com sucesso via updateUserPlan para ${userId}. Novo plano: ${newPlanId}`);
+
+    // Buscar o usuário atualizado para retornar dados consistentes
+    const { data: updatedUserData, error: fetchUpdatedError } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (fetchUpdatedError || !updatedUserData?.user) {
+        console.warn(`[API PUT /admin/users/:userId/plan] Não foi possível re-buscar usuário ${userId} após atualização.`);
+        // Mesmo assim, retornar sucesso pois a atualização principal funcionou
+        return res.status(200).json({
+            success: true,
+            message: 'Plano atualizado com sucesso (usuário não re-encontrado após update).'
+        });
+    }
+
+    res.status(200).json({
+        success: true,
+        message: 'Plano atualizado com sucesso.',
+        user: { id: updatedUserData.user.id, plan_id: updatedUserData.user.user_metadata?.plan_id }
+    });
 
   } catch (error) {
-    console.error('POST /api/radios/segments-map - Erro inesperado no handler:', error);
-    res.status(500).json({ message: 'Erro interno do servidor', error: error.message });
+    console.error(`[API PUT /admin/users/:userId/plan] Erro ao atualizar plano para usuário ${userId}:`, error.message || error);
+    // Verificar se o erro veio da função auxiliar updateUserPlan
+    if (error.message.includes('Usuário não encontrado')) {
+        return res.status(404).json({ error: 'Usuário não encontrado.', details: error.message });
+    }
+    res.status(500).json({ error: 'Erro interno do servidor ao atualizar plano.', details: error.message || String(error) });
   }
 });
 
@@ -2622,3 +1920,9 @@ app.use((err, req, res, next) => {
   res.status(500).send('Algo deu errado!');
 });
 
+// Inicialização do servidor (manter no final)
+// RE-ADICIONAR A DEFINIÇÃO DE PORT
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
+});
