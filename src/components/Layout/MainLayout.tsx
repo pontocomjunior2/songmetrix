@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, Moon, Sun, Menu } from 'lucide-react';
+import { LogOut, Moon, Sun, Menu, UserCircle } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 import { useAuth } from '../../hooks/useAuth';
 import { CustomUser } from '../../types/customUser';
-import { useNavigate, Outlet, useLocation } from 'react-router-dom';
+import { useNavigate, Outlet, useLocation, Link } from 'react-router-dom';
 import SidebarFixed from './SidebarFixed';
 import UserAvatar from '../Common/UserAvatar';
 import SuggestRadioModal from '../Radios/SuggestRadioModal';
@@ -152,11 +152,11 @@ const MainLayout: React.FC = () => {
                   </button>
 
                   {showProfileMenu && (
-                    <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+                    <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50">
                       <div className="py-1">
                         {isMobile && currentUser.email && (
                           <div className="px-4 py-2 text-sm text-gray-700 dark:text-gray-200 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-                            <span>{currentUser.email}</span>
+                            <span className="truncate">{currentUser.email}</span>
                             <div>
                               {planId === 'FREE' && (
                                 <Badge variant="secondary" className="px-1.5 py-0.5 text-xs">
@@ -171,9 +171,19 @@ const MainLayout: React.FC = () => {
                             </div>
                           </div>
                         )}
+                        <Link 
+                          to="/meu-plano"
+                          onClick={() => setShowProfileMenu(false)}
+                          className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-colors"
+                          role="menuitem"
+                        >
+                          <UserCircle className="w-4 h-4" />
+                          Meu Plano
+                        </Link>
                         <button 
                           onClick={handleLogout}
-                          className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-red-600 dark:text-red-400"
+                          className="w-full px-4 py-2 text-left flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-red-600 dark:text-red-400 transition-colors"
+                          role="menuitem"
                         >
                           <LogOut className="w-4 h-4" />
                           Sair
