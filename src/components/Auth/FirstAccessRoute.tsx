@@ -8,54 +8,77 @@ import { toast } from 'react-toastify';
 
 export default function FirstAccessRoute() {
   const { currentUser, updateFavoriteSegments, userHasPreferences } = useAuth();
-  const [hasPreferencesChecked, setHasPreferencesChecked] = useState<boolean>(false);
+  const [checkedInitialPrefs, setCheckedInitialPrefs] = useState<boolean>(false);
+  const [hasInitialPrefs, setHasInitialPrefs] = useState<boolean>(false);
   const [loadingCheck, setLoadingCheck] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
+    let isMounted = true;
+    console.log('[FirstAccessRoute] useEffect running. currentUser:', !!currentUser);
     const checkPreferences = async () => {
+      if (!currentUser) {
+         setLoadingCheck(false);
+         setCheckedInitialPrefs(true);
+         setHasInitialPrefs(false);
+         return;
+      }
       setLoadingCheck(true);
-      const hasPrefs = await userHasPreferences();
-      setHasPreferencesChecked(hasPrefs);
-      setLoadingCheck(false);
+      try {
+        const hasPrefs = await userHasPreferences();
+        console.log('[FirstAccessRoute] useEffect - userHasPreferences result:', hasPrefs);
+        if (isMounted) {
+          setHasInitialPrefs(hasPrefs);
+          setCheckedInitialPrefs(true);
+          setLoadingCheck(false);
+          if (hasPrefs) {
+            console.log('[FirstAccessRoute] useEffect - Preferences found/updated, navigating to dashboard...');
+            navigate('/dashboard', { replace: true });
+          }
+        }
+      } catch (error) {
+          console.error('[FirstAccessRoute] Error checking preferences:', error);
+          if (isMounted) {
+              setLoadingCheck(false);
+              setCheckedInitialPrefs(true);
+              setHasInitialPrefs(false);
+          }
+      }
     };
-    if (currentUser) {
-      checkPreferences();
-    } else {
-      setLoadingCheck(false);
-    }
-  }, [userHasPreferences, currentUser]);
+    checkPreferences();
+
+    return () => { isMounted = false; };
+  }, [currentUser, navigate]);
 
   const handleSaveSegments = useCallback(async (selectedSegments: string[]) => {
-    console.log("Salvando segmentos preferidos:", selectedSegments);
-    if (selectedSegments.length === 0) {
+    console.log(">>> handleSaveSegments ENTERED");
+    console.log("Segmentos recebidos para salvar:", selectedSegments);
+    if (!selectedSegments || selectedSegments.length === 0) {
       toast.info("Selecione pelo menos um formato de rádio para continuar.");
       return;
     }
 
     try {
+      console.log('>>> handleSaveSegments - BEFORE await updateFavoriteSegments');
       await updateFavoriteSegments(selectedSegments);
-
-      console.log('Segmentos preferidos salvos com sucesso, redirecionando para dashboard...');
+      console.log('>>> handleSaveSegments - AFTER await updateFavoriteSegments (Success)');
       toast.success('Preferências salvas!');
-      navigate('/dashboard');
     } catch (error) {
-      console.error("Erro ao salvar segmentos preferidos:", error);
+      console.error(">>> handleSaveSegments - CAUGHT ERROR:", error);
       toast.error("Erro ao salvar suas preferências. Tente novamente.");
-      throw error;
     }
-  }, [updateFavoriteSegments, navigate]);
+  }, [updateFavoriteSegments]);
 
   if (loadingCheck) {
     return <Loading />;
   }
 
-  if (hasPreferencesChecked) {
-    console.log('Usuário já tem preferências, redirecionando para dashboard...');
+  if (checkedInitialPrefs && hasInitialPrefs) {
+    console.log('[FirstAccessRoute] Rendering fallback Navigate to dashboard (already had prefs).');
     return <Navigate to="/dashboard" replace />;
   }
 
-  if (!loadingCheck && !hasPreferencesChecked) {
+  if (checkedInitialPrefs && !hasInitialPrefs) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-900 p-4">
         <div className="max-w-4xl w-full bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8">
@@ -72,5 +95,6 @@ export default function FirstAccessRoute() {
     );
   }
 
+  console.warn('[FirstAccessRoute] Reached final return, possibly unexpected state.');
   return <Loading />;
 }

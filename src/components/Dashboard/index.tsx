@@ -1,12 +1,14 @@
 import React, { useState, useEffect, Suspense, memo, useCallback, useMemo } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase-client';
-import { Radio as RadioIcon, Music, Info, Clock, RefreshCw, AlertCircle } from 'lucide-react';
+import { Radio as RadioIcon, Music, Info, Clock, RefreshCw, AlertCircle, Lock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, PieLabelRenderProps } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import { UpgradePrompt } from '../Common/UpgradePrompt';
 import Loading from '../Common/Loading';
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
+import { Button } from '../ui/button';
+import { Link } from 'react-router-dom';
 
 interface TopSong {
   song_title: string;
@@ -73,6 +75,24 @@ const calculateDaysRemaining = (endDate: string | null): number | null => {
   return diffDays;
 };
 
+// Componente de Upsell específico para o Dashboard
+const DashboardUpsellNotice: React.FC = () => (
+  <div className="flex justify-center items-center h-[calc(100vh-200px)]">
+    <Alert variant="default" className="max-w-lg border-primary bg-primary/5">
+      <Lock className="h-5 w-5 text-primary" />
+      <AlertTitle className="font-bold text-lg text-primary">Funcionalidade Exclusiva para Assinantes</AlertTitle>
+      <AlertDescription className="mt-2">
+        Tenha acesso a gráficos detalhados, top artistas, gêneros e muito mais!
+        <br />
+        Faça upgrade para um plano pago e desbloqueie o Dashboard completo.
+      </AlertDescription>
+      <Button asChild className="mt-4">
+        <Link to="/plans">Ver Planos de Assinatura</Link>
+      </Button>
+    </Alert>
+  </div>
+);
+
 const Dashboard = () => {
   console.log('[Dashboard] Rendering...');
   const [topSongs, setTopSongs] = useState<TopSong[]>([]);
@@ -98,15 +118,15 @@ const Dashboard = () => {
   const [uniqueSongs, setUniqueSongs] = useState<number>(0);
   const [activeRadios, setActiveRadios] = useState<ActiveRadio[]>([]);
 
-  // <<< MOVER useMemo para o topo, junto com outros hooks >>>
   const daysRemaining = useMemo(() => calculateDaysRemaining(trialEndsAt), [trialEndsAt]);
 
-  // fetchDashboardData useCallback - agora colors é estável
   const fetchDashboardData = useCallback(async (forceRefresh = false) => {
     console.log('[Dashboard] fetchDashboardData called...');
-    if (!currentUser || !hasPreferences) {
+    if (!currentUser || !hasPreferences) { 
       console.log('[Dashboard] fetchDashboardData: Skipping fetch (no user or no preferences).');
-      // Não seta loading false aqui ainda, espera a checagem de pref.
+       if (preferencesChecked && !hasPreferences) {
+           setLoading(false);
+      }
       return;
     }
 
@@ -183,7 +203,7 @@ const Dashboard = () => {
       setIsRefreshing(false);
     }
   }, [
-    currentUser, hasPreferences, // colors não é mais necessário como dependência aqui
+    currentUser, hasPreferences, preferencesChecked,
     setLoading, setError, setTopSongs, setArtistData, setActiveRadios, 
     setGenreDistribution, setTotalExecutions, setUniqueArtists, setUniqueSongs, 
     setLastUpdated, setIsRefreshing
@@ -191,13 +211,15 @@ const Dashboard = () => {
 
   useEffect(() => {
     let isMounted = true;
+    console.log('[Dashboard] useEffect [checkPrefs] RUNNING. currentUser:', !!currentUser);
     const checkPrefs = async () => {
         if (currentUser) {
-            const userPrefs = await userHasPreferences();
+            const userPrefs = await userHasPreferences(); 
+            console.log('[Dashboard] useEffect [checkPrefs] - userHasPreferences returned:', userPrefs);
             if (!isMounted) return;
             setHasPreferences(userPrefs);
             if (!userPrefs) {
-                 navigate('/first-access');
+                 console.log('[Dashboard] useEffect [checkPrefs] - No preferences found initially.');
             }
         } else {
              if (!isMounted) return;
@@ -213,16 +235,16 @@ const Dashboard = () => {
 
   // useEffect para chamar fetchDashboardData na montagem/mudança de dependências
   useEffect(() => {
+    console.log(`[Dashboard] useEffect [fetchData] RUNNING. preferencesChecked: ${preferencesChecked}, hasPreferences (local state): ${hasPreferences}`);
     if (preferencesChecked && hasPreferences) {
-      console.log('[Dashboard] Preferences checked and present, calling initial fetchDashboardData...');
+      console.log('[Dashboard] useEffect [fetchData] - Condition MET. Calling fetchDashboardData...');
       fetchDashboardData();
     } else {
-       console.log('[Dashboard] Skipping initial fetch (preferences not checked or not set).');
+       console.log('[Dashboard] useEffect [fetchData] - Condition NOT MET. Skipping fetch.');
        if (preferencesChecked && !hasPreferences) {
-         setLoading(false); // Garante que para se não tem prefs
+         setLoading(false); 
        }
     }
-    // A dependência agora é a própria função memoizada
   }, [preferencesChecked, hasPreferences, fetchDashboardData]);
 
   // handleRefresh agora pode chamar fetchDashboardData diretamente
@@ -234,7 +256,7 @@ const Dashboard = () => {
     console.log("[Dashboard] Refresh triggered - Calling fetchDashboardData...");
     setIsRefreshing(true);
     fetchDashboardData(true);
-  }, [currentUser, hasPreferences, fetchDashboardData]); // Adiciona fetchDashboardData como dependência
+  }, [currentUser, hasPreferences, fetchDashboardData]);
 
   // ---> ADICIONAR useEffect AQUI <--- 
   useEffect(() => {
@@ -242,7 +264,7 @@ const Dashboard = () => {
   }, [planId]); // Executa sempre que planId mudar
 
   if (!preferencesChecked) {
-      console.log("[Dashboard] Waiting for preferences check...")
+      console.log("[Dashboard] Rendering: Waiting for preferences check...")
       return <div className="flex items-center justify-center h-64"><Loading /></div>;
   }
 

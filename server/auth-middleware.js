@@ -73,70 +73,41 @@ export const authenticateBasicUser = async (req, res, next) => {
 
     // Garantir que userPlanId não seja null/undefined e REMOVER ESPAÇOS EXTRAS E CONVERTER PARA MAIÚSCULAS
     if (!userPlanId) {
-        console.warn(`[AuthMiddleware] plan_id not found in user_metadata for ${user.id}. Treating as INATIVO.`);
+        console.warn(`[AuthMiddleware] 'plan_id' not found in user_metadata for ${user.id}. Treating as INATIVO.`);
         userPlanId = 'INATIVO';
     } else {
         userPlanId = userPlanId.trim().toUpperCase();
     }
 
-    console.log(`[AuthMiddleware] User: ${user.id}, Determined Plan ID (trimmed, uppercase): '${userPlanId}'`);
+    console.log(`[AuthMiddleware] User: ${user.id}, Determined Plan ID (from plan_id, trimmed, uppercase): '${userPlanId}'`);
 
     // --- DECISÃO DE ACESSO --- 
-    const allowedPlans = ['ADMIN', 'ATIVO', 'TRIAL']; // FREE não tem acesso total
-    const freePlanAllowedGetRoutes = [
-        '/api/dashboard',
-        '/api/ranking',
-        '/api/radios/status',
-        '/api/cities',
-        '/api/states',
-        '/api/radio-abbreviations',
-        '/api/segments'
-    ];
-
+    const allowedPlans = ['ADMIN', 'ATIVO', 'TRIAL', 'FREE'];
+    
     // Anexar informações úteis ao request ANTES da decisão final
     req.user = { 
       id: user.id, 
       email: user.email,
-      planId: userPlanId, // Usar o planId ajustado (trimmed, uppercase)
+      planId: userPlanId, // Usar o planId ajustado (obtido de plan_id, trimmed, uppercase)
       user_metadata: userMetadata
     };
 
-    // 1. Permitir acesso se plano for ADMIN, ATIVO ou TRIAL (não expirado)
+    // Lógica de verificação (agora baseada em plan_id novamente)
     console.log(`[AuthMiddleware] Checking if plan '${userPlanId}' is in allowedPlans: ${allowedPlans}`);
-    if (allowedPlans.includes(userPlanId)) { // Agora comparando 'TRIAL' com 'TRIAL'
+    if (allowedPlans.includes(userPlanId)) { 
       console.log(`[AuthMiddleware] Condition MET: Plan '${userPlanId}' IS in allowedPlans.`);
       console.log(`[AuthMiddleware] Access GRANTED for user ${user.id} with plan ${userPlanId} to ${req.originalUrl}`);
-      console.log(`[${new Date().toISOString()}] [AuthMiddleware] Chamando next() para rota permitida (ADMIN/ATIVO/TRIAL).`);
+      console.log(`[${new Date().toISOString()}] [AuthMiddleware] Chamando next() para rota permitida.`);
       next();
     } else {
+      // Acesso negado apenas se não for um dos planos permitidos (Ex: INATIVO)
       console.log(`[AuthMiddleware] Condition FAILED: Plan '${userPlanId}' IS NOT in allowedPlans.`);
-      // Se o plano não for permitido diretamente, VERIFICAMOS SE É FREE E ROTA PERMITIDA
-      // 2. Se for FREE (antigo trial expirado)... 
-      if (userPlanId === 'FREE') {
-        const isAllowedRoute = freePlanAllowedGetRoutes.some(route => req.originalUrl.startsWith(route));
-
-        if (isAllowedRoute && req.method === 'GET') {
-            console.log(`[AuthMiddleware] Access GRANTED (read-only) for FREE plan user ${user.id} to ${req.originalUrl}`);
-            console.log(`[${new Date().toISOString()}] [AuthMiddleware] Chamando next() para rota permitida (FREE Plan GET).`);
-            next();
-        } else {
-            console.log(`[AuthMiddleware] Access DENIED for FREE plan user ${user.id} to ${req.method} ${req.originalUrl} (Route/Method not allowed)`);
-            return res.status(403).json({ 
-                error: 'Acesso limitado para plano Free',
-                code: 'FREE_PLAN_LIMIT',
-                planId: userPlanId
-            });
-        }
-      } else {
-        // 3. Negar acesso para outros casos... (INATIVO já está em maiúsculas)
-        console.log(`[AuthMiddleware] Falling through to final DENY for plan: ${userPlanId}`);
-        console.log(`[AuthMiddleware] Access DENIED for user ${user.id} with invalid/inactive plan ${userPlanId} to ${req.originalUrl}`);
-        return res.status(403).json({ 
-            error: 'Acesso negado. Plano inválido ou inativo.', 
-            code: 'ACCESS_DENIED',
-            planId: userPlanId 
-        });
-      }
+      console.log(`[AuthMiddleware] Access DENIED for user ${user.id} with invalid/inactive plan ${userPlanId} to ${req.originalUrl}`);
+      return res.status(403).json({ 
+          error: 'Acesso negado. Plano inválido ou inativo.', 
+          code: 'ACCESS_DENIED',
+          planId: userPlanId 
+      });
     }
 
   } catch (error) {
