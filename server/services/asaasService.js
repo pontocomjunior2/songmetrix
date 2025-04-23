@@ -28,17 +28,24 @@ const getAsaasAPI = () => {
     const apiUrl = process.env.ASAAS_API_URL;
     const apiKey = process.env.ASAAS_API_KEY;
 
+    // ---- DEBUG TEMPORÁRIO ----
+    console.log('[DEBUG getAsaasAPI] Tentando usar URL:', apiUrl);
+    // Cuidado ao logar a chave completa em produção! Use apenas para debug rápido.
+    console.log('[DEBUG getAsaasAPI] Tentando usar Key (parcial):', apiKey ? `${apiKey.substring(0, 3)}...${apiKey.substring(apiKey.length - 3)}` : 'NÃO DEFINIDA');
+    // ---- FIM DEBUG ----
+
     if (!apiUrl || !apiKey) {
         console.error("[getAsaasAPI] Erro: Variáveis de ambiente ASAAS_API_URL ou ASAAS_API_KEY não definidas NO MOMENTO DA CHAMADA.");
         // Lançar erro ou retornar null pode ser apropriado aqui
-        throw new Error("Configuração da API Asaas ausente"); 
+        throw new Error("Configuração da API Asaas ausente");
     }
 
     // Log para confirmar os valores usados pela instância
+    // REMOVER /api/v3 DA BASE URL
     console.log(`[getAsaasAPI] Criando/retornando instância Axios com baseURL: ${apiUrl} e API Key: ${apiKey ? 'Presente' : 'Ausente'}`);
 
     return axios.create({
-        baseURL: apiUrl, // Deve ser https://api-sandbox.asaas.com/
+        baseURL: apiUrl, // Ex: https://api.asaas.com ou https://sandbox.asaas.com
         headers: {
             'Content-Type': 'application/json',
             'access_token': apiKey
@@ -151,7 +158,7 @@ export const findOrCreateCustomer = async (userData) => {
 
         try {
             const api = getAsaasAPI();
-            const response = await api.post('/api/v3/customers', customerPayload);
+            const response = await api.post('/v3/customers', customerPayload);
             customerId = response.data.id; // Obter o novo ID
             console.log(`Cliente Asaas criado com sucesso para usuário ${userId}: ${customerId}`);
 
@@ -231,9 +238,9 @@ export const createCharge = async (customerId, chargeDetails) => {
     try {
         // Obter a instância Axios configurada AQUI
         const api = getAsaasAPI(); 
-        // A baseURL (https://api-sandbox.asaas.com/) não inclui /api/v3
-        // O endpoint de pagamentos é /v3/payments, então precisamos do caminho completo
-        const response = await api.post('/api/v3/payments', chargePayload); 
+        // A baseURL já está correta (sem /api/v3)
+        // O endpoint de pagamentos é /v3/payments
+        const response = await api.post('/v3/payments', chargePayload); 
         console.log('Cobrança Asaas criada com sucesso:', response.data.id);
         return response.data; // Retorna o objeto completo da cobrança
     } catch (error) {
@@ -303,7 +310,7 @@ export const createSubscription = async (customerId, subscriptionDetails) => {
     try {
         const api = getAsaasAPI();
         // Endpoint para assinaturas é /v3/subscriptions
-        const response = await api.post('/api/v3/subscriptions', subscriptionPayload);
+        const response = await api.post('/v3/subscriptions', subscriptionPayload);
         console.log('Assinatura Asaas criada com sucesso:', response.data.id);
         return response.data; // Retorna o objeto completo da assinatura
     } catch (error) {
@@ -333,8 +340,8 @@ export const getSubscriptionPayments = async (subscriptionId) => {
   try {
     const api = getAsaasAPI();
     // Endpoint para listar cobranças de uma assinatura
-    // Adicionar parâmetros de paginação se necessário (ex: ?limit=1)
-    const response = await api.get(`/api/v3/subscriptions/${subscriptionId}/payments`);
+    // CORRIGIR CAMINHO: Remover /api
+    const response = await api.get(`/v3/subscriptions/${subscriptionId}/payments`);
     console.log(`Cobranças encontradas para assinatura ${subscriptionId}:`, response.data?.data?.length || 0);
     return response.data?.data || []; // Retorna o array 'data' da resposta
   } catch (error) {
@@ -402,22 +409,43 @@ export const updateAsaasCustomer = async (userId, customerData) => {
         return false;
     }
 
-    console.log(`[updateAsaasCustomer] Atualizando cliente Asaas ${asaasCustomerId} para usuário ${userId} com dados:`, customerData);
+    // PREPARAR PAYLOAD CORRETO: Apenas os dados a serem atualizados
+    // Remover quaisquer chaves extras como 'customerId' se vierem em customerData
+    const updatePayload = { ...customerData };
+    delete updatePayload.customerId; // Garantir que não estamos enviando o ID no corpo
+
+    console.log(`[updateAsaasCustomer] Atualizando cliente Asaas ${asaasCustomerId} para usuário ${userId} com payload:`, updatePayload); // Logar o payload correto
 
     // 2. Chamar API Asaas para atualizar
     try {
         const api = getAsaasAPI();
+        const requestUrl = `/v3/customers/${asaasCustomerId}`;
+        // LOG DETALHADO DA URL FINAL
+        console.log(`[updateAsaasCustomer DEBUG] Chamando PUT para: ${api.defaults.baseURL}${requestUrl}`);
+        
         // O endpoint de atualização é /v3/customers/{id}
-        const response = await api.put(`/api/v3/customers/${asaasCustomerId}`, customerData);
+        // A baseURL já está correta (sem /api/v3), então o caminho relativo é /v3/customers/{id}
+        const response = await api.put(requestUrl, updatePayload); // Usar requestUrl e updatePayload
         console.log(`[updateAsaasCustomer] Cliente Asaas ${asaasCustomerId} atualizado com sucesso.`);
         return true; // Sucesso
 
     } catch (error) {
-        console.error(`[updateAsaasCustomer] Erro ao atualizar cliente Asaas ${asaasCustomerId}:`, error.response?.data || error.message);
+        // Log mais detalhado do erro
+        console.error(`[updateAsaasCustomer] Erro DETALHADO ao atualizar cliente Asaas ${asaasCustomerId}:`);
         if (error.response) {
             console.error('[updateAsaasCustomer ERROR] Status:', error.response.status);
             console.error('[updateAsaasCustomer ERROR] Headers:', error.response.headers);
+            // Tentar logar o corpo da resposta de erro, se houver
+            console.error('[updateAsaasCustomer ERROR] Data:', error.response.data);
+        } else if (error.request) {
+            // A requisição foi feita mas nenhuma resposta foi recebida
+            console.error('[updateAsaasCustomer ERROR] Nenhuma resposta recebida:', error.request);
+        } else {
+            // Algo aconteceu ao configurar a requisição que acionou um erro
+            console.error('[updateAsaasCustomer ERROR] Erro na configuração da requisição:', error.message);
         }
+        // Logar o objeto de erro completo para análise
+        console.error('[updateAsaasCustomer ERROR] Objeto de Erro Completo:', error);
         return false; // Falha
     }
 };
@@ -487,11 +515,8 @@ export const createInstallmentWithToken = async (customerId, installmentDetails)
     try {
         const api = getAsaasAPI();
         // Usar o endpoint /v3/installments 
-        // A documentação sugere POST /v3/installments ou POST /v3/installments/creditCard
-        // O payload que montamos parece mais alinhado com /v3/installments, 
-        // mas incluindo os dados do cartão (token + holderInfo) para processamento direto.
-        // Vamos tentar /v3/installments primeiro.
-        const response = await api.post('/api/v3/installments', payload);
+        // CORRIGIR CAMINHO: Remover /api
+        const response = await api.post('/v3/installments', payload);
         console.log('[AsaasService] Parcelamento Asaas com token criado com sucesso:', response.data?.id);
         return response.data; // Retorna o objeto completo do parcelamento
     } catch (error) {

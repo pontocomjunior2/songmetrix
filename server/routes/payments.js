@@ -42,12 +42,21 @@ const securePlans = {
 
 // Renomear rota para refletir a criação de assinatura
 router.post('/create-subscription', authenticateUser, async (req, res) => {
+    // LOG INICIAL
+    console.log(`
+--- [${new Date().toISOString()}] ROTA /create-subscription INICIADA ---
+`);
+    console.log('[Route /create-subscription] User ID:', req.user?.id);
+    console.log('[Route /create-subscription] Request Body:', req.body);
+
     // Verificar se clientes supabase foram inicializados
     if (!supabaseAdmin) {
-        return res.status(500).json({ error: 'Configuração do servidor (Supabase Admin) incompleta.' });
+        console.error('[Route /create-subscription] ERRO FATAL: supabaseAdmin não inicializado.');
+        return res.status(500).json({ success: false, error: 'Configuração do servidor (Supabase Admin) incompleta.' });
     }
     if (!supabaseUrl || !supabaseAnonKey) {
-        return res.status(500).json({ error: 'Configuração do servidor (Supabase Client) incompleta.' });
+        console.error('[Route /create-subscription] ERRO FATAL: supabaseUrl ou supabaseAnonKey não definido.');
+        return res.status(500).json({ success: false, error: 'Configuração do servidor (Supabase Client) incompleta.' });
     }
 
     // Inicializar Supabase client para buscar dados do usuário logado
@@ -60,7 +69,8 @@ router.post('/create-subscription', authenticateUser, async (req, res) => {
         planId,
         billingType, // Será 'CREDIT_CARD' para Semestral/Anual, 'UNDEFINED' para Mensal
         creditCardToken, // <-- Novo: Token do cartão
-        creditCardHolderInfo // <-- Novo: Info do titular (necessário para installments com token)
+        creditCardHolderInfo, // <-- Novo: Info do titular (necessário para installments com token)
+        cpfCnpj // <-- Adicionado: CPF/CNPJ enviado diretamente no corpo
     } = req.body;
     const userId = req.user.id;
 
@@ -92,15 +102,50 @@ router.post('/create-subscription', authenticateUser, async (req, res) => {
     }
 
     try {
+        console.log('[Route /create-subscription] Dentro do TRY principal.');
         const { data: userData, error: userError } = await supabase.auth.getUser();
         if (userError || !userData?.user) {
-            console.error('Erro ao buscar dados do usuário autenticado:', userError);
+            console.error('[Route /create-subscription] Erro ao buscar dados do usuário autenticado:', userError);
             return res.status(500).json({ success: false, error: 'Falha ao obter informações do usuário.' });
         }
 
-        const customerId = await findOrCreateCustomer(userData.user);
+        // 1. Encontrar ou Criar Cliente Asaas
+        console.log('[Route /create-subscription] Passo 1: Chamando findOrCreateCustomer...');
+        const customerId = await findOrCreateCustomer(userData.user, cpfCnpj);
         if (!customerId) {
-            return res.status(500).json({ success: false, error: 'Falha ao processar cliente no gateway de pagamento.' });
+            // Mensagem de erro aprimorada se cpfCnpj foi passado mas falhou
+            const errorMsg = cpfCnpj
+              ? 'Falha ao processar cliente no gateway de pagamento (verifique CPF/CNPJ ou se já existe em outra conta Asaas).'
+              : 'Falha ao processar cliente no gateway de pagamento.';
+            console.error(`[Route /create-subscription] findOrCreateCustomer falhou para user ${userId}. CPF/CNPJ fornecido: ${!!cpfCnpj}`);
+            return res.status(500).json({ success: false, error: errorMsg });
+        }
+        console.log(`[Route /create-subscription] Passo 1: findOrCreateCustomer retornou customerId: ${customerId}`);
+
+        // 2. Garantir que o Cliente Asaas tenha CPF/CNPJ (Atualizar se necessário)
+        if (customerId && cpfCnpj) {
+            const cleanedCpfCnpj = cpfCnpj.replace(/\D/g, '');
+            console.log(`[Route /create-subscription] Passo 2: Tentando atualizar Asaas Customer ${customerId} com CPF ${cleanedCpfCnpj}`);
+            // LOG ANTES DA CHAMADA CRÍTICA
+            console.log('[Route /create-subscription] CHAMANDO updateAsaasCustomer AGORA...');
+            try {
+                const updateSuccess = await updateAsaasCustomer(userId, { customerId: customerId, cpfCnpj: cleanedCpfCnpj });
+                 // LOG DEPOIS DA CHAMADA CRÍTICA
+                 console.log(`[Route /create-subscription] updateAsaasCustomer retornou: ${updateSuccess}`);
+                if (!updateSuccess) {
+                    console.error(`[Route /create-subscription] updateAsaasCustomer retornou FALSE. Falha ao ATUALIZAR cliente Asaas ${customerId}.`);
+                    return res.status(500).json({ success: false, error: 'Falha ao atualizar dados do cliente no gateway de pagamento antes de criar assinatura.' });
+                }
+                console.log(`[Route /create-subscription] Passo 2: Cliente Asaas ${customerId} atualizado/verificado com CPF/CNPJ.`);
+            } catch (updateError) {
+                 // LOG SE updateAsaasCustomer LANÇAR UM ERRO
+                 console.error(`[Route /create-subscription] ERRO NO CATCH ao chamar updateAsaasCustomer para ${customerId}:`, updateError);
+                 return res.status(500).json({ success: false, error: 'Erro interno ao tentar atualizar dados do cliente no gateway.' });
+            }
+        } else if (!cpfCnpj && planId === 'mensal') {
+             // Se não veio CPF/CNPJ na requisição e é plano mensal (que vai criar assinatura)
+             // Logar um aviso, pois provavelmente vai falhar na Asaas.
+             console.warn(`[Route /create-subscription] Tentando criar assinatura para cliente ${customerId} sem CPF/CNPJ fornecido na requisição. A chamada Asaas pode falhar.`);
         }
 
         // Obter detalhes seguros do plano
@@ -201,7 +246,12 @@ router.post('/create-subscription', authenticateUser, async (req, res) => {
         }
 
     } catch (error) {
+        // LOG DO CATCH PRINCIPAL
+        console.error(`
+--- [${new Date().toISOString()}] ERRO NO CATCH PRINCIPAL da ROTA /create-subscription ---
+`);
         console.error('[Route /create-subscription] Erro inesperado:', error);
+        console.error('[Route /create-subscription] Stack Trace:', error.stack); // Logar stack trace
         res.status(500).json({ success: false, error: 'Erro interno do servidor ao processar plano.' });
     }
 });
