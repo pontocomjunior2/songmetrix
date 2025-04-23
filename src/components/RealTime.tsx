@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { format, parseISO } from 'date-fns';
 import { Search, Loader2, ChevronDown, ChevronRight, Music2, History, AlertCircle, Lock } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
@@ -84,6 +84,12 @@ export default function RealTime() {
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [expandedRadio, setExpandedRadio] = useState<number | null>(null);
 
+  const filtersRef = useRef(filters);
+
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
+
   const getAuthHeaders = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
@@ -165,7 +171,8 @@ export default function RealTime() {
 
   const fetchExecutions = useCallback(async (targetPage: number, isReset: boolean): Promise<boolean> => {
     setLoadingContent(true);
-    console.log(`[RealTime fetchExecutions] Attempting to fetch page: ${targetPage} (Reset: ${isReset})`);
+    const currentFilters = filtersRef.current;
+    console.log(`[RealTime fetchExecutions] Attempting to fetch page: ${targetPage} (Reset: ${isReset}) with filters:`, currentFilters);
 
     try {
       const headers = await getAuthHeaders();
@@ -174,8 +181,8 @@ export default function RealTime() {
         headers,
         body: JSON.stringify({
           filters: {
-            ...filters,
-            radio: filters.radio === 'Todas as Rádios' ? '' : filters.radio
+            ...currentFilters,
+            radio: currentFilters.radio === 'Todas as Rádios' ? '' : currentFilters.radio
           },
           page: targetPage,
         }),
@@ -190,12 +197,16 @@ export default function RealTime() {
         setExecutions(currentExecutions => {
           const existingIds = new Set(currentExecutions.map(exec => exec.id));
           const newData = isReset ? data : data.filter(exec => !existingIds.has(exec.id));
-          if (!isReset) {
+           if (!isReset) {
             console.log(`[RealTime fetchExecutions] Received ${data.length} items for page ${targetPage}. Added ${newData.length} new unique items.`);
-          }
+           } else {
+             console.log(`[RealTime fetchExecutions] Received ${data.length} items for new search (page ${targetPage}).`);
+           }
           return isReset ? newData : [...currentExecutions, ...newData];
         });
         setHasMore(data.length === 100);
+        if (isReset) setPage(1);
+        else setPage(targetPage + 1);
         return true;
       } else {
         console.warn("Received non-array data from /api/executions:", data);
@@ -206,11 +217,12 @@ export default function RealTime() {
     } catch (error) {
       console.error('Error fetching executions:', error);
       setHasMore(false);
+      if (isReset) setExecutions([]);
       return false;
     } finally {
       setLoadingContent(false);
     }
-  }, [getAuthHeaders, filters]);
+  }, [getAuthHeaders]);
 
   const radioOptions = useMemo(() => {
     const options: SelectOption[] = [{ value: '', label: 'Todas as Rádios' }];
@@ -220,12 +232,31 @@ export default function RealTime() {
     return options;
   }, [radios]);
 
-  const handleSearch = useCallback((e: React.FormEvent) => {
-    e.preventDefault();
+  const validateDates = useCallback(() => {
+    const start = new Date(`${filters.startDate} ${filters.startTime}`);
+    const end = new Date(`${filters.endDate} ${filters.endTime}`);
+    return start <= end;
+  }, [filters]);
+
+  const handleSearch = useCallback((e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    console.log("[RealTime handleSearch] Search button clicked or triggered.");
+
+    if (filters.radio === '' && filters.artist === '' && filters.song === '') {
+      console.warn("[RealTime handleSearch] Busca abortada: Pelo menos um filtro (Rádio, Artista ou Música) deve ser preenchido para pesquisar.");
+      return;
+    }
+
+    if (!validateDates()) {
+      console.warn("[RealTime handleSearch] Search aborted due to invalid date range.");
+      return;
+    }
+
     fetchExecutions(0, true);
-  }, [fetchExecutions]);
+  }, [fetchExecutions, validateDates, filters.radio, filters.artist, filters.song]);
 
   const clearFilters = useCallback(() => {
+    console.log("[RealTime clearFilters] Clearing filters.");
     setFilters({
       radio: '',
       artist: '',
@@ -235,14 +266,10 @@ export default function RealTime() {
       startTime: '00:00',
       endTime: '23:59',
     });
-    fetchExecutions(0, true);
-  }, [today, fetchExecutions]);
-
-  const validateDates = useCallback(() => {
-    const start = new Date(`${filters.startDate} ${filters.startTime}`);
-    const end = new Date(`${filters.endDate} ${filters.endTime}`);
-    return start <= end;
-  }, [filters]);
+    setExecutions([]);
+    setHasMore(false);
+    setPage(0);
+  }, [today]);
 
   const formatDisplayDate = useCallback((dateStr: string) => {
     try {
@@ -285,16 +312,23 @@ export default function RealTime() {
   }, [planId, authLoading, isInitialized]);
 
   useEffect(() => {
+    const fetchInitialData = async () => {
+      console.log("[RealTime useEffect] Fetching initial radios AND executions.");
+      await fetchRadios();
+      await fetchExecutions(0, true);
+    };
+
     if (displayMode === 'content' && currentUser) {
-      console.log("[RealTime useEffect] Fetching initial data (page 0)");
-      fetchRadios();
-      fetchExecutions(0, true).then(success => {
-          if (success) {
-              setPage(1);
-          }
-      });
+      fetchInitialData();
     }
   }, [displayMode, currentUser, fetchRadios, fetchExecutions]);
+
+  const loadMore = useCallback(() => {
+    if (!loadingContent && hasMore) {
+      console.log(`[RealTime loadMore] Loading more, current page: ${page}`);
+      fetchExecutions(page, false);
+    }
+  }, [loadingContent, hasMore, page, fetchExecutions]);
 
   if (displayMode === 'loading') {
     return (
@@ -321,11 +355,11 @@ export default function RealTime() {
                 <Select<SelectOption, false, any>
                   inputId="radio-select"
                   options={radioOptions}
-                  value={radioOptions.find(option => option.value === filters.radio)}
+                  value={radioOptions.find(option => option.value === filters.radio) || null}
                   onChange={(option: SingleValue<SelectOption>) => setFilters(f => ({ ...f, radio: option?.value || '' }))}
-                  placeholder="Todas as Rádios"
+                  placeholder="Selecione ou Todas"
                   classNamePrefix="react-select"
-                  styles={{ /* Estilos */ }}
+                  className="realtime-select dark:realtime-select-dark"
                 />
               </div>
               {/* Coluna 2: Artista */}
@@ -404,23 +438,24 @@ export default function RealTime() {
                   <p className="text-red-500 text-xs w-full sm:w-auto sm:order-1">A data/hora inicial não pode ser posterior à data/hora final.</p>
                )}
                <div className="flex items-center space-x-2 order-last">
-                <button
+                <Button
                   type="button"
+                  variant="outline"
                   onClick={clearFilters}
-                  className="realtime-clear-button inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600 dark:focus:ring-offset-gray-800"
                   aria-label="Limpar todos os filtros de pesquisa"
+                  className="realtime-clear-button"
                 >
                   Limpar Filtros
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
                   disabled={loadingContent || !validateDates()}
-                  className="realtime-search-button inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 dark:focus:ring-offset-gray-800"
                   aria-label="Pesquisar execuções com os filtros aplicados"
+                  className="realtime-search-button"
                 >
                   {loadingContent ? <Loader2 className="animate-spin -ml-1 mr-2 h-5 w-5" /> : <Search className="-ml-1 mr-2 h-5 w-5"/>}
                   Pesquisar
-                </button>
+                </Button>
              </div>
             </div>
          </form>
@@ -451,7 +486,7 @@ export default function RealTime() {
                  {!loadingContent && executions.length === 0 && (
                    <tr>
                      <td colSpan={6} className="text-center py-10 text-gray-500 dark:text-gray-400">
-                       Nenhuma execução encontrada para os filtros selecionados.
+                       Preencha os filtros e clique em "Pesquisar" para ver as execuções.
                      </td>
                    </tr>
                  )}
@@ -497,19 +532,15 @@ export default function RealTime() {
              {/* Botão Carregar Mais (Agora dentro do container da tabela) */}
              {hasMore && (
                <div className="flex justify-center py-6 border-t border-gray-200 dark:border-gray-700"> 
-                 <button
-                   onClick={async () => {
-                       const success = await fetchExecutions(page, false);
-                       if (success) {
-                          setPage(prevPage => prevPage + 1);
-                       }
-                   }}
+                 <Button
+                   variant="secondary"
+                   onClick={loadMore}
                    disabled={loadingContent}
-                   className="realtime-load-more-button inline-flex items-center justify-center px-5 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600 dark:focus:ring-offset-gray-800 disabled:opacity-60"
+                   aria-label="Carregar mais execuções"
                  >
                    {loadingContent ? <Loader2 className="animate-spin mr-2 h-5 w-5" /> : <History className="mr-2 h-5 w-5"/>}
-                   Carregar Mais Antigos
-                 </button>
+                   Carregar Mais
+                 </Button>
                </div>
              )}
            </div>
