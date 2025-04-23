@@ -211,6 +211,10 @@ export default function UserList() {
         })
       );
 
+      // Força o client Supabase a buscar os dados do usuário atualizados (incluindo metadados)
+      await supabase.auth.refreshSession();
+      console.log('Sessão do Supabase atualizada no frontend.');
+
       // Encontrar email para a mensagem (opcional, apenas para UX)
       const userEmail = users.find(u => u.id === userId)?.email || userId;
       reactToast.success(`Plano do usuário ${userEmail} atualizado para ${PLAN_DISPLAY_NAMES[newPlanId] || newPlanId}.`);
