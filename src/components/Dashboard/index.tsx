@@ -3,7 +3,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase-client';
 import { Radio as RadioIcon, Music, Info, Clock, RefreshCw, AlertCircle, Lock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, PieLabelRenderProps } from 'recharts';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { UpgradePrompt } from '../Common/UpgradePrompt';
 import Loading from '../Common/Loading';
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
@@ -93,6 +93,15 @@ const DashboardUpsellNotice: React.FC = () => (
   </div>
 );
 
+// --- Adicionar comentário sobre a necessidade de fbq ---
+// Certifique-se de que a função fbq do Meta Pixel está disponível
+// Exemplo: import { fbq } from '@/lib/meta-pixel'; ou window.fbq
+declare global {
+  interface Window {
+    fbq?: (...args: any[]) => void;
+  }
+}
+
 const Dashboard = () => {
   const [topSongs, setTopSongs] = useState<TopSong[]>([]);
   const [artistData, setArtistData] = useState<ArtistData[]>([]);
@@ -103,6 +112,8 @@ const Dashboard = () => {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const { currentUser, planId, trialEndsAt, userHasPreferences } = useAuth();
   const navigate = useNavigate();
+  // Usar useLocation para acessar search params
+  const location = useLocation();
   
   const [preferencesChecked, setPreferencesChecked] = useState(false);
   const [hasPreferences, setHasPreferences] = useState(false);
@@ -242,6 +253,36 @@ const Dashboard = () => {
   useEffect(() => {
     console.log(`[Dashboard useEffect] planId changed to: ${planId}`);
   }, [planId]); // Executa sempre que planId mudar
+
+  // ---> ADICIONAR useEffect PARA META PIXEL <--- 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const pagamentoSucesso = params.get('pagamento');
+
+    if (pagamentoSucesso === 'sucesso') {
+      console.log('Pagamento sucesso detectado via URL, disparando Meta Pixel Purchase...');
+      
+      // -- SUBSTITUIR VALOR E MOEDA PELOS DADOS REAIS DA TRANSAÇÃO --
+      const purchaseValue = 1299.00; // Placeholder - obter valor real!
+      const currency = 'BRL';
+
+      if (typeof window.fbq === 'function') {
+        try {
+          window.fbq('track', 'Purchase', { value: purchaseValue, currency: currency });
+          console.log('Meta Pixel Purchase event fired.');
+        } catch (pixelError) {
+            console.error('Erro ao disparar Meta Pixel:', pixelError);
+        }
+      } else {
+          console.warn('Função fbq do Meta Pixel não encontrada.');
+      }
+
+      // Remover o parâmetro da URL para não disparar novamente
+      // Usando replace: true para não adicionar ao histórico do navegador
+      navigate(location.pathname, { replace: true }); 
+    }
+  // Executar este efeito sempre que a query string (location.search) mudar
+  }, [location.search, navigate]); 
 
   if (!preferencesChecked) {
       return <div className="flex items-center justify-center h-64"><Loading /></div>;

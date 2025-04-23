@@ -224,6 +224,10 @@ export const createCharge = async (customerId, chargeDetails) => {
         return null;
     }
 
+    // Buscar a URL base da variável de ambiente VITE_BASE_URL
+    const baseUrl = process.env.VITE_BASE_URL; 
+    const successRedirectUrl = baseUrl ? `${baseUrl}/dashboard?pagamento=sucesso` : null;
+
     const chargePayload = {
         customer: customerId,
         billingType,
@@ -231,7 +235,20 @@ export const createCharge = async (customerId, chargeDetails) => {
         dueDate,
         description,
         // Adicionar outros campos se necessário (ex: externalReference)
+        // ADICIONAR CALLBACK AQUI
+        callback: {
+            // Usar a URL base ou um fallback (ajuste o fallback se necessário)
+            // Adicionar o parâmetro ?pagamento=sucesso
+            successUrl: successRedirectUrl || 'https://www.songmetrix.com.br/dashboard?pagamento=sucesso', // Usar a variável construída
+            autoRedirect: true
+        }
     };
+
+    // Logar um aviso se a URL base não estiver definida
+    if (!successRedirectUrl) { // Verificar a variável construída
+      console.warn('Variável de ambiente VITE_BASE_URL não definida. Usando URL de fallback para redirecionamento Asaas.');
+      // Considerar logar de forma mais crítica ou lançar um erro se a URL for essencial
+    }
 
     console.log('Criando cobrança Asaas com payload:', chargePayload);
 
