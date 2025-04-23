@@ -1,26 +1,45 @@
 // Load environment variables first
-console.log("********* EXECUTANDO server.js ATUALIZADO *********", new Date().toISOString()); // <--- LOG DE VERIFICAÇÃO
+console.log("********* EXECUTANDO server.js (NOVA TENTATIVA DOTENV) *********", new Date().toISOString()); 
 
-// Carrega as variáveis de ambiente do arquivo .env na raiz do projeto
 import dotenv from 'dotenv';
-// Adicionar override: true para forçar a sobrescrita de variáveis pré-existentes
-const dotenvResult = dotenv.config({ override: true }); 
 
-if (dotenvResult.error) {
-  console.error('[ERROR] Erro ao carregar o arquivo .env da raiz:', dotenvResult.error);
-} else {
-  console.log('[SUCCESS] Arquivo .env da raiz carregado com sucesso.');
-  // Logar valores lidos APENAS se o carregamento foi bem-sucedido
-  console.log('[DEBUG server.js] ASAAS_API_URL lido pelo dotenv:', process.env.ASAAS_API_URL);
-  console.log('[DEBUG server.js] ASAAS_API_KEY lido pelo dotenv:', process.env.ASAAS_API_KEY);
+// Tentar carregar o .env e verificar o resultado
+let dotenvResult;
+try {
+  // Usar path absoluto para garantir que ele encontre o arquivo
+  // __dirname pode não funcionar como esperado em ES Modules puros sem ajustes
+  // Vamos usar um caminho relativo mais direto
+  dotenvResult = dotenv.config({ path: '../.env.production' }); 
+  
+  if (dotenvResult.error) {
+    // Se dotenvResult.error existe, houve um erro ao carregar
+    console.error('[ERROR] Erro ao carregar o arquivo .env da raiz:', dotenvResult.error);
+  } else if (dotenvResult.parsed) {
+    // Se dotenvResult.parsed existe, o arquivo foi carregado e parseado com sucesso
+    console.log('[SUCCESS] Arquivo .env da raiz carregado e parseado com sucesso.');
+    console.log('[DEBUG server.js] ASAAS_API_URL lido pelo dotenv:', process.env.ASAAS_API_URL);
+    console.log('[DEBUG server.js] ASAAS_API_KEY lido pelo dotenv:', process.env.ASAAS_API_KEY ? 'Presente' : 'Ausente');
+    console.log('[DEBUG server.js] POSTGRES_HOST lido:', process.env.POSTGRES_HOST);
+    console.log('[DEBUG server.js] SUPABASE_SERVICE_ROLE_KEY lido:', process.env.SUPABASE_SERVICE_ROLE_KEY ? 'Presente' : 'Ausente');
+  } else {
+    // Caso o arquivo exista mas esteja vazio ou algo inesperado ocorreu
+    console.warn('[WARN] dotenv.config executado, mas não retornou erro nem dados parseados. Verifique o arquivo .env.production.');
+  }
+
+} catch (error) {
+  // Capturar qualquer erro que possa ocorrer durante a execução do dotenv.config
+  console.error('[FATAL ERROR] Exceção ao tentar carregar .env:', error);
+  // Considerar sair do processo se o .env for crítico
+  // process.exit(1);
 }
-// FIM DEBUG
 
+// ===== CONTINUAÇÃO DO CÓDIGO =====
+// Garantir que os imports necessários venham DEPOIS do dotenv
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
 import fs from 'fs';
-import crypto from 'crypto'; // Mover import para cá
+import crypto from 'crypto'; 
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import express from 'express';
 import cors from 'cors';
@@ -29,7 +48,7 @@ import { authenticateBasicUser, authenticateUser } from './auth-middleware.js';
 import { createClient } from '@supabase/supabase-js';
 import { reportQuery } from './report-query.js';
 import registerRoutes from './index.js';
-import { pool } from './db.js'; // <-- Importar pool de db.js
+import { pool } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -52,34 +71,6 @@ console.log('Database configuration:', {
   database: process.env.POSTGRES_DB,
   port: process.env.POSTGRES_PORT
 });
-
-// Importar o serviço do SendPulse (substituindo o Brevo)
-let sendPulseService;
-
-try {
-  sendPulseService = await import('../utils/sendpulse-service-esm.js');
-  console.log('SendPulse service (ESM) importado com sucesso');
-} catch (error) {
-  console.error('Erro ao importar sendpulse-service-esm:', error);
-  try {
-    sendPulseService = await import('../utils/sendpulse-service.js');
-    console.log('Usando versão alternativa do sendpulse-service');
-  } catch (fallbackError) {
-    console.error('Erro ao importar versão alternativa do sendpulse-service:', fallbackError);
-    sendPulseService = {
-      syncUserWithSendPulse: async (userData) => {
-        console.error('Módulo sendpulse-service não disponível, usando fallback');
-        return {
-          success: false,
-          error: 'Módulo sendpulse-service não disponível'
-        };
-      }
-    };
-    console.log('Usando versão de fallback para sendpulse-service');
-  }
-}
-
-const { syncUserWithSendPulse, syncUserWithBrevo } = sendPulseService;
 
 const app = express();
 
@@ -531,16 +522,32 @@ console.log('Initializing database pool with:', {
 });
 
 // Create Supabase admin client
-const supabaseAdmin = createClient(
-  process.env.VITE_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
+const supabaseUrl = process.env.VITE_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+let supabaseAdmin = null; // Inicializar como null
+
+if (supabaseUrl && supabaseServiceKey) {
+  try {
+    supabaseAdmin = createClient(
+      supabaseUrl, 
+      supabaseServiceKey,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+    console.log('[SUCCESS] Cliente Supabase Admin inicializado.');
+  } catch (error) {
+    console.error('[FATAL ERROR] Falha ao inicializar cliente Supabase Admin:', error);
   }
-);
+} else {
+  console.error('[FATAL ERROR] Variáveis VITE_SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não encontradas no ambiente. Cliente Supabase Admin não inicializado.');
+  // Você pode querer impedir o servidor de continuar se o Supabase Admin for essencial
+  // process.exit(1);
+}
 
 // Test database connection (usará o pool importado)
 const testConnection = async () => {
@@ -1663,7 +1670,6 @@ app.post('/api/users/update-status', authenticateBasicUser, async (req, res) => 
 
     const { userId, newStatus } = req.body;
     let currentStatus = 'INATIVO';
-    let sendPulseSyncResult = null;
 
     if (!userId || !newStatus) {
       return res.status(400).json({ error: 'ID do usuário e novo status são obrigatórios' });
@@ -1797,8 +1803,7 @@ app.post('/api/users/update-status', authenticateBasicUser, async (req, res) => 
       message: `Status do usuário ${userId} atualizado com sucesso para ${newStatus}`,
       userId,
       oldStatus: currentStatus,
-      newStatus: newStatus,
-      sendPulseSyncResult
+      newStatus: newStatus
     });
 
   } catch (error) {

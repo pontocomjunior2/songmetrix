@@ -27,7 +27,7 @@ const poolConfig = {
     // ca: fs.readFileSync('path/to/server-ca.pem').toString(),
     // key: fs.readFileSync('path/to/client-key.pem').toString(),
     // cert: fs.readFileSync('path/to/client-cert.pem').toString(),
-    rejectUnauthorized: process.env.NODE_ENV === 'production' // Exigir SSL em produção
+    rejectUnauthorized: false // FORÇADO para false para aceitar certificado autoassinado (Ver Aviso de Segurança)
   }
 };
 

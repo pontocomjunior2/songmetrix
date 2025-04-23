@@ -25,7 +25,7 @@ const PLAN_DISPLAY_NAMES: { [key: string]: string } = {
 };
 
 // Definir os plan_ids que o admin pode selecionar manualmente (VALORES em MAIÚSCULAS)
-const SELECTABLE_PLANS = ['FREE', 'TRIAL', 'ATIVO', 'INATIVO']; // Usar maiúsculas
+const SELECTABLE_PLANS = ['FREE', 'TRIAL', 'ATIVO', 'INATIVO', 'ADMIN']; // Adicionado 'ADMIN'
 
 // Atualizar interface User para remover 'status' se não for mais necessário
 interface User {
@@ -710,7 +710,7 @@ export default function UserList() {
                   </TableCell>
                   <TableCell>
                     <Select
-                      value={user.plan_id || ''}
+                      value={user.plan_id || 'TRIAL'}
                       onValueChange={(newPlan) => handlePlanChange(user.id, newPlan)}
                       disabled={!currentUser || updatingPlanId === user.id}
                     >
