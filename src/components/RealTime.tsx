@@ -83,6 +83,7 @@ export default function RealTime() {
   const [radios, setRadios] = useState<RadioStatus[]>([]);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [expandedRadio, setExpandedRadio] = useState<number | null>(null);
+  const [loadingRadios, setLoadingRadios] = useState(true);
 
   const filtersRef = useRef(filters);
 
@@ -166,6 +167,8 @@ export default function RealTime() {
       await fetchAndUpdateCache();
     } catch (error) {
       console.error('Error in fetchRadios (already handled by fetchAndUpdateCache):', error);
+    } finally {
+      setLoadingRadios(false);
     }
   }, [fetchAndUpdateCache]);
 
@@ -357,9 +360,11 @@ export default function RealTime() {
                   options={radioOptions}
                   value={radioOptions.find(option => option.value === filters.radio) || null}
                   onChange={(option: SingleValue<SelectOption>) => setFilters(f => ({ ...f, radio: option?.value || '' }))}
-                  placeholder="Selecione ou Todas"
+                  placeholder={loadingRadios ? "Carregando rádios..." : "Selecione ou Todas"}
                   classNamePrefix="react-select"
                   className="realtime-select dark:realtime-select-dark"
+                  isLoading={loadingRadios}
+                  isDisabled={loadingRadios}
                 />
               </div>
               {/* Coluna 2: Artista */}

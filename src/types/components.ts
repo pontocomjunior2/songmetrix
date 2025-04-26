@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { UserStatus } from '../lib/firebase';
+// import { UserStatus } from '../lib/firebase'; // Remover import não utilizado
 
 // Layout Types
 export interface LayoutProps {
@@ -9,14 +9,14 @@ export interface LayoutProps {
 }
 
 // Auth Types
-export type UserStatusType = typeof UserStatus[keyof typeof UserStatus];
+// export type UserStatusType = typeof UserStatus[keyof typeof UserStatus]; // Remover tipo não utilizado
 
 export interface User {
   uid: string;
   email: string | null;
   displayName?: string | null;
   photoURL?: string | null;
-  status: UserStatusType;
+  // status: UserStatusType; // Remover propriedade não utilizada
   createdAt?: string;
   updatedAt?: string;
 }
@@ -30,6 +30,7 @@ export interface RadioStatus {
   city?: string;
   state?: string;
   formato?: string;
+  streamUrl?: string;
 }
 
 export interface Radio {

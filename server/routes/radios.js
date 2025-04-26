@@ -106,7 +106,7 @@ router.get('/status', authenticateBasicUser, async (req, res) => {
         GROUP BY name
       ),
       all_radios AS (
-        SELECT name, created_at, updated_at, cidade, estado, formato FROM streams ORDER BY name
+        SELECT name, created_at, updated_at, cidade, estado, formato, url FROM streams ORDER BY name
       )
       SELECT
         r.name,
@@ -115,7 +115,8 @@ router.get('/status', authenticateBasicUser, async (req, res) => {
         r.updated_at,
         r.cidade,
         r.estado,
-        r.formato
+        r.formato,
+        r.url
       FROM all_radios r
       LEFT JOIN latest_entries l ON r.name = l.name
       ORDER BY r.name;
@@ -154,6 +155,10 @@ router.get('/status', authenticateBasicUser, async (req, res) => {
       const onlineRadiosSet = new Set(recentActivity.rows.map(row => row.name));
       console.log(`[Radios Router /status] Rádios com atividade recente (online): ${onlineRadiosSet.size}`);
 
+      // **** INÍCIO DEBUG LOG ****
+      console.log('[Radios Router /status] DEBUG: Verificando primeiras 5 linhas de result.rows antes do map:', JSON.stringify(result.rows.slice(0, 5), null, 2));
+      // **** FIM DEBUG LOG ****
+
       // Processar os resultados, definindo isFavorite com base no favoriteRadiosSet FINAL
       const radiosStatus = result.rows.map(row => {
         const isOnline = onlineRadiosSet.has(row.name);
@@ -166,7 +171,8 @@ router.get('/status', authenticateBasicUser, async (req, res) => {
           isFavorite: isFavorite,
           city: row.cidade,
           state: row.estado,
-          formato: row.formato
+          formato: row.formato,
+          streamUrl: row.url
         };
       });
 
