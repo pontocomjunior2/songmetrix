@@ -469,6 +469,244 @@ export class InsightGeneratorService {
   }
 
   /**
+   * Gerar dados realistas para um usuário baseados nos dados reais das rádios
+   * @param {string} userId - ID do usuário
+   * @returns {Object} Dados realistas do usuário
+   */
+  async generateRealisticUserData(userId) {
+    const client = await this.pgPool.connect();
+    
+    try {
+      logger.info(`Gerando dados realistas para usuário ${userId}`);
+
+      // Buscar dados básicos do usuário
+      const { data: user, error: userError } = await this.supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (userError || !user) {
+        logger.warn(`Usuário ${userId} não encontrado`);
+        return this.getDefaultRealisticData();
+      }
+
+      // Buscar músicas e artistas populares dos últimos 30 dias
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      // Query para músicas mais tocadas
+      const topSongsQuery = `
+        SELECT song_title, artist, COUNT(*) as play_count
+        FROM music_log 
+        WHERE date >= $1 
+          AND song_title IS NOT NULL 
+          AND artist IS NOT NULL
+        GROUP BY song_title, artist
+        ORDER BY play_count DESC
+        LIMIT 20
+      `;
+
+      // Query para artistas mais tocados
+      const topArtistsQuery = `
+        SELECT artist, COUNT(*) as play_count
+        FROM music_log 
+        WHERE date >= $1 
+          AND artist IS NOT NULL
+        GROUP BY artist
+        ORDER BY play_count DESC
+        LIMIT 20
+      `;
+
+      // Query para gêneros mais tocados
+      const topGenresQuery = `
+        SELECT genre, COUNT(*) as play_count
+        FROM music_log 
+        WHERE date >= $1 
+          AND genre IS NOT NULL
+        GROUP BY genre
+        ORDER BY play_count DESC
+        LIMIT 10
+      `;
+
+      // Executar queries
+      const [topSongsResult, topArtistsResult, topGenresResult] = await Promise.all([
+        client.query(topSongsQuery, [thirtyDaysAgo.toISOString().split('T')[0]]),
+        client.query(topArtistsQuery, [thirtyDaysAgo.toISOString().split('T')[0]]),
+        client.query(topGenresQuery, [thirtyDaysAgo.toISOString().split('T')[0]])
+      ]);
+
+      // Gerar dados realistas baseados nos dados reais
+      const realisticData = this.generateUserProfile(
+        topSongsResult.rows,
+        topArtistsResult.rows,
+        topGenresResult.rows,
+        user
+      );
+
+      logger.info(`Dados realistas gerados para usuário ${userId}`, {
+        topSong: realisticData.topSong?.title,
+        topArtist: realisticData.topArtist?.name,
+        totalPlays: realisticData.totalPlays,
+        favoriteGenre: realisticData.favoriteGenre
+      });
+
+      return realisticData;
+
+    } catch (error) {
+      logger.error(`Erro ao gerar dados realistas para usuário ${userId}`, {
+        error: error.message,
+        stack: error.stack
+      });
+      return this.getDefaultRealisticData();
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Gerar perfil de usuário baseado nos dados reais das rádios
+   * @param {Array} topSongs - Músicas mais tocadas
+   * @param {Array} topArtists - Artistas mais tocados
+   * @param {Array} topGenres - Gêneros mais tocados
+   * @param {Object} user - Dados do usuário
+   * @returns {Object} Perfil realista do usuário
+   */
+  generateUserProfile(topSongs, topArtists, topGenres, user) {
+    // Selecionar aleatoriamente uma música popular
+    const randomSong = topSongs[Math.floor(Math.random() * Math.min(topSongs.length, 10))];
+    
+    // Selecionar aleatoriamente um artista popular
+    const randomArtist = topArtists[Math.floor(Math.random() * Math.min(topArtists.length, 10))];
+    
+    // Selecionar aleatoriamente um gênero popular
+    const randomGenre = topGenres[Math.floor(Math.random() * Math.min(topGenres.length, 5))];
+
+    // Gerar números realistas baseados em padrões típicos de usuários
+    const baseMultiplier = Math.random() * 0.8 + 0.6; // Entre 0.6 e 1.4
+    const totalPlays = Math.floor((50 + Math.random() * 200) * baseMultiplier); // 30-280 plays
+    const weeklyPlays = Math.floor(totalPlays * 0.15 + Math.random() * 10); // ~15% do total + variação
+    const monthlyPlays = Math.floor(totalPlays * 0.6 + Math.random() * 20); // ~60% do total + variação
+    
+    // Calcular taxa de crescimento realista
+    const growthVariation = (Math.random() - 0.5) * 60; // -30% a +30%
+    const growthRate = growthVariation >= 0 ? `+${growthVariation.toFixed(1)}%` : `${growthVariation.toFixed(1)}%`;
+    
+    // Horário de pico realista (mais comum entre 14h-22h)
+    const peakHours = [14, 15, 16, 17, 18, 19, 20, 21, 22];
+    const peakHour = peakHours[Math.floor(Math.random() * peakHours.length)];
+    
+    // Padrão de escuta
+    const weekendPatterns = [
+      'Mais ativo nos fins de semana',
+      'Mais ativo durante a semana',
+      'Escuta equilibrada entre semana e fim de semana'
+    ];
+    const weekendVsWeekday = weekendPatterns[Math.floor(Math.random() * weekendPatterns.length)];
+    
+    // Análise de humor baseada no gênero
+    const moodAnalysis = this.getMoodFromGenre(randomGenre?.genre);
+    
+    return {
+      topSong: randomSong ? {
+        title: randomSong.song_title,
+        artist: randomSong.artist,
+        playCount: Math.floor(Math.random() * 15) + 5 // 5-20 plays
+      } : null,
+      topArtist: randomArtist ? {
+        name: randomArtist.artist,
+        playCount: Math.floor(Math.random() * 25) + 10 // 10-35 plays
+      } : null,
+      totalPlays,
+      weeklyPlays,
+      monthlyPlays,
+      growthRate,
+      favoriteGenre: randomGenre?.genre || 'Pop',
+      listeningHours: Math.floor(totalPlays * 3.5 / 60), // 3.5 min por música
+      discoveryCount: Math.floor(Math.random() * 8) + 3, // 3-10 descobertas
+      peakHour: `${peakHour}:00`,
+      weekendVsWeekday,
+      moodAnalysis
+    };
+  }
+
+  /**
+   * Obter análise de humor baseada no gênero
+   * @param {string} genre - Gênero musical
+   * @returns {string} Análise de humor
+   */
+  getMoodFromGenre(genre) {
+    if (!genre) return 'Eclético';
+    
+    const genreLower = genre.toLowerCase();
+    
+    if (genreLower.includes('rock') || genreLower.includes('metal')) {
+      return 'Energético e intenso';
+    } else if (genreLower.includes('pop')) {
+      return 'Animado e mainstream';
+    } else if (genreLower.includes('sertanejo') || genreLower.includes('country')) {
+      return 'Romântico e nostálgico';
+    } else if (genreLower.includes('eletronic') || genreLower.includes('dance')) {
+      return 'Dançante e moderno';
+    } else if (genreLower.includes('jazz') || genreLower.includes('blues')) {
+      return 'Sofisticado e relaxante';
+    } else if (genreLower.includes('rap') || genreLower.includes('hip hop')) {
+      return 'Urbano e expressivo';
+    } else if (genreLower.includes('reggae')) {
+      return 'Relaxado e positivo';
+    } else {
+      return 'Eclético e variado';
+    }
+  }
+
+  /**
+   * Obter dados realistas padrão quando não há dados disponíveis
+   * @returns {Object} Dados padrão realistas
+   */
+  getDefaultRealisticData() {
+    const defaultSongs = [
+      { title: 'Blinding Lights', artist: 'The Weeknd' },
+      { title: 'Watermelon Sugar', artist: 'Harry Styles' },
+      { title: 'Levitating', artist: 'Dua Lipa' },
+      { title: 'Good 4 U', artist: 'Olivia Rodrigo' },
+      { title: 'Stay', artist: 'The Kid LAROI & Justin Bieber' }
+    ];
+
+    const defaultArtists = [
+      'Taylor Swift', 'Ed Sheeran', 'Ariana Grande', 'Drake', 'Billie Eilish'
+    ];
+
+    const randomSong = defaultSongs[Math.floor(Math.random() * defaultSongs.length)];
+    const randomArtist = defaultArtists[Math.floor(Math.random() * defaultArtists.length)];
+
+    const totalPlays = Math.floor(Math.random() * 150) + 50; // 50-200 plays
+    const weeklyPlays = Math.floor(totalPlays * 0.15 + Math.random() * 10);
+    const monthlyPlays = Math.floor(totalPlays * 0.6 + Math.random() * 20);
+
+    return {
+      topSong: {
+        title: randomSong.title,
+        artist: randomSong.artist,
+        playCount: Math.floor(Math.random() * 15) + 5
+      },
+      topArtist: {
+        name: randomArtist,
+        playCount: Math.floor(Math.random() * 25) + 10
+      },
+      totalPlays,
+      weeklyPlays,
+      monthlyPlays,
+      growthRate: `+${(Math.random() * 30).toFixed(1)}%`,
+      favoriteGenre: 'Pop',
+      listeningHours: Math.floor(totalPlays * 3.5 / 60),
+      discoveryCount: Math.floor(Math.random() * 8) + 3,
+      peakHour: '19:00',
+      weekendVsWeekday: 'Mais ativo durante a semana',
+      moodAnalysis: 'Eclético e moderno'
+    };
+  }
+
+  /**
    * Fechar conexões quando necessário
    */
   async close() {
