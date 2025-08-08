@@ -108,7 +108,13 @@ export default function registerRoutes(app) {
           dashboard: '/api/dashboard',
           executions: '/api/executions',
           radios: '/api/radios',
-          relayStreams: '/api/relay-streams'
+          relayStreams: '/api/relay-streams',
+          admin: {
+            users: '/api/admin/users',
+            insights: '/api/admin/insights',
+            drafts: '/api/admin/insights/drafts',
+            llmSettings: '/api/admin/llm-settings'
+          }
         }
       });
     } catch (error) {
