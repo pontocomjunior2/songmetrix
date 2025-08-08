@@ -67,11 +67,11 @@ export default function registerRoutes(app) {
   // Registrar as novas rotas de cliente
   app.use('/api/customers', customerRoutes);
   
-  // Registrar as rotas de admin (protegidas com autenticação básica)
-  app.use('/api/admin', authenticateBasicUser, adminRoutes);
-  
   // Registrar as rotas de admin de insights (protegidas com autenticação básica)
   app.use('/api/admin/insights', authenticateBasicUser, adminInsightRoutes);
+  
+  // Registrar as rotas de admin (protegidas com autenticação básica)
+  app.use('/api/admin', authenticateBasicUser, adminRoutes);
   
   // Registrar as rotas de admin de LLM (protegidas com autenticação básica)
   app.use('/api/admin/llm-settings', authenticateBasicUser, adminLLMRoutes);

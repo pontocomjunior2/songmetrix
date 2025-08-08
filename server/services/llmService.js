@@ -70,7 +70,8 @@ export class LlmService {
     try {
       logger.info('[LlmService] Iniciando geração de conteúdo de e-mail', {
         insightType: insightData.insightType,
-        userId: insightData.userId
+        userId: insightData.userId,
+        isCustomInsight: insightData.insightType === 'custom_insight'
       });
 
       // Buscar provedor ativo na tabela llm_provider_settings
@@ -137,31 +138,59 @@ export class LlmService {
         temperature: settings.temperature || 0.7
       });
 
-      // Buscar template de prompt ativo na tabela prompt_templates
-      const { data: promptTemplate, error: promptError } = await supabase
-        .from('prompt_templates')
-        .select('content')
-        .eq('is_active', true)
-        .single();
+      let prompt;
+      
+      // Para insights personalizados, usar o prompt customizado
+      if (insightData.insightType === 'custom_insight' && insightData.customPrompt) {
+        prompt = `
+Você é um assistente especializado em criar e-mails personalizados sobre música.
 
-      if (promptError || !promptTemplate) {
-        const errorMsg = 'Nenhum template de prompt ativo encontrado';
-        logger.error('[LlmService] Erro ao buscar template de prompt ativo', {
-          error: promptError?.message,
-          code: promptError?.code
+Baseado no prompt personalizado abaixo, crie um e-mail em HTML bem formatado:
+
+PROMPT PERSONALIZADO:
+${insightData.customPrompt}
+
+INSTRUÇÕES:
+- Crie um e-mail em HTML bem formatado
+- Use cores e estilos atraentes
+- Mantenha o tom amigável e profissional
+- Inclua emojis quando apropriado
+- O e-mail deve ser responsivo
+
+Retorne apenas o HTML do e-mail, sem explicações adicionais.
+        `.trim();
+        
+        logger.info('[LlmService] Usando prompt personalizado para insight customizado', {
+          promptLength: prompt.length,
+          customPromptLength: insightData.customPrompt.length
         });
-        throw new Error(errorMsg);
-      }
+      } else {
+        // Para insights automáticos, usar template do banco
+        const { data: promptTemplate, error: promptError } = await supabase
+          .from('prompt_templates')
+          .select('content')
+          .eq('is_active', true)
+          .single();
 
-      logger.info('[LlmService] Template de prompt ativo encontrado', {
-        contentLength: promptTemplate.content.length
-      });
+        if (promptError || !promptTemplate) {
+          const errorMsg = 'Nenhum template de prompt ativo encontrado';
+          logger.error('[LlmService] Erro ao buscar template de prompt ativo', {
+            error: promptError?.message,
+            code: promptError?.code
+          });
+          throw new Error(errorMsg);
+        }
+
+        logger.info('[LlmService] Template de prompt ativo encontrado', {
+          contentLength: promptTemplate.content.length
+        });
+
+        // Injetar dados do insight no template de prompt
+        prompt = promptTemplate.content.replace('{{INSIGHT_DATA}}', JSON.stringify(insightData));
+      }
 
       // Instanciar cliente da OpenAI
       const openai = new OpenAI({ apiKey });
-
-      // Injetar dados do insight no template de prompt
-      const prompt = promptTemplate.content.replace('{{INSIGHT_DATA}}', JSON.stringify(insightData));
 
       logger.debug('[LlmService] Prompt criado com template do banco', {
         promptLength: prompt.length,

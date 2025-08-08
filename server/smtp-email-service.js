@@ -25,19 +25,28 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 const createTransporter = () => {
   logInfo('Criando transporter SMTP...');
   
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASSWORD) {
-    logError('Configuração SMTP incompleta no arquivo .env');
+  // Usar as variáveis corretas do .env
+  const smtpHost = process.env.SMTP_HOST || process.env.SMTP_SERVER;
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASSWORD || process.env.SMTP_PASS;
+  
+  if (!smtpHost || !smtpUser || !smtpPass) {
+    logError('Configuração SMTP incompleta no arquivo .env', {
+      host: smtpHost ? 'OK' : 'MISSING',
+      user: smtpUser ? 'OK' : 'MISSING',
+      pass: smtpPass ? 'OK' : 'MISSING'
+    });
     throw new Error('Configuração SMTP incompleta');
   }
   
   // Configuração SMTP
   return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: process.env.SMTP_PORT || 465,
-    secure: process.env.SMTP_SECURE === 'true',
+    host: smtpHost,
+    port: process.env.SMTP_PORT || 587,
+    secure: process.env.SMTP_SECURE === 'true' || process.env.SMTP_PORT === '465',
     auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASSWORD
+      user: smtpUser,
+      pass: smtpPass
     },
     tls: {
       rejectUnauthorized: false
@@ -47,11 +56,28 @@ const createTransporter = () => {
 
 // Criar transporter uma única vez para reuso
 let transporter;
+
+// Função para garantir que o transporter existe
+const ensureTransporter = () => {
+  if (!transporter) {
+    try {
+      transporter = createTransporter();
+      logInfo('Transporter SMTP criado com sucesso');
+      return true;
+    } catch (error) {
+      logError('Erro ao criar transporter SMTP', error);
+      return false;
+    }
+  }
+  return true;
+};
+
+// Tentar criar transporter na inicialização (não crítico se falhar)
 try {
   transporter = createTransporter();
-  logInfo('Transporter SMTP criado com sucesso');
+  logInfo('Transporter SMTP inicializado com sucesso');
 } catch (error) {
-  logError('Erro ao criar transporter SMTP', error);
+  logError('Erro na inicialização do transporter SMTP (será recriado quando necessário)', error);
 }
 
 /**
@@ -102,19 +128,31 @@ export const logEmailSent = async (logData) => {
  * @param {object} options - Opções adicionais (cc, bcc, etc)
  * @returns {Promise<object>} - Resultado do envio
  */
-export const sendEmail = async (to, subject, html, options = {}) => {
-  if (!transporter) {
-    try {
-      transporter = createTransporter();
-      logInfo('Transporter SMTP recriado com sucesso');
-    } catch (error) {
-      logError('Erro ao recriar transporter SMTP', error);
-      return { success: false, error: 'Não foi possível criar o transporter SMTP' };
-    }
+export const sendEmail = async (toOrOptions, subject, html, options = {}) => {
+  // Suporte para chamada com objeto ou parâmetros separados
+  let to, emailSubject, emailHtml, emailOptions;
+  
+  if (typeof toOrOptions === 'object' && toOrOptions !== null) {
+    // Chamada com objeto
+    to = toOrOptions.to;
+    emailSubject = toOrOptions.subject;
+    emailHtml = toOrOptions.html;
+    emailOptions = toOrOptions;
+  } else {
+    // Chamada com parâmetros separados
+    to = toOrOptions;
+    emailSubject = subject;
+    emailHtml = html;
+    emailOptions = options;
+  }
+
+  // Garantir que o transporter existe
+  if (!ensureTransporter()) {
+    return { success: false, error: 'Não foi possível criar o transporter SMTP' };
   }
 
   try {
-    logEmail('Iniciando envio de email', { to, subject });
+    logEmail('Iniciando envio de email', { to, subject: emailSubject });
     
     // Verificar configuração do transporte
     if (!transporter) {
@@ -128,9 +166,9 @@ export const sendEmail = async (to, subject, html, options = {}) => {
     const mailOptions = {
       from,
       to,
-      subject,
-      html,
-      ...options
+      subject: emailSubject,
+      html: emailHtml,
+      ...emailOptions
     };
 
     // Verificar estado do transporter

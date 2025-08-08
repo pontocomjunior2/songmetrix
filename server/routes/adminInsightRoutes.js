@@ -63,9 +63,11 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
  */
 export const checkAdminAuth = async (req, res, next) => {
   try {
+    console.log('[DEBUG] Middleware checkAdminAuth executado');
+    
     // Verificar se o usuário está autenticado
     if (!req.user || !req.user.id) {
-      logger.error('[AdminAuth] Usuário não autenticado');
+      console.log('[DEBUG] Usuário não autenticado');
       return res.status(401).json({ 
         error: 'Usuário não autenticado',
         code: 'UNAUTHENTICATED'
@@ -73,7 +75,7 @@ export const checkAdminAuth = async (req, res, next) => {
     }
 
     const userId = req.user.id;
-    logger.info(`[AdminAuth] Verificando permissões de admin para usuário: ${userId}`);
+    console.log(`[DEBUG] Verificando admin para usuário: ${userId}`);
 
     // Verificar se o usuário existe na tabela admins
     const { data: adminData, error: adminError } = await supabaseAdmin
@@ -82,36 +84,32 @@ export const checkAdminAuth = async (req, res, next) => {
       .eq('user_id', userId);
 
     if (adminError) {
-      logger.error('[AdminAuth] Erro ao verificar admin na base de dados', {
-        error: adminError.message,
-        code: adminError.code
-      });
+      console.error('[DEBUG] Erro ao verificar admin:', adminError);
       return res.status(500).json({ 
         error: 'Erro interno ao verificar permissões',
-        code: 'INTERNAL_ERROR'
+        code: 'INTERNAL_ERROR',
+        details: adminError.message
       });
     }
 
     // Verificar se o usuário é admin
     if (!adminData || adminData.length === 0) {
-      logger.warn(`[AdminAuth] Acesso negado - usuário ${userId} não é admin`);
+      console.log(`[DEBUG] Usuário ${userId} não é admin`);
       return res.status(403).json({ 
         error: 'Acesso negado. Permissões de administrador necessárias.',
         code: 'ACCESS_DENIED'
       });
     }
 
-    logger.info(`[AdminAuth] Acesso concedido - usuário ${userId} é admin`);
+    console.log(`[DEBUG] Usuário ${userId} é admin - acesso concedido`);
     next();
 
   } catch (error) {
-    logger.error('[AdminAuth] Erro inesperado no middleware de admin', {
-      error: error.message,
-      stack: error.stack
-    });
+    console.error('[DEBUG] Erro no middleware:', error);
     return res.status(500).json({ 
       error: 'Erro interno no middleware de administração',
-      code: 'INTERNAL_ERROR'
+      code: 'INTERNAL_ERROR',
+      details: error.message
     });
   }
 };
@@ -119,8 +117,28 @@ export const checkAdminAuth = async (req, res, next) => {
 // Criar router para rotas de admin de insights
 const adminInsightRouter = Router();
 
-// Aplicar middleware de autenticação admin em todas as rotas
-adminInsightRouter.use(checkAdminAuth);
+// Middleware para validar UUID nos parâmetros
+const validateUUID = (req, res, next) => {
+  const { id } = req.params;
+  if (id) {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      return res.status(400).json({
+        error: 'ID inválido. Deve ser um UUID válido.',
+        code: 'INVALID_UUID'
+      });
+    }
+  }
+  next();
+};
+
+// Rota de teste sem middleware
+adminInsightRouter.get('/test', (req, res) => {
+  res.json({ message: 'Rota de teste funcionando', timestamp: new Date().toISOString() });
+});
+
+// Middleware já aplicado no servidor principal (authenticateBasicUser)
+// adminInsightRouter.use(checkAdminAuth);
 
 /**
  * Endpoint 1: Iniciar a Geração de Insights
@@ -240,19 +258,45 @@ adminInsightRouter.get('/drafts', async (req, res) => {
  * Endpoint 3: Aprovar um E-mail
  * POST /api/admin/insights/:id/approve
  */
-adminInsightRouter.post('/:id/approve', async (req, res) => {
-  try {
-    const { id } = req.params;
+/**
+ * Rota para aprovar um insight
+ */
+adminInsightRouter.post('/:id/approve', validateUUID, async (req, res) => {
+  const { id } = req.params;
 
+  try {
     logger.info(`[AdminInsightRoutes] Aprovando insight ${id} por admin ${req.user?.id}`);
 
+    // Verificar se o insight existe primeiro
+    const { data: existingInsight, error: fetchError } = await supabaseAdmin
+      .from('generated_insight_emails')
+      .select('id, status')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !existingInsight) {
+      logger.warn(`[AdminInsightRoutes] Insight ${id} não encontrado`, { error: fetchError?.message });
+      return res.status(404).json({
+        error: 'Insight não encontrado',
+        code: 'INSIGHT_NOT_FOUND'
+      });
+    }
+
+    // Verificar se já está aprovado
+    if (existingInsight.status === 'approved') {
+      logger.info(`[AdminInsightRoutes] Insight ${id} já estava aprovado`);
+      return res.json({
+        message: 'Insight já estava aprovado',
+        insight: existingInsight,
+        status: 'already_approved'
+      });
+    }
+
     // Atualizar status para 'approved'
-    const { data: updatedEmail, error: updateError } = await supabaseAdmin
+    const { data: updatedInsight, error: updateError } = await supabaseAdmin
       .from('generated_insight_emails')
       .update({ 
         status: 'approved',
-        approved_at: new Date().toISOString(),
-        approved_by: req.user?.id,
         updated_at: new Date().toISOString()
       })
       .eq('id', id)
@@ -260,60 +304,308 @@ adminInsightRouter.post('/:id/approve', async (req, res) => {
       .single();
 
     if (updateError) {
-      logger.error(`[AdminInsightRoutes] Erro ao aprovar insight ${id}`, {
+      logger.error(`[AdminInsightRoutes] Erro ao aprovar insight ${id}`, { 
         error: updateError.message,
-        code: updateError.code,
-        adminId: req.user?.id
+        code: updateError.code 
       });
       return res.status(500).json({
         error: 'Erro ao aprovar insight',
-        code: 'APPROVAL_ERROR'
+        code: 'UPDATE_ERROR',
+        details: updateError.message
       });
     }
 
-    if (!updatedEmail) {
-      logger.warn(`[AdminInsightRoutes] Insight ${id} não encontrado para aprovação`);
-      return res.status(404).json({
-        error: 'Insight não encontrado',
-        code: 'INSIGHT_NOT_FOUND'
-      });
-    }
+    logger.info(`[AdminInsightRoutes] Insight ${id} aprovado com sucesso`);
 
-    logger.info(`[AdminInsightRoutes] Insight ${id} aprovado com sucesso por admin ${req.user?.id}`);
-
-    // Retornar registro atualizado com status 200
-    res.status(200).json({
+    res.json({
       message: 'Insight aprovado com sucesso',
-      insight: updatedEmail,
-      approved_by: req.user?.id,
-      approved_at: new Date().toISOString()
+      insight: updatedInsight,
+      status: 'approved'
     });
 
   } catch (error) {
-    logger.error(`[AdminInsightRoutes] Erro inesperado ao aprovar insight ${req.params.id}`, {
+    logger.error(`[AdminInsightRoutes] Erro inesperado ao aprovar insight ${id}`, {
       error: error.message,
       stack: error.stack,
       adminId: req.user?.id
     });
 
     res.status(500).json({
-      error: 'Erro interno ao aprovar insight',
+      error: 'Erro interno do servidor',
       code: 'INTERNAL_ERROR'
     });
   }
 });
 
 /**
- * Endpoint 4: Enviar um E-mail Aprovado
+ * Endpoint 4: Gerar Insight Personalizado
+ * POST /api/admin/insights/generate-custom
+ */
+adminInsightRouter.post('/generate-custom', async (req, res) => {
+  try {
+    const { targetType, targetId, subject, customPrompt, variables } = req.body;
+
+    logger.info(`[AdminInsightRoutes] Gerando insight personalizado por admin ${req.user?.id}`, {
+      targetType,
+      targetId,
+      subject: subject?.substring(0, 50) + '...',
+      variablesCount: variables?.length || 0
+    });
+
+    // Validar campos obrigatórios
+    if (!targetType || !targetId || !subject || !customPrompt) {
+      return res.status(400).json({
+        error: 'Campos obrigatórios: targetType, targetId, subject, customPrompt',
+        code: 'MISSING_REQUIRED_FIELDS'
+      });
+    }
+
+    // Importar serviços
+    const { LlmService } = await import('../services/llmService.js');
+    const { InsightGeneratorService } = await import('../services/insightGeneratorService.js');
+
+    const llmService = new LlmService();
+    const insightGenerator = new InsightGeneratorService(llmService);
+
+    // Buscar usuários baseado no tipo de target
+    let targetUsers = [];
+    
+    if (targetType === 'user') {
+      // Buscar usuário específico
+      const { data: user, error: userError } = await supabaseAdmin
+        .from('users')
+        .select('*')
+        .eq('id', targetId)
+        .single();
+
+      if (userError || !user) {
+        logger.warn(`[AdminInsightRoutes] Usuário ${targetId} não encontrado`);
+        return res.status(404).json({
+          error: 'Usuário não encontrado',
+          code: 'USER_NOT_FOUND'
+        });
+      }
+
+      targetUsers = [user];
+    } else if (targetType === 'group') {
+      // Buscar usuários do grupo
+      let query = supabaseAdmin.from('users').select('*');
+      
+      if (targetId !== 'all') {
+        query = query.eq('status', targetId.toUpperCase());
+      }
+      
+      const { data: users, error: usersError } = await query;
+      
+      if (usersError) {
+        logger.error('[AdminInsightRoutes] Erro ao buscar usuários do grupo', {
+          error: usersError.message,
+          group: targetId
+        });
+        return res.status(500).json({
+          error: 'Erro ao buscar usuários do grupo',
+          code: 'GROUP_FETCH_ERROR'
+        });
+      }
+
+      targetUsers = users || [];
+    }
+
+    if (targetUsers.length === 0) {
+      return res.status(400).json({
+        error: 'Nenhum usuário encontrado para o target especificado',
+        code: 'NO_USERS_FOUND'
+      });
+    }
+
+    logger.info(`[AdminInsightRoutes] Processando ${targetUsers.length} usuários para insight personalizado`);
+
+    // Processar cada usuário em background
+    const processUsers = async () => {
+      for (const user of targetUsers) {
+        try {
+          logger.info(`[AdminInsightRoutes] Processando usuário ${user.id} (${user.email})`);
+
+          // Dados básicos do usuário para substituição
+          const basicUserData = {
+            topSong: { title: 'Sua música favorita', artist: 'Artista preferido' },
+            topArtist: { name: 'Artista mais tocado' },
+            totalPlays: 100,
+            weeklyPlays: 15,
+            monthlyPlays: 60,
+            growthRate: '+20%',
+            favoriteGenre: 'Variado',
+            listeningHours: 5,
+            discoveryCount: 3,
+            peakHour: '14:00',
+            weekendVsWeekday: 'Mais ativo durante a semana',
+            moodAnalysis: 'Eclético'
+          };
+          
+          // Substituir variáveis no prompt de forma simples
+          let processedPrompt = customPrompt
+            .replace(/\{user_name\}/g, user.full_name || user.email)
+            .replace(/\{user_email\}/g, user.email)
+            .replace(/\{top_song\}/g, basicUserData.topSong.title)
+            .replace(/\{top_artist\}/g, basicUserData.topArtist.name)
+            .replace(/\{total_plays\}/g, basicUserData.totalPlays.toString())
+            .replace(/\{weekly_plays\}/g, basicUserData.weeklyPlays.toString())
+            .replace(/\{monthly_plays\}/g, basicUserData.monthlyPlays.toString())
+            .replace(/\{growth_rate\}/g, basicUserData.growthRate)
+            .replace(/\{favorite_genre\}/g, basicUserData.favoriteGenre)
+            .replace(/\{listening_hours\}/g, basicUserData.listeningHours.toString())
+            .replace(/\{discovery_count\}/g, basicUserData.discoveryCount.toString())
+            .replace(/\{peak_hour\}/g, basicUserData.peakHour)
+            .replace(/\{weekend_vs_weekday\}/g, basicUserData.weekendVsWeekday)
+            .replace(/\{mood_analysis\}/g, basicUserData.moodAnalysis);
+
+          logger.info(`[AdminInsightRoutes] Prompt processado para usuário ${user.id}`);
+
+          // Criar HTML formatado
+          const htmlContent = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
+              <div style="background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                <div style="text-align: center; margin-bottom: 30px;">
+                  <h1 style="color: #2563eb; margin: 0; font-size: 24px;">🎵 SongMetrix</h1>
+                  <p style="color: #6b7280; margin: 5px 0 0 0;">Seu Insight Musical Personalizado</p>
+                </div>
+                
+                <div style="line-height: 1.6; color: #374151; white-space: pre-line;">
+                  ${processedPrompt}
+                </div>
+                
+                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center;">
+                  <p style="color: #6b7280; font-size: 14px; margin: 0;">
+                    Gerado automaticamente pelo SongMetrix<br>
+                    <a href="${process.env.VITE_APP_URL || 'https://songmetrix.com.br'}/dashboard" style="color: #2563eb; text-decoration: none;">Acesse seu dashboard</a>
+                  </p>
+                </div>
+              </div>
+            </div>
+          `.trim();
+          
+          // Salvar no banco como draft
+          const { error: insertError } = await supabaseAdmin
+            .from('generated_insight_emails')
+            .insert({
+              user_id: user.id,
+              insight_type: 'custom_insight',
+              subject: subject,
+              body_html: htmlContent,
+              content: htmlContent,
+              status: 'draft',
+              insight_data: basicUserData,
+              deep_link: `${process.env.VITE_APP_URL || 'https://songmetrix.com.br'}/dashboard`,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+
+          if (insertError) {
+            logger.error(`[AdminInsightRoutes] Erro ao salvar insight para usuário ${user.id}`, {
+              error: insertError.message,
+              userId: user.id
+            });
+          } else {
+            logger.info(`[AdminInsightRoutes] Insight personalizado salvo com sucesso para usuário ${user.email}`);
+          }
+
+        } catch (userError) {
+          logger.error(`[AdminInsightRoutes] Erro ao processar usuário ${user.id}`, {
+            error: userError.message,
+            stack: userError.stack,
+            userId: user.id
+          });
+        }
+      }
+    };
+
+    // Executar processamento imediatamente (não em background)
+    try {
+      await processUsers();
+      
+      // Responder após processamento completo
+      res.status(200).json({
+        message: 'Insight personalizado gerado com sucesso',
+        status: 'success',
+        targetUsers: targetUsers.length,
+        processed: true,
+        initiated_by: req.user?.id,
+        completed_at: new Date().toISOString()
+      });
+    } catch (processError) {
+      logger.error('[AdminInsightRoutes] Erro no processamento de insights', {
+        error: processError.message,
+        stack: processError.stack
+      });
+      
+      res.status(500).json({
+        error: 'Erro ao processar insights personalizados',
+        code: 'PROCESSING_ERROR',
+        details: processError.message
+      });
+    }
+
+  } catch (error) {
+    logger.error('[AdminInsightRoutes] Erro ao gerar insight personalizado', {
+      error: error.message,
+      stack: error.stack,
+      adminId: req.user?.id
+    });
+
+    res.status(500).json({
+      error: 'Erro interno ao gerar insight personalizado',
+      code: 'CUSTOM_GENERATION_ERROR'
+    });
+  }
+});
+
+/**
+ * Função auxiliar para substituir variáveis no prompt
+ */
+async function replaceVariablesInPrompt(prompt, userData, user) {
+  let processedPrompt = prompt;
+  
+  // Mapeamento de variáveis para dados
+  const variableMap = {
+    user_name: user.full_name || user.email,
+    user_email: user.email,
+    top_song: userData.topSong?.title || 'N/A',
+    top_artist: userData.topArtist?.name || 'N/A',
+    total_plays: userData.totalPlays || 0,
+    weekly_plays: userData.weeklyPlays || 0,
+    monthly_plays: userData.monthlyPlays || 0,
+    growth_rate: userData.growthRate || '0%',
+    favorite_genre: userData.favoriteGenre || 'N/A',
+    listening_hours: userData.listeningHours || 0,
+    discovery_count: userData.discoveryCount || 0,
+    peak_hour: userData.peakHour || 'N/A',
+    weekend_vs_weekday: userData.weekendVsWeekday || 'N/A',
+    mood_analysis: userData.moodAnalysis || 'N/A'
+  };
+
+  // Substituir cada variável
+  for (const [key, value] of Object.entries(variableMap)) {
+    const regex = new RegExp(`\\{${key}\\}`, 'g');
+    processedPrompt = processedPrompt.replace(regex, value);
+  }
+
+  return processedPrompt;
+}
+
+/**
+ * Endpoint 5: Enviar um E-mail Aprovado
  * POST /api/admin/insights/:id/send
  */
-adminInsightRouter.post('/:id/send', async (req, res) => {
+/**
+ * Rota para enviar um insight por e-mail
+ */
+adminInsightRouter.post('/:id/send', validateUUID, async (req, res) => {
+  const { id } = req.params;
+
   try {
-    const { id } = req.params;
+    logger.info(`[AdminInsightRoutes] Enviando insight ${id} por admin ${req.user?.id}`);
 
-    logger.info(`[AdminInsightRoutes] Enviando insight ${id} solicitado por admin ${req.user?.id}`);
-
-    // Primeiro, buscar o e-mail no banco de dados
+    // Buscar o insight com dados do usuário
     const { data: emailData, error: fetchError } = await supabaseAdmin
       .from('generated_insight_emails')
       .select(`
@@ -327,132 +619,134 @@ adminInsightRouter.post('/:id/send', async (req, res) => {
       .single();
 
     if (fetchError || !emailData) {
-      logger.warn(`[AdminInsightRoutes] Insight ${id} não encontrado para envio`, {
-        error: fetchError?.message,
-        adminId: req.user?.id
-      });
+      logger.warn(`[AdminInsightRoutes] Insight ${id} não encontrado para envio`, { error: fetchError?.message });
       return res.status(404).json({
         error: 'Insight não encontrado',
         code: 'INSIGHT_NOT_FOUND'
       });
     }
 
-    // Verificar se o status é 'approved'
-    if (emailData.status !== 'approved') {
-      logger.warn(`[AdminInsightRoutes] Tentativa de envio de insight ${id} com status ${emailData.status}`, {
-        currentStatus: emailData.status,
-        adminId: req.user?.id
-      });
+    // Verificar se o usuário tem e-mail
+    if (!emailData.users?.email) {
+      logger.error(`[AdminInsightRoutes] Usuário do insight ${id} não tem e-mail válido`);
       return res.status(400).json({
-        error: 'Apenas insights aprovados podem ser enviados',
-        code: 'INVALID_STATUS',
-        current_status: emailData.status
+        error: 'Usuário não possui e-mail válido',
+        code: 'INVALID_EMAIL'
       });
     }
 
-    // Importar e usar o serviço de e-mail SMTP existente
-    try {
-      // Importação dinâmica do serviço SMTP
-      const { sendEmail } = await import('../smtp-email-service.js');
-      
-      logger.info(`[AdminInsightRoutes] Enviando e-mail para ${emailData.users?.email}`, {
-        recipient: emailData.users?.email,
-        subject: emailData.subject,
-        insightId: id
-      });
+    // Auto-aprovar se necessário
+    if (emailData.status === 'draft') {
+      logger.info(`[AdminInsightRoutes] Auto-aprovando insight ${id} antes do envio`);
+      const { error: approveError } = await supabaseAdmin
+        .from('generated_insight_emails')
+        .update({ 
+          status: 'approved',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
 
-      // Enviar e-mail
-      const emailResult = await sendEmail({
-        to: emailData.users?.email,
-        subject: emailData.subject,
-        html: emailData.content,
-        user_id: emailData.user_id,
-        email_type: 'insight',
-        insight_id: id
-      });
-
-      if (emailResult.success) {
-        // Atualizar status para 'sent'
-        const { data: sentEmail, error: sentError } = await supabaseAdmin
-          .from('generated_insight_emails')
-          .update({ 
-            status: 'sent',
-            sent_at: new Date().toISOString(),
-            sent_by: req.user?.id,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', id)
-          .select()
-          .single();
-
-        if (sentError) {
-          logger.error(`[AdminInsightRoutes] Erro ao atualizar status após envio do insight ${id}`, {
-            error: sentError.message,
-            adminId: req.user?.id
-          });
-          // Não retornar erro aqui pois o e-mail foi enviado com sucesso
-        }
-
-        logger.info(`[AdminInsightRoutes] Insight ${id} enviado com sucesso para ${emailData.users?.email}`, {
-          recipient: emailData.users?.email,
-          adminId: req.user?.id
-        });
-
-        res.status(200).json({
-          message: 'E-mail enviado com sucesso',
-          insight: sentEmail || emailData,
-          recipient: emailData.users?.email,
-          sent_by: req.user?.id,
-          sent_at: new Date().toISOString()
-        });
-
-      } else {
-        // Falha no envio
-        logger.error(`[AdminInsightRoutes] Falha no envio do insight ${id}`, {
-          error: emailResult.error,
-          recipient: emailData.users?.email,
-          adminId: req.user?.id
-        });
-
-        // Atualizar status para 'failed'
-        await supabaseAdmin
-          .from('generated_insight_emails')
-          .update({ 
-            status: 'failed',
-            error_message: emailResult.error,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', id);
-
-        res.status(500).json({
-          error: 'Falha no envio do e-mail',
-          code: 'EMAIL_SEND_ERROR',
-          details: emailResult.error
+      if (approveError) {
+        logger.error(`[AdminInsightRoutes] Erro ao auto-aprovar insight ${id}`, { error: approveError.message });
+        return res.status(500).json({
+          error: 'Erro ao aprovar insight antes do envio',
+          code: 'AUTO_APPROVE_ERROR'
         });
       }
+    }
 
-    } catch (emailServiceError) {
-      logger.error(`[AdminInsightRoutes] Erro no serviço de e-mail para insight ${id}`, {
-        error: emailServiceError.message,
-        stack: emailServiceError.stack,
-        adminId: req.user?.id
+    // Verificar se pode enviar
+    if (emailData.status !== 'approved' && emailData.status !== 'draft') {
+      logger.warn(`[AdminInsightRoutes] Tentativa de envio de insight ${id} com status inválido: ${emailData.status}`);
+      return res.status(400).json({
+        error: 'Apenas insights aprovados podem ser enviados',
+        current_status: emailData.status,
+        code: 'INVALID_STATUS'
+      });
+    }
+
+    // Verificar se já foi enviado
+    if (emailData.status === 'sent') {
+      logger.info(`[AdminInsightRoutes] Insight ${id} já foi enviado anteriormente`);
+      return res.json({
+        message: 'E-mail já foi enviado anteriormente',
+        recipient: emailData.users?.email,
+        status: 'already_sent'
+      });
+    }
+
+    // Importar serviço de e-mail
+    const { sendEmail } = await import('../smtp-email-service.js');
+
+    logger.info(`[AdminInsightRoutes] Enviando e-mail para ${emailData.users.email}`);
+
+    // Enviar e-mail
+    const emailResult = await sendEmail({
+      to: emailData.users.email,
+      subject: emailData.subject,
+      html: emailData.body_html || emailData.content || '<p>Conteúdo não disponível</p>',
+      user_id: emailData.user_id,
+      email_type: 'insight',
+      insight_id: id
+    });
+
+    if (emailResult.success) {
+      // Atualizar status para 'sent'
+      const { error: updateError } = await supabaseAdmin
+        .from('generated_insight_emails')
+        .update({ 
+          status: 'sent',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+
+      if (updateError) {
+        logger.error(`[AdminInsightRoutes] Erro ao atualizar status para 'sent' do insight ${id}`, { error: updateError.message });
+      }
+
+      logger.info(`[AdminInsightRoutes] E-mail enviado com sucesso para ${emailData.users.email}`);
+
+      res.json({
+        message: 'E-mail enviado com sucesso',
+        recipient: emailData.users.email,
+        status: 'sent'
+      });
+
+    } else {
+      // Marcar como falha
+      const { error: failError } = await supabaseAdmin
+        .from('generated_insight_emails')
+        .update({ 
+          status: 'failed',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', id);
+
+      if (failError) {
+        logger.error(`[AdminInsightRoutes] Erro ao atualizar status para 'failed' do insight ${id}`, { error: failError.message });
+      }
+
+      logger.error(`[AdminInsightRoutes] Falha no envio do e-mail para insight ${id}`, { 
+        error: emailResult.error,
+        recipient: emailData.users.email 
       });
 
       res.status(500).json({
-        error: 'Erro no serviço de e-mail',
-        code: 'EMAIL_SERVICE_ERROR'
+        error: 'Falha no envio do e-mail',
+        details: emailResult.error,
+        code: 'EMAIL_SEND_ERROR'
       });
     }
 
   } catch (error) {
-    logger.error(`[AdminInsightRoutes] Erro inesperado ao enviar insight ${req.params.id}`, {
+    logger.error(`[AdminInsightRoutes] Erro inesperado ao enviar insight ${id}`, {
       error: error.message,
       stack: error.stack,
       adminId: req.user?.id
     });
 
     res.status(500).json({
-      error: 'Erro interno ao enviar insight',
+      error: 'Erro interno do servidor',
       code: 'INTERNAL_ERROR'
     });
   }

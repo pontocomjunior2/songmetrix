@@ -272,6 +272,203 @@ export class InsightGeneratorService {
   }
 
   /**
+   * Buscar dados do usuário para substituição de variáveis
+   * @param {string} userId - ID do usuário
+   * @returns {Object} Dados do usuário para variáveis
+   */
+  async fetchUserData(userId) {
+    const client = await this.pgPool.connect();
+    
+    try {
+      logger.info(`Buscando dados para usuário ${userId}`);
+
+      // Buscar dados básicos do usuário
+      const { data: user, error: userError } = await this.supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (userError || !user) {
+        logger.warn(`Usuário ${userId} não encontrado`);
+        return {};
+      }
+
+      // Buscar estatísticas musicais do usuário
+      const now = new Date();
+      const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      // Query para música mais tocada
+      const topSongQuery = `
+        SELECT song_title, artist, COUNT(*) as play_count
+        FROM music_log 
+        WHERE name = $1 AND date >= $2
+        GROUP BY song_title, artist
+        ORDER BY play_count DESC
+        LIMIT 1
+      `;
+
+      // Query para artista mais tocado
+      const topArtistQuery = `
+        SELECT artist, COUNT(*) as play_count
+        FROM music_log 
+        WHERE name = $1 AND date >= $2
+        GROUP BY artist
+        ORDER BY play_count DESC
+        LIMIT 1
+      `;
+
+      // Query para total de execuções
+      const totalPlaysQuery = `
+        SELECT COUNT(*) as total_plays
+        FROM music_log 
+        WHERE name = $1
+      `;
+
+      // Query para execuções semanais
+      const weeklyPlaysQuery = `
+        SELECT COUNT(*) as weekly_plays
+        FROM music_log 
+        WHERE name = $1 AND date >= $2
+      `;
+
+      // Query para execuções mensais
+      const monthlyPlaysQuery = `
+        SELECT COUNT(*) as monthly_plays
+        FROM music_log 
+        WHERE name = $1 AND date >= $2
+      `;
+
+      // Query para horário de pico
+      const peakHourQuery = `
+        SELECT EXTRACT(HOUR FROM time::time) as hour, COUNT(*) as play_count
+        FROM music_log 
+        WHERE name = $1 AND date >= $2
+        GROUP BY EXTRACT(HOUR FROM time::time)
+        ORDER BY play_count DESC
+        LIMIT 1
+      `;
+
+      // Executar queries em paralelo
+      const [
+        topSongResult,
+        topArtistResult,
+        totalPlaysResult,
+        weeklyPlaysResult,
+        monthlyPlaysResult,
+        peakHourResult
+      ] = await Promise.all([
+        client.query(topSongQuery, [user.email, oneMonthAgo.toISOString().split('T')[0]]),
+        client.query(topArtistQuery, [user.email, oneMonthAgo.toISOString().split('T')[0]]),
+        client.query(totalPlaysQuery, [user.email]),
+        client.query(weeklyPlaysQuery, [user.email, oneWeekAgo.toISOString().split('T')[0]]),
+        client.query(monthlyPlaysQuery, [user.email, oneMonthAgo.toISOString().split('T')[0]]),
+        client.query(peakHourQuery, [user.email, oneMonthAgo.toISOString().split('T')[0]])
+      ]);
+
+      // Calcular taxa de crescimento
+      const currentWeekPlays = weeklyPlaysResult.rows[0]?.weekly_plays || 0;
+      const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+      
+      const previousWeekQuery = `
+        SELECT COUNT(*) as previous_week_plays
+        FROM music_log 
+        WHERE name = $1 AND date >= $2 AND date < $3
+      `;
+      
+      const previousWeekResult = await client.query(previousWeekQuery, [
+        user.email, 
+        twoWeeksAgo.toISOString().split('T')[0],
+        oneWeekAgo.toISOString().split('T')[0]
+      ]);
+
+      const previousWeekPlays = previousWeekResult.rows[0]?.previous_week_plays || 0;
+      const growthRate = previousWeekPlays > 0 
+        ? ((currentWeekPlays - previousWeekPlays) / previousWeekPlays * 100).toFixed(1) + '%'
+        : currentWeekPlays > 0 ? '+100%' : '0%';
+
+      // Calcular horas de escuta (estimativa: 3.5 minutos por música)
+      const totalPlays = parseInt(totalPlaysResult.rows[0]?.total_plays || 0);
+      const listeningHours = Math.round((totalPlays * 3.5) / 60);
+
+      // Análise de fim de semana vs dias úteis
+      const weekendQuery = `
+        SELECT COUNT(*) as weekend_plays
+        FROM music_log 
+        WHERE name = $1 AND date >= $2 
+        AND EXTRACT(DOW FROM date) IN (0, 6)
+      `;
+      
+      const weekdayQuery = `
+        SELECT COUNT(*) as weekday_plays
+        FROM music_log 
+        WHERE name = $1 AND date >= $2 
+        AND EXTRACT(DOW FROM date) NOT IN (0, 6)
+      `;
+
+      const [weekendResult, weekdayResult] = await Promise.all([
+        client.query(weekendQuery, [user.email, oneMonthAgo.toISOString().split('T')[0]]),
+        client.query(weekdayQuery, [user.email, oneMonthAgo.toISOString().split('T')[0]])
+      ]);
+
+      const weekendPlays = parseInt(weekendResult.rows[0]?.weekend_plays || 0);
+      const weekdayPlays = parseInt(weekdayResult.rows[0]?.weekday_plays || 0);
+      const weekendVsWeekday = weekendPlays > weekdayPlays ? 'Mais ativo nos fins de semana' : 'Mais ativo durante a semana';
+
+      // Contar descobertas (músicas únicas no último mês)
+      const discoveryQuery = `
+        SELECT COUNT(DISTINCT CONCAT(song_title, ' - ', artist)) as discovery_count
+        FROM music_log 
+        WHERE name = $1 AND date >= $2
+      `;
+      
+      const discoveryResult = await client.query(discoveryQuery, [user.email, oneMonthAgo.toISOString().split('T')[0]]);
+
+      // Compilar dados
+      const userData = {
+        topSong: topSongResult.rows[0] ? {
+          title: topSongResult.rows[0].song_title,
+          artist: topSongResult.rows[0].artist,
+          playCount: topSongResult.rows[0].play_count
+        } : null,
+        topArtist: topArtistResult.rows[0] ? {
+          name: topArtistResult.rows[0].artist,
+          playCount: topArtistResult.rows[0].play_count
+        } : null,
+        totalPlays,
+        weeklyPlays: currentWeekPlays,
+        monthlyPlays: parseInt(monthlyPlaysResult.rows[0]?.monthly_plays || 0),
+        growthRate,
+        favoriteGenre: 'Variado', // Placeholder - pode ser implementado com análise mais complexa
+        listeningHours,
+        discoveryCount: parseInt(discoveryResult.rows[0]?.discovery_count || 0),
+        peakHour: peakHourResult.rows[0] ? `${peakHourResult.rows[0].hour}:00` : 'N/A',
+        weekendVsWeekday,
+        moodAnalysis: 'Eclético' // Placeholder - pode ser implementado com análise de gêneros
+      };
+
+      logger.info(`Dados coletados para usuário ${userId}`, {
+        topSong: userData.topSong?.title,
+        totalPlays: userData.totalPlays,
+        weeklyPlays: userData.weeklyPlays,
+        growthRate: userData.growthRate
+      });
+
+      return userData;
+
+    } catch (error) {
+      logger.error(`Erro ao buscar dados do usuário ${userId}`, {
+        error: error.message,
+        stack: error.stack
+      });
+      return {};
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
    * Fechar conexões quando necessário
    */
   async close() {
