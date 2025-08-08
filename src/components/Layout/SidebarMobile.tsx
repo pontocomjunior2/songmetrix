@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Radio, BarChart3, Clock, Users, FileText, Type, X, LogOut } from 'lucide-react';
+import { LayoutDashboard, Radio, BarChart3, Clock, Users, FileText, Type, X, LogOut, Brain, Settings } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserStatus } from '../../lib/auth';
 import UserAvatar from '../Common/UserAvatar';
@@ -58,6 +58,16 @@ export default function SidebarMobile({ currentView, onNavigate, onClose }: Side
       name: 'Gerenciar Streams',
       icon: Radio,
       view: 'admin/streams'
+    },
+    {
+      name: 'Insights de IA',
+      icon: Brain,
+      view: 'admin/insights'
+    },
+    {
+      name: 'Configurações de IA',
+      icon: Settings,
+      view: 'admin/llm-settings'
     }
   ];
 

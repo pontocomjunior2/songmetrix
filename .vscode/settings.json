@@ -1,4 +1,4 @@
 {
     "CodeGPT.apiKey": "CodeGPT Plus Beta",
-    "kiroAgent.configureMCP": "Disabled"
+    "kiroAgent.configureMCP": "Enabled"
 }

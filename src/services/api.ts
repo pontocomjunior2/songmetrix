@@ -258,6 +258,14 @@ export const apiServices = {
   uploads: {
     uploadLogo: (formData: FormData) => apiUpload('/api/uploads/logo', formData),
   },
+
+  // Serviços de admin de insights
+  adminInsights: {
+    generateInsights: () => apiPost('/api/admin/insights/generate', {}),
+    getDrafts: () => apiGet('/api/admin/insights/drafts'),
+    approveInsight: (id: string) => apiPost(`/api/admin/insights/${id}/approve`, {}),
+    sendInsight: (id: string) => apiPost(`/api/admin/insights/${id}/send`, {}),
+  },
 };
 
 export default apiServices; 

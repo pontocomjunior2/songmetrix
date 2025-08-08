@@ -10,6 +10,10 @@ import usersRoutes from './routes/users.js';
 import rankingRoutes from './ranking.js';
 import paymentsRoutes from './routes/payments.js';
 import customerRoutes from './routes/customerRoutes.js';
+import adminRoutes from './routes/adminRoutes.js';
+import adminInsightRoutes from './routes/adminInsightRoutes.js';
+import adminLLMRoutes from './routes/adminLLMRoutes.js';
+import { authenticateBasicUser } from './auth-middleware.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 // Remover import de pg e Pool
@@ -62,6 +66,15 @@ export default function registerRoutes(app) {
   
   // Registrar as novas rotas de cliente
   app.use('/api/customers', customerRoutes);
+  
+  // Registrar as rotas de admin (protegidas com autenticação básica)
+  app.use('/api/admin', authenticateBasicUser, adminRoutes);
+  
+  // Registrar as rotas de admin de insights (protegidas com autenticação básica)
+  app.use('/api/admin/insights', authenticateBasicUser, adminInsightRoutes);
+  
+  // Registrar as rotas de admin de LLM (protegidas com autenticação básica)
+  app.use('/api/admin/llm-settings', authenticateBasicUser, adminLLMRoutes);
   
   // Rota de diagnóstico para verificar a conexão com o banco de dados
   app.get('/api/diagnostico', async (req, res) => {

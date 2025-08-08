@@ -26,6 +26,9 @@ import RelayStreamsManager from '@/components/Admin/RelayStreamsManager';
 import RadioSuggestions from '@/components/Admin/RadioSuggestions';
 import EmailManager from '@/components/Admin/EmailManager';
 import NotificationsPage from '@/pages/Admin/NotificationsPage';
+import InsightDashboardPage from '@/pages/admin/InsightDashboardPage';
+import LLMSettingsPage from '@/pages/admin/LLMSettingsPage';
+import PromptManagerPage from '@/pages/Admin/PromptManagerPage';
 import PaymentSuccess from '@/components/Payment/PaymentSuccess';
 import PaymentCanceled from '@/components/Payment/PaymentCanceled';
 
@@ -72,6 +75,9 @@ function App() {
             <Route path="admin/suggestions" element={<AdminRoute><RadioSuggestions /></AdminRoute>} />
             <Route path="admin/emails" element={<AdminRoute><EmailManager /></AdminRoute>} />
             <Route path="admin/notifications" element={<AdminRoute><NotificationsPage /></AdminRoute>} />
+            <Route path="admin/insights" element={<AdminRoute><InsightDashboardPage /></AdminRoute>} />
+            <Route path="admin/llm-settings" element={<AdminRoute><LLMSettingsPage /></AdminRoute>} />
+            <Route path="admin/prompts" element={<AdminRoute><PromptManagerPage /></AdminRoute>} />
           </Route>
         </Routes>
       </Suspense>
