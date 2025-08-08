@@ -332,47 +332,61 @@ const Dashboard = () => {
     </div>
   ));
 
-  const ArtistBarChart = memo(({ data }: { data: ArtistData[] }) => (
-    <Suspense fallback={<Loading />}>
-      {data.length > 0 ? (
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 5, right: 0, left: -20, bottom: 5 }}>
-            <defs>
-              <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#3B82F6" />
-                <stop offset="100%" stopColor="#1E3A8A" />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e0e0e0" />
-            <XAxis dataKey="artist" stroke="#6b7280" fontSize={12} />
-            <YAxis stroke="#6b7280" fontSize={12} />
-            <Tooltip
-              cursor={{ fill: 'rgba(0, 0, 0, 0.1)' }}
-              content={({ active, payload }) => {
-                if (active && payload && payload.length) {
-                  return (
-                    <div className="bg-white dark:bg-gray-700 p-2 border rounded shadow-lg text-sm">
-                      <p className="font-medium text-gray-900 dark:text-white">{`${payload[0].payload.artist}`}</p>
-                      <p className="text-gray-600 dark:text-gray-300">{`Execuções: ${payload[0].value}`}</p>
-                    </div>
-                  );
-                }
-                return null;
-              }}
-            />
-            <Bar
-              dataKey="executions"
-              fill="url(#barGradient)"
-            />
-          </BarChart>
-        </ResponsiveContainer>
-      ) : (
-        <div className="flex items-center justify-center h-full">
-          <p className="text-gray-500 dark:text-gray-400">Sem dados disponíveis</p>
-        </div>
-      )}
-    </Suspense>
-  ));
+  const ArtistBarChart = memo(({ data }: { data: ArtistData[] }) => {
+    // Detect dark mode
+    const isDarkMode = document.documentElement.classList.contains('dark');
+    
+    return (
+      <Suspense fallback={<Loading />}>
+        {data.length > 0 ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} margin={{ top: 5, right: 0, left: -20, bottom: 5 }}>
+              <defs>
+                <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#3B82F6" />
+                  <stop offset="100%" stopColor="#1E3A8A" />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDarkMode ? "#374151" : "#e0e0e0"} />
+              <XAxis 
+                dataKey="artist" 
+                stroke={isDarkMode ? "#9ca3af" : "#6b7280"} 
+                fontSize={12}
+                tick={{ fill: isDarkMode ? "#e5e7eb" : "#374151" }}
+              />
+              <YAxis 
+                stroke={isDarkMode ? "#9ca3af" : "#6b7280"} 
+                fontSize={12}
+                tick={{ fill: isDarkMode ? "#e5e7eb" : "#374151" }}
+              />
+              <Tooltip
+                cursor={{ fill: 'rgba(0, 0, 0, 0.1)' }}
+                content={({ active, payload }) => {
+                  if (active && payload && payload.length) {
+                    return (
+                      <div className="bg-white dark:bg-gray-700 p-2 border rounded shadow-lg text-sm">
+                        <p className="font-medium text-gray-900 dark:text-white">{`${payload[0].payload.artist}`}</p>
+                        <p className="text-gray-600 dark:text-gray-300">{`Execuções: ${payload[0].value}`}</p>
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
+              />
+              <Bar
+                dataKey="executions"
+                fill="url(#barGradient)"
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <p className="text-gray-500 dark:text-gray-400">Sem dados disponíveis</p>
+          </div>
+        )}
+      </Suspense>
+    );
+  });
 
   const GenrePieChart = memo(({ data, colors }: { data: GenreDistribution[], colors: string[] }) => {
     // Custom label renderer
@@ -398,6 +412,9 @@ const Dashboard = () => {
       const y = cy + radius * Math.sin(-midAngle * RADIAN);
       const textAnchor = x > cx ? 'start' : 'end';
 
+      // Detect dark mode
+      const isDarkMode = document.documentElement.classList.contains('dark');
+
       return (
         <text 
           x={x} 
@@ -405,6 +422,7 @@ const Dashboard = () => {
           textAnchor={textAnchor} 
           dominantBaseline="central"
           fontSize={12} // Label font size
+          fill={isDarkMode ? '#e5e7eb' : '#374151'} // text-gray-300 dark:text-gray-700
         >
           {`${name}: ${value}%`} 
         </text>
@@ -436,13 +454,24 @@ const Dashboard = () => {
               </Pie>
               <Tooltip
                 formatter={(value, name, props) => [`${value}%`, name]}
-                contentStyle={{
-                  backgroundColor: 'var(--tooltip-bg, #fff)',
-                  color: 'var(--tooltip-text, #000)',
-                  borderColor: 'var(--tooltip-border, #ccc)',
-                  fontSize: '12px',
-                  borderRadius: '4px',
-                  padding: '5px 10px'
+                content={({ active, payload }) => {
+                  if (active && payload && payload.length) {
+                    const isDarkMode = document.documentElement.classList.contains('dark');
+                    return (
+                      <div 
+                        className="p-2 border rounded shadow-lg text-sm"
+                        style={{
+                          backgroundColor: isDarkMode ? '#374151' : '#ffffff',
+                          color: isDarkMode ? '#e5e7eb' : '#374151',
+                          borderColor: isDarkMode ? '#6b7280' : '#d1d5db'
+                        }}
+                      >
+                        <p className="font-medium">{payload[0].name}</p>
+                        <p>{`${payload[0].value}%`}</p>
+                      </div>
+                    );
+                  }
+                  return null;
                 }}
               />
             </PieChart>
