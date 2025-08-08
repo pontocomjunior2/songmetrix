@@ -426,40 +426,52 @@ adminInsightRouter.post('/generate-custom', async (req, res) => {
         try {
           logger.info(`[AdminInsightRoutes] Processando usuário ${user.id} (${user.email})`);
 
-          // Dados básicos do usuário para substituição
-          const basicUserData = {
-            topSong: { title: 'Sua música favorita', artist: 'Artista preferido' },
-            topArtist: { name: 'Artista mais tocado' },
-            totalPlays: 100,
-            weeklyPlays: 15,
-            monthlyPlays: 60,
-            growthRate: '+20%',
-            favoriteGenre: 'Variado',
-            listeningHours: 5,
-            discoveryCount: 3,
-            peakHour: '14:00',
-            weekendVsWeekday: 'Mais ativo durante a semana',
-            moodAnalysis: 'Eclético'
-          };
+          // Gerar dados realistas baseados nos dados reais das rádios
+          logger.info(`[AdminInsightRoutes] Gerando dados realistas para usuário ${user.email}`);
+          const realisticUserData = await insightGenerator.generateRealisticUserData(user.id);
           
-          // Substituir variáveis no prompt de forma simples
+          // Usar dados realistas gerados
+          const userData = {
+            topSong: realisticUserData.topSong || { title: 'Nenhuma música registrada', artist: 'Artista desconhecido' },
+            topArtist: realisticUserData.topArtist || { name: 'Nenhum artista registrado' },
+            totalPlays: realisticUserData.totalPlays || 0,
+            weeklyPlays: realisticUserData.weeklyPlays || 0,
+            monthlyPlays: realisticUserData.monthlyPlays || 0,
+            growthRate: realisticUserData.growthRate || '0%',
+            favoriteGenre: realisticUserData.favoriteGenre || 'Variado',
+            listeningHours: realisticUserData.listeningHours || 0,
+            discoveryCount: realisticUserData.discoveryCount || 0,
+            peakHour: realisticUserData.peakHour || 'N/A',
+            weekendVsWeekday: realisticUserData.weekendVsWeekday || 'Padrão não identificado',
+            moodAnalysis: realisticUserData.moodAnalysis || 'Eclético'
+          };
+
+          logger.info(`[AdminInsightRoutes] Dados realistas gerados para usuário ${user.email}`, {
+            topSong: userData.topSong?.title,
+            topArtist: userData.topArtist?.name,
+            totalPlays: userData.totalPlays,
+            weeklyPlays: userData.weeklyPlays,
+            hasRealisticData: userData.totalPlays > 0
+          });
+          
+          // Substituir variáveis no prompt com dados reais
           let processedPrompt = customPrompt
             .replace(/\{user_name\}/g, user.full_name || user.email)
             .replace(/\{user_email\}/g, user.email)
-            .replace(/\{top_song\}/g, basicUserData.topSong.title)
-            .replace(/\{top_artist\}/g, basicUserData.topArtist.name)
-            .replace(/\{total_plays\}/g, basicUserData.totalPlays.toString())
-            .replace(/\{weekly_plays\}/g, basicUserData.weeklyPlays.toString())
-            .replace(/\{monthly_plays\}/g, basicUserData.monthlyPlays.toString())
-            .replace(/\{growth_rate\}/g, basicUserData.growthRate)
-            .replace(/\{favorite_genre\}/g, basicUserData.favoriteGenre)
-            .replace(/\{listening_hours\}/g, basicUserData.listeningHours.toString())
-            .replace(/\{discovery_count\}/g, basicUserData.discoveryCount.toString())
-            .replace(/\{peak_hour\}/g, basicUserData.peakHour)
-            .replace(/\{weekend_vs_weekday\}/g, basicUserData.weekendVsWeekday)
-            .replace(/\{mood_analysis\}/g, basicUserData.moodAnalysis);
+            .replace(/\{top_song\}/g, userData.topSong?.title || 'Nenhuma música registrada')
+            .replace(/\{top_artist\}/g, userData.topArtist?.name || 'Nenhum artista registrado')
+            .replace(/\{total_plays\}/g, userData.totalPlays.toString())
+            .replace(/\{weekly_plays\}/g, userData.weeklyPlays.toString())
+            .replace(/\{monthly_plays\}/g, userData.monthlyPlays.toString())
+            .replace(/\{growth_rate\}/g, userData.growthRate)
+            .replace(/\{favorite_genre\}/g, userData.favoriteGenre)
+            .replace(/\{listening_hours\}/g, userData.listeningHours.toString())
+            .replace(/\{discovery_count\}/g, userData.discoveryCount.toString())
+            .replace(/\{peak_hour\}/g, userData.peakHour)
+            .replace(/\{weekend_vs_weekday\}/g, userData.weekendVsWeekday)
+            .replace(/\{mood_analysis\}/g, userData.moodAnalysis);
 
-          logger.info(`[AdminInsightRoutes] Prompt processado para usuário ${user.id}`);
+          logger.info(`[AdminInsightRoutes] Prompt processado com dados reais para usuário ${user.id}`);
 
           // Criar HTML formatado
           const htmlContent = `
@@ -484,7 +496,7 @@ adminInsightRouter.post('/generate-custom', async (req, res) => {
             </div>
           `.trim();
           
-          // Salvar no banco como draft
+          // Salvar no banco como draft com dados reais
           const { error: insertError } = await supabaseAdmin
             .from('generated_insight_emails')
             .insert({
@@ -494,7 +506,7 @@ adminInsightRouter.post('/generate-custom', async (req, res) => {
               body_html: htmlContent,
               content: htmlContent,
               status: 'draft',
-              insight_data: basicUserData,
+              insight_data: userData, // Usar dados reais em vez de basicUserData
               deep_link: `${process.env.VITE_APP_URL || 'https://songmetrix.com.br'}/dashboard`,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
