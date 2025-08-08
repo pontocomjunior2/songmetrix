@@ -105,7 +105,7 @@ const generateReport = async () => {
         showSparkline={false}
       />
     ) : (
-      <span className="text-gray-400">-</span>
+      <span className="text-gray-400 dark:text-gray-500">-</span>
     )}
   </td>
 )}
@@ -122,7 +122,7 @@ const generateReport = async () => {
         showSparkline={false}
       />
     ) : (
-      <span className="text-gray-400">-</span>
+      <span className="text-gray-400 dark:text-gray-500">-</span>
     )}
   </td>
 )}

@@ -63,7 +63,7 @@ function Stepper({
                     ? "bg-blue-600 border-blue-600 text-white"
                     : isCompleted
                     ? "bg-blue-100 border-blue-600 text-blue-600"
-                    : "bg-gray-100 border-gray-300 text-gray-500",
+                    : "bg-gray-100 dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400",
                   isVertical ? "mr-4" : "mb-2"
                 )}
               >

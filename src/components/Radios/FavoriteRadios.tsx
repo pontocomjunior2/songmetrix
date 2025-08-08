@@ -74,7 +74,7 @@ export default function FavoriteRadios() {
   }
 
   if (favoriteRadios.length === 0) {
-    return <p className="text-sm text-gray-500 italic">Você ainda não adicionou rádios favoritas.</p>;
+    return <p className="text-sm text-gray-500 dark:text-gray-400 italic">Você ainda não adicionou rádios favoritas.</p>;
   }
 
   return (

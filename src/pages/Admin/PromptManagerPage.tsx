@@ -208,8 +208,8 @@ const PromptManagerPage: React.FC = () => {
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>
                     <strong>Importante!</strong> Use o placeholder{' '}
-                    <code className="bg-gray-100 px-1 rounded">{'{{INSIGHT_DATA}}'}</code>{' '}
-                    no conteúdo do prompt para injetar os dados do insight. Apenas um template pode estar ativo por vez.
+                    <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">{'{{INSIGHT_DATA}}'}</code>{' '}
+                    para inserir os dados do insight automaticamente. Apenas um template pode estar ativo por vez.
                 </AlertDescription>
             </Alert>
 
@@ -328,8 +328,8 @@ const PromptManagerPage: React.FC = () => {
                         <DialogDescription>
                             Configure o template que será usado para gerar insights de IA.
                             Use{' '}
-                            <code className="bg-gray-100 px-1 rounded">{'{{INSIGHT_DATA}}'}</code>{' '}
-                            para injetar os dados do insight.
+                            <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">{'{{INSIGHT_DATA}}'}</code>{' '}
+                            para inserir os dados do insight automaticamente.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -370,7 +370,7 @@ Responda APENAS com um objeto JSON válido contendo:
                             />
                             <p className="text-xs text-muted-foreground">
                                 💡 Dica: Use{' '}
-                                <code className="bg-gray-100 px-1 rounded">{'{{INSIGHT_DATA}}'}</code>{' '}
+                                <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">{'{{INSIGHT_DATA}}'}</code>{' '}
                                 onde você quer que os dados do insight sejam inseridos
                             </p>
                         </div>

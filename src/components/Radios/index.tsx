@@ -321,7 +321,7 @@ export default function Radios() {
                   <TableRow key={radio.name} className={rowClass}>
                     <TableCell>
                       <Star 
-                        className={`cursor-pointer ${radio.isFavorite ? 'text-yellow-400 fill-yellow-400' : 'text-gray-400'}`}
+                        className={`cursor-pointer ${radio.isFavorite ? 'text-yellow-400 fill-yellow-400' : 'text-gray-400 dark:text-gray-500'}`}
                         onClick={() => toggleFavorite(radio.name, radio.isFavorite)}
                       />
                     </TableCell>

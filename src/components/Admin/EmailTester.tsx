@@ -235,7 +235,7 @@ function EmailTester() {
           </button>
           
           {showDebug && debug && (
-            <div className="mt-2 p-3 bg-gray-100 rounded text-xs font-mono overflow-auto max-h-60">
+            <div className="mt-2 p-3 bg-gray-100 dark:bg-gray-700 rounded text-xs font-mono overflow-auto max-h-60">
               <pre>{debug}</pre>
             </div>
           )}

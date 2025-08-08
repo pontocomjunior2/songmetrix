@@ -787,7 +787,7 @@ export default function UserList() {
               <span>Sincronizando usuários com SendPulse...</span>
               <span>{syncProgress.percentage}% ({syncProgress.processed}/{syncProgress.total})</span>
             </div>
-            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
               <div
                 className="h-2 bg-blue-500 rounded-full"
                 style={{ width: `${syncProgress.percentage}%` }}

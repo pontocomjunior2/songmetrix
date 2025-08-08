@@ -25,11 +25,11 @@ export default function PaymentSuccess() {
   }, [navigate]); 
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 p-4">
-      <div className="bg-white shadow-xl rounded-lg p-8 text-center max-w-md">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 p-4">
+      <div className="bg-white dark:bg-gray-800 shadow-xl rounded-lg p-8 text-center max-w-md">
         <svg className="w-16 h-16 text-green-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">Pagamento Realizado com Sucesso!</h2>
-        <p className="text-gray-600 mb-6">
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">Pagamento Realizado com Sucesso!</h2>
+        <p className="text-gray-600 dark:text-gray-300 mb-6">
           Seu plano foi ativado. Você será redirecionado em breve...
         </p>
         <Loading message="Redirecionando..." size="medium" />

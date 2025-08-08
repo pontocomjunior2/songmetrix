@@ -546,7 +546,7 @@ export default function Plans() {
                      <summary className="flex justify-between items-center cursor-pointer font-medium text-gray-900 dark:text-white">
                          {faq.question}
                          {/* Substituir SVG por componente Lucide ChevronDown */}
-                         <svg className="h-5 w-5 text-gray-500 group-open:rotate-180 transition-transform" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                         <svg className="h-5 w-5 text-gray-500 dark:text-gray-400 group-open:rotate-180 transition-transform" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                          </svg>
                      </summary>

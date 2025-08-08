@@ -294,7 +294,7 @@ export default function SuggestRadioModal({
               </Alert>
             )}
             
-            <div className="text-sm text-gray-500 mb-4">
+            <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               <span className="text-red-500">*</span> Campos obrigatórios
             </div>
             

@@ -451,7 +451,7 @@ function EmailTemplates() {
           <div className="font-semibold">{currentTemplate.subject}</div>
         </div>
         
-        <div className="border p-4 rounded-md bg-gray-50">
+        <div className="border p-4 rounded-md bg-gray-50 dark:bg-gray-700">
           <div className="text-sm font-medium text-gray-500 mb-2">
             Visualização do email (com dados de exemplo):
           </div>

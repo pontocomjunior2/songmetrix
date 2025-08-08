@@ -33,34 +33,34 @@ const RelatoriosWizard: React.FC = () => {
     <>
       {/* Desktop Steps */}
       <div className="hidden sm:flex items-center">
-        <div className={`flex items-center ${currentStep >= 1 ? 'text-navy-600' : 'text-gray-400'}`}>
-          <div className="rounded-full h-8 w-8 flex items-center justify-center border-2 border-current">
+        <div className={`flex items-center ${currentStep >= 1 ? 'text-navy-600' : 'text-gray-400 dark:text-gray-500'}`}>
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${currentStep >= 1 ? 'bg-navy-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'}`}>
             1
           </div>
           <span className="ml-2">Tipo de Relatório</span>
         </div>
-        <ChevronRight className="mx-4 h-5 w-5 text-gray-400" />
-        <div className={`flex items-center ${currentStep >= 2 ? 'text-navy-600' : 'text-gray-400'}`}>
-          <div className="rounded-full h-8 w-8 flex items-center justify-center border-2 border-current">
+        <ChevronRight className="mx-4 h-5 w-5 text-gray-400 dark:text-gray-500" />
+        <div className={`flex items-center ${currentStep >= 2 ? 'text-navy-600' : 'text-gray-400 dark:text-gray-500'}`}>
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${currentStep >= 2 ? 'bg-navy-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'}`}>
             2
           </div>
-          <span className="ml-2">Seleção</span>
+          <span className="ml-2">Configurações</span>
         </div>
-        <ChevronRight className="mx-4 h-5 w-5 text-gray-400" />
-        <div className={`flex items-center ${currentStep >= 3 ? 'text-navy-600' : 'text-gray-400'}`}>
-          <div className="rounded-full h-8 w-8 flex items-center justify-center border-2 border-current">
+        <ChevronRight className="mx-4 h-5 w-5 text-gray-400 dark:text-gray-500" />
+        <div className={`flex items-center ${currentStep >= 3 ? 'text-navy-600' : 'text-gray-400 dark:text-gray-500'}`}>
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${currentStep >= 3 ? 'bg-navy-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'}`}>
             3
           </div>
-          <span className="ml-2">Período e Chart</span>
+          <span className="ml-2">Resultados</span>
         </div>
       </div>
 
       {/* Mobile Steps */}
       <div className="sm:hidden flex justify-center">
         <div className="flex items-center space-x-2">
-          <div className={`h-2 w-2 rounded-full ${currentStep >= 1 ? 'bg-navy-600' : 'bg-gray-300'}`} />
-          <div className={`h-2 w-2 rounded-full ${currentStep >= 2 ? 'bg-navy-600' : 'bg-gray-300'}`} />
-          <div className={`h-2 w-2 rounded-full ${currentStep >= 3 ? 'bg-navy-600' : 'bg-gray-300'}`} />
+          <div className={`h-2 w-2 rounded-full ${currentStep >= 1 ? 'bg-navy-600' : 'bg-gray-300 dark:bg-gray-600'}`} />
+          <div className={`h-2 w-2 rounded-full ${currentStep >= 2 ? 'bg-navy-600' : 'bg-gray-300 dark:bg-gray-600'}`} />
+          <div className={`h-2 w-2 rounded-full ${currentStep >= 3 ? 'bg-navy-600' : 'bg-gray-300 dark:bg-gray-600'}`} />
         </div>
       </div>
     </>
