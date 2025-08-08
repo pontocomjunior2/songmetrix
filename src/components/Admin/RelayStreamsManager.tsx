@@ -3,6 +3,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { apiGet, apiPost, apiPut, apiDelete } from '../../services/api.ts';
 import { toast } from 'react-toastify';
 import { Loader2, Edit, Trash2, Plus, X, Check } from 'lucide-react';
+import { ResponsiveDataTable, type ResponsiveColumn } from '@/components/ui/responsive-data-table';
 
 interface RelayStream {
   id?: number;
@@ -160,7 +161,29 @@ const RelayStreamsManager: React.FC = () => {
         </div>
       )}
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      {/* Mobile: cards */}
+      <div className="sm:hidden">
+        <ResponsiveDataTable<RelayStream>
+          data={streams}
+          getRowKey={(row, idx) => row.id ?? idx}
+          columns={([
+            { id: 'name', header: 'Stream', isPrimaryMobileField: true, accessorKey: 'stream_name' },
+            { id: 'input', header: 'Input URL', render: (r) => <span className="break-words text-xs text-muted-foreground">{r.input_url}</span> },
+            { id: 'output', header: 'Output URL', render: (r) => <span className="break-words text-xs text-muted-foreground">{r.output_url}</span> },
+            { id: 'actions', header: 'Ações', render: (r) => (
+              <div className="flex items-center gap-2">
+                <button onClick={() => handleEdit(r)} className="p-1 text-blue-600 hover:text-blue-900" title="Editar"><Edit className="w-4 h-4" /></button>
+                {'id' in r && r.id && (
+                  <button onClick={() => handleDelete(r.id as number)} className="p-1 text-red-600 hover:text-red-900" title="Excluir"><Trash2 className="w-4 h-4" /></button>
+                )}
+              </div>
+            ) },
+          ] as ResponsiveColumn<RelayStream>[])}
+        />
+      </div>
+
+      {/* Desktop: tabela */}
+      <div className="hidden sm:block bg-white rounded-lg shadow overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
@@ -183,18 +206,10 @@ const RelayStreamsManager: React.FC = () => {
                   <div className="text-sm text-gray-500 break-all">{stream.output_url}</div>
                 </td>
                 <td className="px-6 py-4 text-right space-x-2">
-                  <button
-                    onClick={() => handleEdit(stream)}
-                    className="inline-flex items-center p-1 text-blue-600 hover:text-blue-900 transition-colors duration-150"
-                    title="Edit stream"
-                  >
+                  <button onClick={() => handleEdit(stream)} className="inline-flex items-center p-1 text-blue-600 hover:text-blue-900 transition-colors duration-150" title="Edit stream">
                     <Edit className="w-4 h-4" />
                   </button>
-                  <button
-                    onClick={() => stream.id && handleDelete(stream.id)}
-                    className="inline-flex items-center p-1 text-red-600 hover:text-red-900 transition-colors duration-150"
-                    title="Delete stream"
-                  >
+                  <button onClick={() => stream.id && handleDelete(stream.id)} className="inline-flex items-center p-1 text-red-600 hover:text-red-900 transition-colors duration-150" title="Delete stream">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </td>

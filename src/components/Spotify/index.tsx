@@ -3,6 +3,7 @@ import { useAuth } from '../../hooks/useAuth';
 import Select from 'react-select';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
 import 'react-lazy-load-image-component/src/effects/blur.css';
+import { ResponsiveDataTable, type ResponsiveColumn } from '@/components/ui/responsive-data-table';
 import { Loader2, Play, ExternalLink, Clock, AlertCircle } from 'lucide-react';
 import './styles/Spotify.css';
 import {
@@ -469,7 +470,60 @@ export default function Spotify() {
                 <div className="spotify-tracks-header">
                   <h3 className="spotify-tracks-title">Faixas de {selectedPlaylist.label}</h3>
                 </div>
-                <table className="spotify-tracks-table">
+                {/* Mobile: cards */}
+                <div className="sm:hidden">
+                  <ResponsiveDataTable<SpotifyTrack>
+                    data={tracks}
+                    getRowKey={(row) => row.id}
+                    columns={([
+                      {
+                        id: 'main',
+                        header: 'Faixa',
+                        isPrimaryMobileField: true,
+                        render: (row, ) => (
+                          <div className="flex items-center gap-3">
+                            <LazyLoadImage
+                              src={row.albumCover || '/placeholder-album.png'}
+                              alt={row.album}
+                              effect="blur"
+                              className="w-12 h-12 rounded object-cover"
+                              placeholderSrc="/placeholder-album.png"
+                            />
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium truncate">{row.name}</div>
+                              <div className="text-xs text-muted-foreground truncate">{row.artist}</div>
+                            </div>
+                          </div>
+                        ),
+                      },
+                      { id: 'album', header: 'Álbum', accessorKey: 'album' },
+                      { id: 'pop', header: 'Popularidade', render: (r) => (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span>{r.popularity}</span>
+                          <div className="flex-1 h-1 bg-gray-200 rounded">
+                            <div className="h-1 bg-green-500 rounded" style={{ width: `${r.popularity}%` }} />
+                          </div>
+                        </div>
+                      ) },
+                      { id: 'dur', header: 'Duração', render: (r) => formatDuration(r.duration_ms) },
+                      { id: 'actions', header: 'Ações', render: (r) => (
+                        <div className="flex items-center gap-2">
+                          {r.preview_url && (
+                            <a href={r.preview_url} target="_blank" rel="noopener noreferrer" title="Ouvir prévia" className="text-blue-600">
+                              <Play className="w-4 h-4" />
+                            </a>
+                          )}
+                          <a href={r.external_url} target="_blank" rel="noopener noreferrer" title="Abrir no Spotify" className="text-blue-600">
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                        </div>
+                      ) },
+                    ] as ResponsiveColumn<SpotifyTrack>[])}
+                  />
+                </div>
+
+                {/* Desktop/Tablet: tabela original */}
+                <table className="spotify-tracks-table hidden sm:table">
                   <thead>
                     <tr>
                       <th>#</th>
@@ -504,10 +558,7 @@ export default function Spotify() {
                           <div className="spotify-track-popularity">
                             <span>{track.popularity}</span>
                             <div className="spotify-popularity-bar">
-                              <div
-                                className="spotify-popularity-fill"
-                                style={{ width: `${track.popularity}%` }}
-                              ></div>
+                              <div className="spotify-popularity-fill" style={{ width: `${track.popularity}%` }}></div>
                             </div>
                           </div>
                         </td>
@@ -515,23 +566,11 @@ export default function Spotify() {
                         <td>
                           <div className="spotify-track-actions">
                             {track.preview_url && (
-                              <a
-                                href={track.preview_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="spotify-track-action"
-                                title="Ouvir prévia"
-                              >
+                              <a href={track.preview_url} target="_blank" rel="noopener noreferrer" className="spotify-track-action" title="Ouvir prévia">
                                 <Play className="w-4 h-4" />
                               </a>
                             )}
-                            <a
-                              href={track.external_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="spotify-track-action"
-                              title="Abrir no Spotify"
-                            >
+                            <a href={track.external_url} target="_blank" rel="noopener noreferrer" className="spotify-track-action" title="Abrir no Spotify">
                               <ExternalLink className="w-4 h-4" />
                             </a>
                           </div>

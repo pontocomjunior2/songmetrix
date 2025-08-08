@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase-client';
 import { Loader2 } from 'lucide-react';
+import { ResponsiveDataTable, type ResponsiveColumn } from '@/components/ui/responsive-data-table';
 
 interface RadioAbbreviation {
   radio_name: string;
@@ -129,7 +130,43 @@ export default function RadioAbbreviations() {
         Gerenciar Abreviações de Rádios
       </h2>
       
-      <div className="bg-white dark:bg-gray-800 shadow-sm rounded-lg overflow-hidden">
+      {/* Mobile: cards */}
+      <div className="sm:hidden">
+        <ResponsiveDataTable<RadioAbbreviation>
+          data={abbreviations}
+          getRowKey={(row) => row.radio_name}
+          columns={([
+            { id: 'radio', header: 'Rádio', isPrimaryMobileField: true, accessorKey: 'radio_name' },
+            { id: 'abbr', header: 'Abreviação', render: (r) => (
+              editingRadio === r.radio_name ? (
+                <input
+                  type="text"
+                  value={newAbbreviation}
+                  onChange={(e) => setNewAbbreviation(e.target.value.toUpperCase())}
+                  maxLength={3}
+                  className="w-20 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700"
+                  placeholder="ABC"
+                />
+              ) : (
+                r.abbreviation
+              )
+            ) },
+            { id: 'actions', header: 'Ações', render: (r) => (
+              editingRadio === r.radio_name ? (
+                <div className="flex space-x-2">
+                  <button onClick={() => handleSave(r.radio_name)} className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300">Salvar</button>
+                  <button onClick={handleCancel} className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300">Cancelar</button>
+                </div>
+              ) : (
+                <button onClick={() => handleEdit(r.radio_name, r.abbreviation)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">Editar</button>
+              )
+            ) },
+          ] as ResponsiveColumn<RadioAbbreviation>[])}
+        />
+      </div>
+
+      {/* Desktop: tabela */}
+      <div className="hidden sm:block bg-white dark:bg-gray-800 shadow-sm rounded-lg overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-700">
             <tr>
@@ -167,26 +204,11 @@ export default function RadioAbbreviations() {
                 <td className="px-6 py-4 whitespace-nowrap text-sm">
                   {editingRadio === abbr.radio_name ? (
                     <div className="flex space-x-2">
-                      <button
-                        onClick={() => handleSave(abbr.radio_name)}
-                        className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300"
-                      >
-                        Salvar
-                      </button>
-                      <button
-                        onClick={handleCancel}
-                        className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                      >
-                        Cancelar
-                      </button>
+                      <button onClick={() => handleSave(abbr.radio_name)} className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300">Salvar</button>
+                      <button onClick={handleCancel} className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300">Cancelar</button>
                     </div>
                   ) : (
-                    <button
-                      onClick={() => handleEdit(abbr.radio_name, abbr.abbreviation)}
-                      className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                    >
-                      Editar
-                    </button>
+                    <button onClick={() => handleEdit(abbr.radio_name, abbr.abbreviation)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">Editar</button>
                   )}
                 </td>
               </tr>
