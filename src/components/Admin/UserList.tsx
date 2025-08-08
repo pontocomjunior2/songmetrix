@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Button } from '../ui/button';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 
 // Atualizar mapeamento de plan_id para exibição (CHAVES em MAIÚSCULAS)
 const PLAN_DISPLAY_NAMES: { [key: string]: string } = {
@@ -79,6 +80,10 @@ export default function UserList() {
   const { currentUser, loading: authLoading, isInitialized } = useAuth();
   const [syncingUsers, setSyncingUsers] = useState<string[]>([]);
   const [updatingPlanId, setUpdatingPlanId] = useState<string | null>(null);
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+  const [bulkPlanId, setBulkPlanId] = useState<string>('');
+  const [isBulkUpdating, setIsBulkUpdating] = useState<boolean>(false);
+  const [isBulkDialogOpen, setIsBulkDialogOpen] = useState<boolean>(false);
 
   // Combinar estado de loading local com o do Auth
   const isLoading = loading || authLoading || !isInitialized;
@@ -162,6 +167,103 @@ export default function UserList() {
     setFilteredUsers(tempUsers);
   };
 
+  const handleToggleSelectUser = useCallback((userId: string) => {
+    setSelectedUserIds(prev => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId); else next.add(userId);
+      return next;
+    });
+  }, []);
+
+  const handleToggleSelectAllVisible = useCallback(() => {
+    setSelectedUserIds(prev => {
+      const allVisibleIds = filteredUsers.map(u => u.id);
+      const areAllSelected = allVisibleIds.every(id => prev.has(id));
+      if (areAllSelected) {
+        // Desmarca todos os visíveis
+        const next = new Set(prev);
+        for (const id of allVisibleIds) next.delete(id);
+        return next;
+      }
+      // Marca todos os visíveis
+      const next = new Set(prev);
+      for (const id of allVisibleIds) next.add(id);
+      return next;
+    });
+  }, [filteredUsers]);
+
+  const handleClearSelection = useCallback(() => {
+    setSelectedUserIds(new Set());
+    setBulkPlanId('');
+  }, []);
+
+  const handleApplyBulkPlanChange = useCallback(async () => {
+    if (!bulkPlanId) {
+      reactToast.warn('Selecione um status/plano para aplicar.');
+      return;
+    }
+    if (selectedUserIds.size === 0) {
+      reactToast.warn('Selecione ao menos um usuário.');
+      return;
+    }
+
+    // Obter token uma única vez
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !sessionData.session?.access_token) {
+      setError('Token de autenticação não encontrado. Faça login novamente.');
+      return;
+    }
+    const token = sessionData.session.access_token;
+
+    setIsBulkUpdating(true);
+
+    // Mapear planos anteriores para possível rollback
+    const previousPlans = new Map<string, string | null>();
+    users.forEach(u => { if (selectedUserIds.has(u.id)) previousPlans.set(u.id, u.plan_id ?? null); });
+
+    // Otimista
+    setUsers(prev => prev.map(u => selectedUserIds.has(u.id) ? { ...u, plan_id: bulkPlanId } : u));
+
+    try {
+      const requests = Array.from(selectedUserIds).map(userId => (
+        fetch(`/api/admin/users/${userId}/plan`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ planId: bulkPlanId })
+        })
+          .then(async (res) => ({ ok: res.ok, id: userId, body: await res.json().catch(() => ({})) }))
+          .catch(() => ({ ok: false, id: userId, body: { error: 'Network error' } }))
+      ));
+
+      const results = await Promise.all(requests);
+      const failed = results.filter(r => !r.ok);
+      const succeeded = results.filter(r => r.ok);
+
+      if (failed.length > 0) {
+        // Rollback nos que falharam
+        setUsers(prev => prev.map(u => {
+          const fail = failed.find(f => f.id === u.id);
+          if (fail) {
+            const prevPlan = previousPlans.get(u.id) ?? null;
+            return { ...u, plan_id: prevPlan ?? undefined } as User;
+          }
+          return u;
+        }));
+        reactToast.error(`Falha ao atualizar ${failed.length} de ${results.length} usuários.`);
+      }
+      if (succeeded.length > 0) {
+        reactToast.success(`${succeeded.length} usuário(s) atualizado(s) para ${PLAN_DISPLAY_NAMES[bulkPlanId] || bulkPlanId}.`);
+      }
+
+      // Atualizar sessão do Supabase para refletir metadados (não bloqueante)
+      supabase.auth.refreshSession().catch(() => {});
+
+    } finally {
+      setIsBulkUpdating(false);
+      handleClearSelection();
+    }
+  }, [bulkPlanId, selectedUserIds, supabase, users, handleClearSelection]);
+
   const handlePlanChange = useCallback(async (userId: string, newPlanId: string) => {
     console.log(`Attempting to change plan for user ${userId} to ${newPlanId}`);
 
@@ -176,6 +278,9 @@ export default function UserList() {
     const token = sessionData.session.access_token;
 
     setUpdatingPlanId(userId);
+    const previousPlan = users.find(u => u.id === userId)?.plan_id ?? null;
+    // Otimista: atualiza imediatamente o plano na UI
+    setUsers(prev => prev.map(u => (u.id === userId ? { ...u, plan_id: newPlanId } : u)));
     try {
       const response = await fetch(`/api/admin/users/${userId}/plan`, {
         method: 'PUT',
@@ -194,26 +299,10 @@ export default function UserList() {
 
       const updatedUserResponse = await response.json(); // API retorna { success: true, user: { id, plan_id } } ou similar
       console.log('Plano atualizado com sucesso (API Response):', updatedUserResponse);
-
-      // Atualizar o estado local do usuário (ARRAY)
-      setUsers((prevUsers) =>
-        prevUsers.map((user) => {
-          if (user.id === userId) {
-            // Retorna o usuário modificado
-            return {
-              ...user,
-              plan_id: newPlanId, // Atualiza o plan_id diretamente no objeto User
-              // Se a API retornasse o objeto user completo, poderia usar: ...updatedUserResponse.user
-            };
-          }
-          // Retorna o usuário original se não for o que foi modificado
-          return user;
-        })
-      );
-
-      // Força o client Supabase a buscar os dados do usuário atualizados (incluindo metadados)
-      await supabase.auth.refreshSession();
-      console.log('Sessão do Supabase atualizada no frontend.');
+      // Atualiza sessão em segundo plano (não bloqueante)
+      supabase.auth.refreshSession().then(() => {
+        console.log('Sessão do Supabase atualizada no frontend.');
+      }).catch(() => {});
 
       // Encontrar email para a mensagem (opcional, apenas para UX)
       const userEmail = users.find(u => u.id === userId)?.email || userId;
@@ -222,6 +311,8 @@ export default function UserList() {
     } catch (err: any) {
       console.error('Erro ao atualizar plano do usuário:', err);
       setError(`Erro ao atualizar plano: ${err.message}`);
+      // Rollback otimista em caso de erro
+      setUsers(prev => prev.map(u => (u.id === userId ? { ...u, plan_id: previousPlan ?? undefined } : u)));
     } finally {
       setUpdatingPlanId(null);
     }
@@ -619,6 +710,74 @@ export default function UserList() {
             Usuários exibidos: {filteredUsers.length}
           </div>
         </div>
+
+        {/* Ações em Lote */}
+        {selectedUserIds.size > 0 && (
+          <div className="flex flex-wrap items-center gap-2 p-3 border rounded-md bg-gray-50 dark:bg-gray-800 dark:border-gray-700">
+            <span className="text-sm text-gray-700 dark:text-gray-200">
+              Selecionados: {selectedUserIds.size}
+            </span>
+            <Select value={bulkPlanId || undefined} onValueChange={setBulkPlanId}>
+              <SelectTrigger className="w-[200px] h-9">
+                <SelectValue placeholder="Escolher novo status/plano" />
+              </SelectTrigger>
+              <SelectContent>
+                {SELECTABLE_PLANS.map((planValue) => (
+                  <SelectItem key={planValue} value={planValue}>
+                    {PLAN_DISPLAY_NAMES[planValue] || planValue}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button onClick={() => setIsBulkDialogOpen(true)} disabled={isBulkUpdating || !bulkPlanId}>
+              {isBulkUpdating ? 'Aplicando…' : 'Aplicar em Lote'}
+            </Button>
+            <Button variant="outline" onClick={handleClearSelection} disabled={isBulkUpdating}>
+              Limpar seleção
+            </Button>
+            <Dialog open={isBulkDialogOpen} onOpenChange={setIsBulkDialogOpen}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Confirmar alteração em lote</DialogTitle>
+                  <DialogDescription>
+                    Você está prestes a aplicar o status/plano "{PLAN_DISPLAY_NAMES[bulkPlanId] || bulkPlanId}" a {selectedUserIds.size} usuário(s). Deseja continuar?
+                  </DialogDescription>
+                </DialogHeader>
+                {/* Pré-visualização de até 5 usuários selecionados */}
+                <div className="mt-2 max-h-60 overflow-y-auto rounded border border-gray-200 dark:border-gray-700">
+                  {Array.from(selectedUserIds)
+                    .slice(0, 5)
+                    .map((id) => {
+                      const user = users.find(u => u.id === id);
+                      return (
+                        <div key={id} className="px-3 py-2 text-sm flex items-center justify-between border-b last:border-b-0 border-gray-100 dark:border-gray-800">
+                          <span className="truncate max-w-[70%]">{user?.full_name || user?.email || id}</span>
+                          <span className="text-xs text-gray-500">{user?.email}</span>
+                        </div>
+                      );
+                    })}
+                  {selectedUserIds.size > 5 && (
+                    <div className="px-3 py-2 text-xs text-gray-600 dark:text-gray-400">... e mais {selectedUserIds.size - 5} usuário(s)</div>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsBulkDialogOpen(false)}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    onClick={async () => {
+                      setIsBulkDialogOpen(false);
+                      await handleApplyBulkPlanChange();
+                    }}
+                    disabled={isBulkUpdating}
+                  >
+                    Confirmar
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        )}
         
         {/* Barra de progresso para sincronização com SendPulse */}
         {syncProgress && (
@@ -671,6 +830,15 @@ export default function UserList() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-12">
+                  <input
+                    type="checkbox"
+                    aria-label="Selecionar todos"
+                    checked={filteredUsers.length > 0 && filteredUsers.every(u => selectedUserIds.has(u.id))}
+                    onChange={handleToggleSelectAllVisible}
+                    className="h-4 w-4 accent-blue-600"
+                  />
+                </TableHead>
                 <TableHead className="w-1/5">Usuário</TableHead>
                 <TableHead className="w-1/5">Status/Plano</TableHead>
                 <TableHead className="w-1/5">Data Criação</TableHead>
@@ -682,6 +850,15 @@ export default function UserList() {
             <TableBody>
               {filteredUsers.map(user => (
                 <TableRow key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                  <TableCell>
+                    <input
+                      type="checkbox"
+                      aria-label={`Selecionar ${user.email || user.full_name || user.id}`}
+                      checked={selectedUserIds.has(user.id)}
+                      onChange={() => handleToggleSelectUser(user.id)}
+                      className="h-4 w-4 accent-blue-600"
+                    />
+                  </TableCell>
                   <TableCell className="font-medium">
                     <div className="flex items-center">
                       <UserAvatar 

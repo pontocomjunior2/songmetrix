@@ -11,6 +11,7 @@ import { SingleValue } from 'react-select';
 import { Link } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { Button } from './ui/button';
+import { LoadingOverlay } from './ui/loading-overlay';
 
 interface SelectOption {
   value: string;
@@ -347,7 +348,8 @@ export default function RealTime() {
 
   return (
     <div className={`realtime-container ${isDarkMode ? 'dark' : ''} p-4 md:p-6`}>
-       <div className="realtime-header p-4 border rounded-md bg-white dark:bg-gray-800 dark:border-gray-700 shadow-sm mb-6">
+       <div className="relative realtime-header p-4 border rounded-md bg-white dark:bg-gray-800 dark:border-gray-700 shadow-sm mb-6">
+         <LoadingOverlay isOpen={loadingRadios} label="Carregando lista de rádios..." />
          <form onSubmit={handleSearch} className="realtime-filters-form space-y-4">
               
             {/* Linha 1: Rádio, Artista e Música (Combinados) */}
