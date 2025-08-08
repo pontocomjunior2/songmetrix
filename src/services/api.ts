@@ -117,14 +117,21 @@ export const apiPut = async (endpoint: string, data: any) => {
 /**
  * Função para fazer requisições DELETE à API
  */
-export const apiDelete = async (endpoint: string) => {
+export const apiDelete = async (endpoint: string, data?: any) => {
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const requestOptions: RequestInit = {
       method: 'DELETE',
       headers,
       credentials: 'include',
-    });
+    };
+
+    // Adicionar body se houver dados
+    if (data) {
+      requestOptions.body = JSON.stringify(data);
+    }
+
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, requestOptions);
     
     if (!response.ok) {
       throw new Error(`Falha na requisição: ${response.status}`);
@@ -265,6 +272,8 @@ export const apiServices = {
     getDrafts: () => apiGet('/api/admin/insights/drafts'),
     approveInsight: (id: string) => apiPost(`/api/admin/insights/${id}/approve`, {}),
     sendInsight: (id: string) => apiPost(`/api/admin/insights/${id}/send`, {}),
+    deleteInsight: (id: string) => apiDelete(`/api/admin/insights/${id}`),
+    bulkDeleteInsights: (ids: string[]) => apiDelete('/api/admin/insights/bulk/delete', { ids }),
   },
 };
 
