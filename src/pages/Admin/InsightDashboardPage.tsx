@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Wand2, Eye, Check, Send, Loader2, AlertCircle, Mail, User, Calendar, Search, Users, Edit3, Sparkles } from 'lucide-react';
+import { Wand2, Eye, Check, Send, Loader2, AlertCircle, Mail, User, Calendar, Search, Users, Edit3, Sparkles, Trash2, CheckSquare, Square } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -132,6 +132,13 @@ const InsightDashboardPage: React.FC = () => {
   const [draftsSearch, setDraftsSearch] = useState<string>('');
   const [draftsFilter, setDraftsFilter] = useState<string>('all');
   const [filteredDrafts, setFilteredDrafts] = useState<Draft[]>([]);
+  
+  // Estados para seleção múltipla e exclusão
+  const [selectedDrafts, setSelectedDrafts] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
+  const [deleteTarget, setDeleteTarget] = useState<'single' | 'multiple' | null>(null);
+  const [singleDeleteId, setSingleDeleteId] = useState<string | null>(null);
   
   const [customForm, setCustomForm] = useState<CustomInsightForm>({
     targetType: 'user',
@@ -440,6 +447,87 @@ const InsightDashboardPage: React.FC = () => {
     return <Badge variant={config.variant}>{config.label}</Badge>;
   };
 
+  // Funções para seleção múltipla
+  const handleSelectAll = () => {
+    if (selectedDrafts.size === filteredDrafts.length) {
+      setSelectedDrafts(new Set());
+    } else {
+      setSelectedDrafts(new Set(filteredDrafts.map(draft => draft.id)));
+    }
+  };
+
+  const handleSelectDraft = (draftId: string) => {
+    const newSelected = new Set(selectedDrafts);
+    if (newSelected.has(draftId)) {
+      newSelected.delete(draftId);
+    } else {
+      newSelected.add(draftId);
+    }
+    setSelectedDrafts(newSelected);
+  };
+
+  // Função para deletar um insight individual
+  const handleDeleteSingle = async (draftId: string) => {
+    console.log('handleDeleteSingle called with ID:', draftId);
+    setSingleDeleteId(draftId);
+    setDeleteTarget('single');
+    setShowDeleteConfirm(true);
+  };
+
+  // Função para deletar insights selecionados
+  const handleDeleteSelected = async () => {
+    console.log('handleDeleteSelected called with selected IDs:', selectedDrafts);
+    if (selectedDrafts.size === 0) {
+      toast.error('Selecione pelo menos um insight para deletar');
+      return;
+    }
+    setDeleteTarget('multiple');
+    setShowDeleteConfirm(true);
+  };
+
+  // Função para confirmar exclusão
+  const confirmDelete = async () => {
+    console.log('confirmDelete called. Target:', deleteTarget, 'ID:', singleDeleteId);
+    setIsDeleting(true);
+    
+    try {
+      const { apiDelete } = await import('@/services/api.ts');
+
+      if (deleteTarget === 'single' && singleDeleteId) {
+        // Deletar insight individual
+        console.log(`Attempting to delete single insight with ID: ${singleDeleteId}`);
+        await apiDelete(`/api/admin/insights/${singleDeleteId}`);
+        toast.success('Insight deletado com sucesso!');
+        
+      } else if (deleteTarget === 'multiple') {
+        // Deletar insights em massa
+        const idsToDelete = Array.from(selectedDrafts);
+        console.log(`Attempting to delete multiple insights with IDs: ${idsToDelete.join(', ')}`);
+        await apiDelete(`/api/admin/insights/bulk/delete?ids=${idsToDelete.join(',')}`);
+        toast.success(`${idsToDelete.length} insights deletados com sucesso!`);
+        setSelectedDrafts(new Set());
+      }
+
+      // Recarregar lista de rascunhos e fechar modal
+      await fetchDrafts();
+      setShowDeleteConfirm(false);
+      setSingleDeleteId(null);
+
+    } catch (err: any) {
+      const errorMessage = err.message || 'Erro ao deletar insight(s)';
+      toast.error(errorMessage);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Função para cancelar exclusão
+  const cancelDelete = () => {
+    setShowDeleteConfirm(false);
+    setDeleteTarget(null);
+    setSingleDeleteId(null);
+  };
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       {/* Cabeçalho */}
@@ -543,15 +631,37 @@ const InsightDashboardPage: React.FC = () => {
               </div>
             </div>
             
-            {/* Contador de resultados */}
-            {(draftsSearch || draftsFilter !== 'all') && (
-              <div className="flex items-center justify-between text-sm text-muted-foreground">
-                <div>
-                  {filteredDrafts.length} de {drafts.length} insights encontrados
-                  {draftsSearch && (
-                    <span> para "{draftsSearch}"</span>
-                  )}
-                </div>
+            {/* Contador de resultados e ações em massa */}
+            <div className="flex items-center justify-between text-sm">
+              <div className="text-muted-foreground">
+                {(draftsSearch || draftsFilter !== 'all') && (
+                  <>
+                    {filteredDrafts.length} de {drafts.length} insights encontrados
+                    {draftsSearch && (
+                      <span> para "{draftsSearch}"</span>
+                    )}
+                  </>
+                )}
+                {selectedDrafts.size > 0 && (
+                  <span className="ml-4 text-primary font-medium">
+                    {selectedDrafts.size} insight(s) selecionado(s)
+                  </span>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-2">
+                {selectedDrafts.size > 0 && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleDeleteSelected}
+                    className="gap-2"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Deletar Selecionados ({selectedDrafts.size})
+                  </Button>
+                )}
+                
                 {(draftsSearch || draftsFilter !== 'all') && (
                   <Button
                     variant="ghost"
@@ -566,7 +676,7 @@ const InsightDashboardPage: React.FC = () => {
                   </Button>
                 )}
               </div>
-            )}
+            </div>
           </div>
 
           {/* Estados de carregamento e erro */}
@@ -626,6 +736,21 @@ const InsightDashboardPage: React.FC = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[50px]">
+                      <div className="flex items-center">
+                        <button
+                          onClick={handleSelectAll}
+                          className="p-1 hover:bg-muted rounded"
+                          title={selectedDrafts.size === filteredDrafts.length ? 'Desmarcar todos' : 'Selecionar todos'}
+                        >
+                          {selectedDrafts.size === filteredDrafts.length && filteredDrafts.length > 0 ? (
+                            <CheckSquare className="h-4 w-4" />
+                          ) : (
+                            <Square className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                    </TableHead>
                     <TableHead className="w-[200px]">
                       Usuário
                       {draftsSearch && (
@@ -652,6 +777,21 @@ const InsightDashboardPage: React.FC = () => {
                 <TableBody>
                   {filteredDrafts.map((draft) => (
                     <TableRow key={draft.id}>
+                      <TableCell>
+                        <div className="flex items-center">
+                          <button
+                            onClick={() => handleSelectDraft(draft.id)}
+                            className="p-1 hover:bg-muted rounded"
+                            title={selectedDrafts.has(draft.id) ? 'Desmarcar' : 'Selecionar'}
+                          >
+                            {selectedDrafts.has(draft.id) ? (
+                              <CheckSquare className="h-4 w-4 text-primary" />
+                            ) : (
+                              <Square className="h-4 w-4" />
+                            )}
+                          </button>
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <User className="h-4 w-4 text-muted-foreground" />
@@ -693,7 +833,7 @@ const InsightDashboardPage: React.FC = () => {
                       </TableCell>
                       
                       <TableCell>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
                           <Button
                             variant="outline"
                             size="sm"
@@ -722,11 +862,27 @@ const InsightDashboardPage: React.FC = () => {
                           <Button
                             variant="outline"
                             size="sm"
-                            disabled={true}
+                            onClick={() => handleSend(draft.id)}
+                            disabled={isSending || draft.status === 'sent'}
                             className="gap-1"
                           >
-                            <Send className="h-3 w-3" />
+                            {isSending ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Send className="h-3 w-3" />
+                            )}
                             Enviar
+                          </Button>
+                          
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDeleteSingle(draft.id)}
+                            disabled={isDeleting}
+                            className="gap-1 text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            Deletar
                           </Button>
                         </div>
                       </TableCell>
@@ -1188,6 +1344,42 @@ const InsightDashboardPage: React.FC = () => {
               </Button>
             )}
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Confirmação de Deleção */}
+      <Dialog open={showDeleteConfirm} onOpenChange={(open) => {
+        if (!open) cancelDelete();
+      }}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-destructive" />
+              Confirmar exclusão
+            </DialogTitle>
+            <DialogDescription>
+              {deleteTarget === 'single' && (
+                <span>Tem certeza que deseja deletar este insight? Esta ação não pode ser desfeita.</span>
+              )}
+              {deleteTarget === 'multiple' && (
+                <span>Tem certeza que deseja deletar {selectedDrafts.size} insight(s) selecionado(s)? Esta ação não pode ser desfeita.</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="outline" onClick={cancelDelete} disabled={isDeleting}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={isDeleting}
+              className="gap-2"
+            >
+              {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              {isDeleting ? 'Deletando...' : 'Deletar'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
