@@ -10,7 +10,13 @@
   @apply bg-white dark:bg-gray-800;
 }
 
-.realtime-filter-row,
+.realtime-filter-row {
+  /* Não defina display aqui para não conflitar com as classes Tailwind
+     como `grid grid-cols-2 md:grid-cols-4` usadas no componente. */
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
 .realtime-filter-row-datetime {
   display: flex;
   gap: 1rem;
@@ -20,7 +26,16 @@
 
 .realtime-filter-group {
   flex: 1;
-  min-width: 200px;
+  /* Evitar overflow em telas estreitas (mobile). Permite que os inputs
+     encolham dentro da grid sem forçar largura mínima que estoure a tela. */
+  min-width: 0;
+}
+
+/* Em telas médias para cima, restaurar uma largura mínima confortável */
+@media (min-width: 768px) {
+  .realtime-filter-group {
+    min-width: 200px;
+  }
 }
 
 .realtime-filter-group label {

@@ -9,7 +9,12 @@
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
+  /* Importante: não declare "light dark" aqui.
+     Quando definido como "light dark", navegadores móveis (especialmente Android/Chrome)
+     escolhem automaticamente o esquema escuro quando o sistema está em dark mode,
+     mesmo que o app esteja no tema claro. Isso escurece os inputs nativos
+     (date/time) indevidamente. Forçamos "light" no tema claro. */
+  color-scheme: light;
   color: #213547;
   background-color: #ffffff;
 
@@ -20,6 +25,9 @@
 }
 
 .dark {
+  /* Quando o app está em tema escuro, explicitamente use o esquema escuro
+     para que os controles nativos (date/time) sigam o tema corretamente. */
+  color-scheme: dark;
   color: #e5e7eb;
   background-color: #1a1f2e;
 }
