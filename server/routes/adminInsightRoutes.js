@@ -138,7 +138,7 @@ adminInsightRouter.get('/test', (req, res) => {
 });
 
 // Middleware já aplicado no servidor principal (authenticateBasicUser)
-// adminInsightRouter.use(checkAdminAuth);
+adminInsightRouter.use(checkAdminAuth);
 
 /**
  * Endpoint 1: Iniciar a Geração de Insights
@@ -605,9 +605,145 @@ async function replaceVariablesInPrompt(prompt, userData, user) {
 }
 
 /**
+ * Rota para deletar múltiplos insights (bulk delete)
+ */
+adminInsightRouter.delete('/bulk/delete', async (req, res) => {
+  const adminId = req.user?.id;
+  // Obter IDs da query string
+  const idsString = req.query.ids;
+
+  logger.info(`[AdminInsightRoutes] Received bulk DELETE request from admin ${adminId} for insights: ${idsString}`);
+
+  if (!idsString) {
+    logger.warn(`[AdminInsightRoutes] Bulk delete request received without IDs from admin ${adminId}`);
+    return res.status(400).json({
+      error: 'Nenhum ID de insight fornecido',
+      code: 'IDS_REQUIRED'
+    });
+  }
+
+  const idsToDelete = idsString.split(',');
+
+  // Validar cada ID como UUID
+  for (const id of idsToDelete) {
+    if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id)) {
+      logger.warn(`[AdminInsightRoutes] Invalid UUID format in bulk delete: ${id}`);
+      return res.status(400).json({ 
+        error: `Formato de ID inválido: ${id}`,
+        code: 'INVALID_UUID_FORMAT'
+      });
+    }
+  }
+
+  try {
+    logger.info(`[AdminInsightRoutes] Deletando ${idsToDelete.length} insights por admin ${adminId}`);
+
+    const { data, error: deleteError } = await supabaseAdmin
+      .from('generated_insight_emails')
+      .delete()
+      .in('id', idsToDelete);
+
+    if (deleteError) {
+      logger.error(`[AdminInsightRoutes] Erro ao deletar insights em massa`, { 
+        error: deleteError.message,
+        code: deleteError.code
+      });
+      return res.status(500).json({
+        error: 'Erro ao deletar insights',
+        code: 'BULK_DELETE_ERROR',
+        details: deleteError.message
+      });
+    }
+
+    // O 'data' do delete retorna os registros deletados. Podemos contar quantos foram.
+    const deletedCount = data ? data.length : 0;
+    logger.info(`[AdminInsightRoutes] ${deletedCount} insights deletados com sucesso por admin ${adminId}`);
+
+    res.status(200).json({ 
+      message: `${deletedCount} insight(s) deletado(s) com sucesso`,
+      deletedCount: deletedCount,
+      requestedCount: idsToDelete.length
+    });
+
+  } catch (error) {
+    logger.error('[AdminInsightRoutes] Erro inesperado no bulk delete', { error: error.message });
+    res.status(500).json({ 
+      error: 'Erro interno do servidor',
+      code: 'INTERNAL_SERVER_ERROR'
+    });
+  }
+});
+
+/**
  * Endpoint 5: Enviar um E-mail Aprovado
  * POST /api/admin/insights/:id/send
  */
+/**
+ * Rota para deletar um insight
+ */
+adminInsightRouter.delete('/:id', validateUUID, async (req, res) => {
+  const { id } = req.params;
+  const adminId = req.user?.id;
+  logger.info(`[AdminInsightRoutes] Received DELETE request for insight ${id} from admin ${adminId}`);
+
+  try {
+    logger.info(`[AdminInsightRoutes] Deletando insight ${id} por admin ${req.user?.id}`);
+
+    // Verificar se o insight existe
+    const { data: existingInsight, error: fetchError } = await supabaseAdmin
+      .from('generated_insight_emails')
+      .select('id, status, users(email)')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !existingInsight) {
+      logger.warn(`[AdminInsightRoutes] Insight ${id} não encontrado para exclusão`, { error: fetchError?.message });
+      return res.status(404).json({
+        error: 'Insight não encontrado',
+        code: 'INSIGHT_NOT_FOUND'
+      });
+    }
+
+    // Deletar o insight
+    const { error: deleteError } = await supabaseAdmin
+      .from('generated_insight_emails')
+      .delete()
+      .eq('id', id);
+
+    if (deleteError) {
+      logger.error(`[AdminInsightRoutes] Erro ao deletar insight ${id}`, { 
+        error: deleteError.message,
+        code: deleteError.code 
+      });
+      return res.status(500).json({
+        error: 'Erro ao deletar insight',
+        code: 'DELETE_ERROR',
+        details: deleteError.message
+      });
+    }
+
+    logger.info(`[AdminInsightRoutes] Insight ${id} deletado com sucesso`);
+
+    res.json({
+      message: 'Insight deletado com sucesso',
+      deletedId: id,
+      status: 'deleted'
+    });
+
+  } catch (error) {
+    logger.error(`[AdminInsightRoutes] Erro inesperado ao deletar insight ${id}`, {
+      error: error.message,
+      stack: error.stack,
+      adminId: req.user?.id
+    });
+
+    res.status(500).json({
+      error: 'Erro interno do servidor',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
 /**
  * Rota para enviar um insight por e-mail
  */
