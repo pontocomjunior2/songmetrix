@@ -1,3 +1,23 @@
+/* Recharts defaults (light mode) */
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: #e5e7eb !important; /* gray-200 */
+}
+
+.recharts-text {
+  fill: #374151 !important; /* gray-700 for light mode */
+}
+
+.recharts-default-tooltip {
+  background-color: #ffffff !important;
+  border-color: #d1d5db !important; /* gray-300 */
+  color: #374151 !important; /* gray-700 */
+}
+
+.recharts-legend-item-text {
+  color: #374151 !important; /* gray-700 for light mode */
+}
+
 /* Dark mode styles for components */
 .dark {
   /* Base background colors */
@@ -90,6 +110,10 @@
   .recharts-default-tooltip {
     background-color: #1f2937 !important;
     border-color: #374151 !important;
+    color: #e5e7eb !important;
+  }
+
+  .recharts-legend-item-text {
     color: #e5e7eb !important;
   }
 }
