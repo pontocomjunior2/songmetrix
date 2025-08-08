@@ -11,6 +11,7 @@ import { SingleValue } from 'react-select';
 import { Link } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { Button } from './ui/button';
+import { ResponsiveDataTable, type ResponsiveColumn } from '@/components/ui/responsive-data-table';
 import { LoadingOverlay } from './ui/loading-overlay';
 
 interface SelectOption {
@@ -477,80 +478,126 @@ export default function RealTime() {
              <p className="text-lg">Carregando...</p>
            </div>
          ) : (
-           /* Container da Tabela (Só renderiza se NÃO estiver no estado de loading inicial) */
-           <div className="realtime-table-container overflow-x-auto border rounded-md bg-white dark:bg-gray-800 dark:border-gray-700 shadow-sm">
-             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-               <thead className="bg-gray-50 dark:bg-gray-800/50"><tr>
-                 <th scope="col" className="w-12 px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"></th>
-                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Data</th>
-                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Hora</th>
-                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Rádio</th>
-                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Artista</th>
-                 <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Música</th>
-               </tr></thead>
-               <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-                 {/* Mensagem de Nenhum Resultado (Agora renderizada aqui) */}
-                 {!loadingContent && executions.length === 0 && (
-                   <tr>
-                     <td colSpan={6} className="text-center py-10 text-gray-500 dark:text-gray-400">
-                       Preencha os filtros e clique em "Pesquisar" para ver as execuções.
-                     </td>
-                   </tr>
-                 )}
-                 {executions.map((exec) => (
-                   <React.Fragment key={exec.id}>
-                     <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
-                       <td className="px-4 py-3">
-                         <button
-                            onClick={() => toggleRow(exec.id)}
-                            className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-200 transition-colors"
-                            aria-expanded={expandedRow === exec.id}
-                            aria-controls={`details-${exec.id}`}
-                            aria-label={expandedRow === exec.id ? "Esconder detalhes" : "Mostrar detalhes"}
-                          >
-                           {expandedRow === exec.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                         </button>
+           <>
+             {/* Mobile: Cards responsivos */}
+             <div className="sm:hidden">
+               <ResponsiveDataTable<Execution>
+                 data={executions}
+                 getRowKey={(row) => row.id}
+                 emptyState={
+                   <div className="text-center py-10 text-gray-500 dark:text-gray-400">
+                     Preencha os filtros e clique em "Pesquisar" para ver as execuções.
+                   </div>
+                 }
+                 columns={([
+                   {
+                     id: 'main',
+                     header: 'Execução',
+                     isPrimaryMobileField: true,
+                     render: (row) => (
+                       <div className="flex flex-col gap-0.5">
+                         <span className="text-sm font-medium">{row.artist} — {row.song_title}</span>
+                         <span className="text-[11px] text-muted-foreground">{formatDisplayDate(row.date)} • {row.time}</span>
+                         <span className="text-[11px] text-muted-foreground">{row.radio_name}</span>
+                       </div>
+                     ),
+                   },
+                   { id: 'radio', header: 'Rádio', accessorKey: 'radio_name' },
+                   { id: 'date', header: 'Data', render: (r) => formatDisplayDate(r.date) },
+                   { id: 'time', header: 'Hora', accessorKey: 'time' },
+                   { id: 'city', header: 'Cidade', accessorKey: 'city' },
+                   { id: 'state', header: 'Estado', accessorKey: 'state' },
+                   { id: 'isrc', header: 'ISRC', accessorKey: 'isrc' },
+                 ] as ResponsiveColumn<Execution>[])}
+               />
+               {hasMore && (
+                 <div className="flex justify-center py-6">
+                   <Button
+                     variant="secondary"
+                     onClick={loadMore}
+                     disabled={loadingContent}
+                     aria-label="Carregar mais execuções"
+                   >
+                     {loadingContent ? <Loader2 className="animate-spin mr-2 h-5 w-5" /> : <History className="mr-2 h-5 w-5"/>}
+                     Carregar Mais
+                   </Button>
+                 </div>
+               )}
+             </div>
+
+             {/* Desktop/Tablet: Tabela original com expansão */}
+             <div className="realtime-table-container overflow-x-auto border rounded-md bg-white dark:bg-gray-800 dark:border-gray-700 shadow-sm hidden sm:block">
+               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                 <thead className="bg-gray-50 dark:bg-gray-800/50"><tr>
+                   <th scope="col" className="w-12 px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider"></th>
+                   <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Data</th>
+                   <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Hora</th>
+                   <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Rádio</th>
+                   <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Artista</th>
+                   <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Música</th>
+                 </tr></thead>
+                 <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                   {!loadingContent && executions.length === 0 && (
+                     <tr>
+                       <td colSpan={6} className="text-center py-10 text-gray-500 dark:text-gray-400">
+                         Preencha os filtros e clique em "Pesquisar" para ver as execuções.
                        </td>
-                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{formatDisplayDate(exec.date)}</td>
-                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{exec.time}</td>
-                       <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{exec.radio_name}</td>
-                       <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{exec.artist}</td>
-                       <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{exec.song_title}</td>
                      </tr>
-                     {expandedRow === exec.id && (
-                       <tr id={`details-${exec.id}`} className="bg-gray-100 dark:bg-gray-800 border-l-4 border-primary">
-                         <td colSpan={6} className="p-4 text-sm text-gray-700 dark:text-gray-300">
-                           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-2">
-                             <div><strong>Cidade:</strong> {exec.city || 'N/A'}</div>
-                             <div><strong>Estado:</strong> {exec.state || 'N/A'}</div>
-                             <div><strong>Região:</strong> {exec.region || 'N/A'}</div>
-                             <div><strong>Gênero:</strong> {exec.genre || 'N/A'}</div>
-                             <div><strong>Segmento:</strong> {exec.segment || 'N/A'}</div>
-                             <div><strong>Gravadora:</strong> {exec.label || 'N/A'}</div>
-                             <div className="col-span-2"><strong>ISRC:</strong> {exec.isrc || 'N/A'}</div>
-                           </div>
+                   )}
+                   {executions.map((exec) => (
+                     <React.Fragment key={exec.id}>
+                       <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
+                         <td className="px-4 py-3">
+                           <button
+                              onClick={() => toggleRow(exec.id)}
+                              className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-200 transition-colors"
+                              aria-expanded={expandedRow === exec.id}
+                              aria-controls={`details-${exec.id}`}
+                              aria-label={expandedRow === exec.id ? "Esconder detalhes" : "Mostrar detalhes"}
+                            >
+                             {expandedRow === exec.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                           </button>
                          </td>
+                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{formatDisplayDate(exec.date)}</td>
+                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{exec.time}</td>
+                         <td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{exec.radio_name}</td>
+                         <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{exec.artist}</td>
+                         <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{exec.song_title}</td>
                        </tr>
-                     )}
-                   </React.Fragment>
-                 ))}
-               </tbody>
-             </table>
-             {/* Botão Carregar Mais (Agora dentro do container da tabela) */}
-             {hasMore && (
-               <div className="flex justify-center py-6 border-t border-gray-200 dark:border-gray-700"> 
-                 <Button
-                   variant="secondary"
-                   onClick={loadMore}
-                   disabled={loadingContent}
-                   aria-label="Carregar mais execuções"
-                 >
-                   {loadingContent ? <Loader2 className="animate-spin mr-2 h-5 w-5" /> : <History className="mr-2 h-5 w-5"/>}
-                   Carregar Mais
-                 </Button>
-               </div>
-             )}
-           </div>
+                       {expandedRow === exec.id && (
+                         <tr id={`details-${exec.id}`} className="bg-gray-100 dark:bg-gray-800 border-l-4 border-primary">
+                           <td colSpan={6} className="p-4 text-sm text-gray-700 dark:text-gray-300">
+                             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-2">
+                               <div><strong>Cidade:</strong> {exec.city || 'N/A'}</div>
+                               <div><strong>Estado:</strong> {exec.state || 'N/A'}</div>
+                               <div><strong>Região:</strong> {exec.region || 'N/A'}</div>
+                               <div><strong>Gênero:</strong> {exec.genre || 'N/A'}</div>
+                               <div><strong>Segmento:</strong> {exec.segment || 'N/A'}</div>
+                               <div><strong>Gravadora:</strong> {exec.label || 'N/A'}</div>
+                               <div className="col-span-2"><strong>ISRC:</strong> {exec.isrc || 'N/A'}</div>
+                             </div>
+                           </td>
+                         </tr>
+                       )}
+                     </React.Fragment>
+                   ))}
+                 </tbody>
+               </table>
+               {hasMore && (
+                 <div className="flex justify-center py-6 border-t border-gray-200 dark:border-gray-700"> 
+                   <Button
+                     variant="secondary"
+                     onClick={loadMore}
+                     disabled={loadingContent}
+                     aria-label="Carregar mais execuções"
+                   >
+                     {loadingContent ? <Loader2 className="animate-spin mr-2 h-5 w-5" /> : <History className="mr-2 h-5 w-5"/>}
+                     Carregar Mais
+                   </Button>
+                 </div>
+               )}
+             </div>
+           </>
          )}
        </div>
     </div>

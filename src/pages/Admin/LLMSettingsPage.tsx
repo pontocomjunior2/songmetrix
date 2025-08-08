@@ -9,6 +9,7 @@ import { apiGet, apiPost, apiPut, apiDelete } from '@/services/api.ts';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ResponsiveDataTable, type ResponsiveColumn } from '@/components/ui/responsive-data-table';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -489,86 +490,134 @@ const LLMSettingsPage: React.FC = () => {
               </Button>
             </div>
           ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Provedor</TableHead>
-                    <TableHead>Chave de API</TableHead>
-                    <TableHead>Modelo</TableHead>
-                    <TableHead>URL da API</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {Array.isArray(providers) && providers.map((provider) => (
-                    <TableRow key={provider.id}>
-                      <TableCell>
+            <>
+              {/* Mobile: cards responsivos */}
+              <div className="sm:hidden">
+                <ResponsiveDataTable<LLMProvider>
+                  data={providers}
+                  getRowKey={(row) => row.id}
+                  emptyState={<div className="text-center py-8 text-muted-foreground">Nenhum provedor configurado</div>}
+                  columns={([
+                    {
+                      id: 'main',
+                      header: 'Provedor',
+                      isPrimaryMobileField: true,
+                      render: (row) => (
                         <div className="flex items-center gap-2">
-                          <span className="text-lg">{getProviderIcon(provider.provider_name)}</span>
-                          <span className="font-medium">{provider.provider_name}</span>
+                          <span className="text-lg">{getProviderIcon(row.provider_name)}</span>
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium truncate">{row.provider_name}</div>
+                            <div className="text-[11px] text-muted-foreground truncate">{row.model_name}</div>
+                          </div>
                         </div>
-                      </TableCell>
-                      
-                      <TableCell>
-                        <code className="text-sm text-muted-foreground">
-                          {maskApiKey(provider.api_key)}
-                        </code>
-                      </TableCell>
-                      
-                      <TableCell>
-                        <Badge variant="outline">
-                          {provider.model_name}
-                        </Badge>
-                      </TableCell>
-                      
-                      <TableCell>
-                        <div className="max-w-[200px] truncate text-sm text-muted-foreground">
-                          {provider.api_url}
-                        </div>
-                      </TableCell>
-                      
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={provider.is_active}
-                            onChange={() => handleToggleActive(provider)}
-                            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          {getStatusBadge(provider.is_active)}
-                        </div>
-                      </TableCell>
-                      
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleOpenModal(provider)}
-                            className="gap-1"
-                          >
-                            <Edit className="h-3 w-3" />
-                            Editar
-                          </Button>
-                          
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDelete(provider)}
-                            className="gap-1 text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                            Excluir
-                          </Button>
-                        </div>
-                      </TableCell>
+                      ),
+                    },
+                    { id: 'api_key', header: 'Chave de API', render: (r) => (<code className="text-xs text-muted-foreground">{maskApiKey(r.api_key)}</code>) },
+                    { id: 'api_url', header: 'URL da API', render: (r) => (<span className="text-xs text-muted-foreground break-words">{r.api_url}</span>) },
+                    { id: 'status', header: 'Status', render: (r) => (
+                      <div className="flex items-center gap-2">
+                        <input type="checkbox" checked={r.is_active} onChange={() => handleToggleActive(r)} className="w-4 h-4" />
+                        {getStatusBadge(r.is_active)}
+                      </div>
+                    ) },
+                    { id: 'actions', header: 'Ações', render: (r) => (
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" onClick={() => handleOpenModal(r)} className="gap-1">
+                          <Edit className="h-3 w-3" />
+                          Editar
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => handleDelete(r)} className="gap-1 text-red-600 hover:text-red-700">
+                          <Trash2 className="h-3 w-3" />
+                          Excluir
+                        </Button>
+                      </div>
+                    ) },
+                  ] as ResponsiveColumn<LLMProvider>[])}
+                />
+              </div>
+
+              {/* Desktop/Tablet: tabela original */}
+              <div className="hidden sm:block rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Provedor</TableHead>
+                      <TableHead>Chave de API</TableHead>
+                      <TableHead>Modelo</TableHead>
+                      <TableHead>URL da API</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Ações</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {Array.isArray(providers) && providers.map((provider) => (
+                      <TableRow key={provider.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">{getProviderIcon(provider.provider_name)}</span>
+                            <span className="font-medium">{provider.provider_name}</span>
+                          </div>
+                        </TableCell>
+                        
+                        <TableCell>
+                          <code className="text-sm text-muted-foreground">
+                            {maskApiKey(provider.api_key)}
+                          </code>
+                        </TableCell>
+                        
+                        <TableCell>
+                          <Badge variant="outline">
+                            {provider.model_name}
+                          </Badge>
+                        </TableCell>
+                        
+                        <TableCell>
+                          <div className="max-w-[200px] truncate text-sm text-muted-foreground">
+                            {provider.api_url}
+                          </div>
+                        </TableCell>
+                        
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={provider.is_active}
+                              onChange={() => handleToggleActive(provider)}
+                              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            {getStatusBadge(provider.is_active)}
+                          </div>
+                        </TableCell>
+                        
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleOpenModal(provider)}
+                              className="gap-1"
+                            >
+                              <Edit className="h-3 w-3" />
+                              Editar
+                            </Button>
+                            
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDelete(provider)}
+                              className="gap-1 text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              Excluir
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

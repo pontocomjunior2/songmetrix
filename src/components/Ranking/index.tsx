@@ -21,6 +21,7 @@ import 'react-datepicker/dist/react-datepicker.css';
 import { Select as UISelect, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { MultiSelect as MultiSelectComponent } from 'react-multi-select-component';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
+import { ResponsiveDataTable, type ResponsiveColumn } from '@/components/ui/responsive-data-table';
 import { Calendar as CalendarIcon } from 'lucide-react';
 
 interface SelectOption {
@@ -77,6 +78,8 @@ export default function Ranking() {
     return null;
   });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const idToRank = useMemo(() => new Map(rankingData.map((item, idx) => [item.id, idx + 1])), [rankingData]);
 
   const multiSelectRadioOptions = useMemo(() => 
     radiosOptions.filter(option => option.value !== 'Todas as Rádios'), 
@@ -525,39 +528,83 @@ export default function Ranking() {
             <p>Carregando...</p>
           </div>
         ) : (
-          <table className="ranking-table">
-            <thead>
-              <tr>
-                <th className="rank-column">Rank</th>
-                <th className="image-column"></th>
-                <th className="artist-column">Artista</th>
-                <th className="title-column">Título</th>
-                <th className="genre-column">Gênero</th>
-                <th className="executions-column">Execuções</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rankingData.map((item, index) => (
-                <tr key={item.id}>
-                  <td className="rank-column">{index + 1}º</td>
-                  <td className="image-column">
-                    <LazyLoadImage
-                      alt={`${item.artist} cover`}
-                      src={artistImages[item.artist] || '/placeholder-image.webp'}
-                      effect="blur"
-                      placeholderSrc="/placeholder-image-small.webp"
-                      wrapperClassName="w-[50px] h-[50px] rounded-full overflow-hidden inline-block align-middle"
-                      className="w-full h-full object-cover"
-                    />
-                  </td>
-                  <td className="artist-column">{item.artist}</td>
-                  <td className="title-column">{item.song_title}</td>
-                  <td className="genre-column">{item.genre}</td>
-                  <td className="executions-column">{item.executions}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            {/* Mobile: Cards responsivos */}
+            <div className="sm:hidden">
+              <ResponsiveDataTable
+                data={rankingData}
+                getRowKey={(row) => row.id}
+                emptyState={<div className="text-center py-8 text-gray-500 dark:text-gray-400">Nenhum registro encontrado</div>}
+                columns={([
+                  {
+                    id: 'main',
+                    header: 'Música',
+                    isPrimaryMobileField: true,
+                    render: (row) => (
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700 flex-shrink-0">
+                          <LazyLoadImage
+                            alt={`${row.artist} cover`}
+                            src={artistImages[row.artist] || '/placeholder-image.webp'}
+                            effect="blur"
+                            placeholderSrc="/placeholder-image-small.webp"
+                            wrapperClassName="w-full h-full"
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-muted-foreground">{idToRank.get(row.id)}º</span>
+                            <span className="text-sm font-medium truncate">{row.artist} — {row.song_title}</span>
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">{row.genre} • {row.executions} execuções</div>
+                        </div>
+                      </div>
+                    ),
+                  },
+                  { id: 'genre', header: 'Gênero', accessorKey: 'genre' },
+                  { id: 'executions', header: 'Execuções', accessorKey: 'executions' },
+                ] as ResponsiveColumn<RankingItem>[])}
+              />
+            </div>
+
+            {/* Desktop/Tablet: Tabela original */}
+            <div className="hidden sm:block">
+              <table className="ranking-table">
+                <thead>
+                  <tr>
+                    <th className="rank-column">Rank</th>
+                    <th className="image-column"></th>
+                    <th className="artist-column">Artista</th>
+                    <th className="title-column">Título</th>
+                    <th className="genre-column">Gênero</th>
+                    <th className="executions-column">Execuções</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rankingData.map((item, index) => (
+                    <tr key={item.id}>
+                      <td className="rank-column">{index + 1}º</td>
+                      <td className="image-column">
+                        <LazyLoadImage
+                          alt={`${item.artist} cover`}
+                          src={artistImages[item.artist] || '/placeholder-image.webp'}
+                          effect="blur"
+                          placeholderSrc="/placeholder-image-small.webp"
+                          wrapperClassName="w-[50px] h-[50px] rounded-full overflow-hidden inline-block align-middle"
+                          className="w-full h-full object-cover"
+                        />
+                      </td>
+                      <td className="artist-column">{item.artist}</td>
+                      <td className="title-column">{item.song_title}</td>
+                      <td className="genre-column">{item.genre}</td>
+                      <td className="executions-column">{item.executions}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
 
         {!loading && rankingData.length === 0 && (

@@ -154,6 +154,7 @@ const RelatoriosWizard: React.FC = () => {
   const [includeSpotify, setIncludeSpotify] = useState(false);
   const [loadingSpotify, setLoadingSpotify] = useState(false);
   const [apiResponse, setApiResponse] = useState<any>(null);
+  const [expandedCards, setExpandedCards] = useState<Record<number, boolean>>({});
   const [locationRadios, setLocationRadios] = useState<any[]>([]);
 
   const getRadioAbbreviation = (radioName: string): string => {
@@ -890,8 +891,80 @@ const RelatoriosWizard: React.FC = () => {
             <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
               {chartSize.label}
             </h2>
+            {/* Mobile: cards responsivos */}
+            <div className="sm:hidden space-y-3">
+              {reportData.slice(0, parseInt(chartSize.value)).map((item, index) => {
+                const radiosList = selectedReportType === 'radios' ? selectedRadios : locationRadios;
+                const executionsByRadio = radiosList.map((r) => ({
+                  key: r.value,
+                  label: getRadioAbbreviation(r.label),
+                  value: item.executions && item.executions[r.value] !== undefined ? item.executions[r.value] : 0,
+                }));
+                const isExpandable = executionsByRadio.length > 6;
+                const isExpanded = !!expandedCards[index];
+                const visible = isExpanded ? executionsByRadio : executionsByRadio.slice(0, 6);
+
+                return (
+                  <div key={`${item.title}-${item.artist}-${index}`} className="border rounded-md bg-white dark:bg-gray-800">
+                    <div className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-xs text-muted-foreground">{getPosition(index, item)}º lugar</div>
+                          <div className="text-sm font-medium truncate" title={item.title}>{item.title}</div>
+                          <div className="text-xs text-muted-foreground truncate" title={item.artist}>{item.artist}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs text-muted-foreground">Total</div>
+                          <div className="text-base font-semibold">{item.total}</div>
+                        </div>
+                      </div>
+
+                      {includeSpotify && (
+                        <div className="mt-3">
+                          {item.spotify ? (
+                            <PopularityIndicator
+                              type="spotify"
+                              popularity={item.spotify.popularity}
+                              trend={item.spotify.trend}
+                              trendPercentage={item.spotify.trendPercentage}
+                              size="sm"
+                              variant="compact"
+                            />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Spotify: -</span>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="mt-3">
+                        <div className="text-xs font-medium mb-1">Execuções por rádio</div>
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                          {visible.map((r) => (
+                            <div key={`${r.key}`} className="flex items-center justify-between">
+                              <span className="text-xs text-muted-foreground">{r.label}</span>
+                              <span className="text-sm font-medium">{r.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {isExpandable && (
+                          <button
+                            type="button"
+                            aria-label={isExpanded ? 'Mostrar menos rádios' : 'Mostrar mais rádios'}
+                            onClick={() => setExpandedCards((prev) => ({ ...prev, [index]: !prev[index] }))}
+                            className="mt-2 text-xs text-primary hover:underline"
+                          >
+                            {isExpanded ? 'Mostrar menos' : `Mostrar todos (${executionsByRadio.length})`}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
             
-            <div className="relative">
+            {/* Desktop/Tablet: tabela completa com sticky columns */}
+            <div className="relative hidden sm:block">
               <div className="overflow-x-auto mb-3 pb-0" 
                    style={{ 
                      maxWidth: '100%',

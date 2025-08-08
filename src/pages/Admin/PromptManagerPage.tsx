@@ -9,6 +9,7 @@ import { apiGet, apiPost, apiPut, apiDelete } from '@/services/api.ts';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ResponsiveDataTable, type ResponsiveColumn } from '@/components/ui/responsive-data-table';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -238,99 +239,81 @@ const PromptManagerPage: React.FC = () => {
                             </Button>
                         </div>
                     ) : (
-                        <div className="rounded-md border">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Nome do Template</TableHead>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead>Conteúdo</TableHead>
-                                        <TableHead>Criado Em</TableHead>
-                                        <TableHead>Ações</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {prompts.map((prompt) => (
-                                        <TableRow key={prompt.id}>
-                                            <TableCell>
-                                                <div className="font-medium">{prompt.name}</div>
-                                            </TableCell>
+                        <>
+                            {/* Mobile: cards responsivos */}
+                            <div className="sm:hidden">
+                                <ResponsiveDataTable<PromptTemplate>
+                                    data={prompts}
+                                    getRowKey={(row) => row.id}
+                                    emptyState={<div className="text-center py-8 text-muted-foreground">Nenhum template configurado</div>}
+                                    columns={([
+                                        { id: 'name', header: 'Nome', isPrimaryMobileField: true, accessorKey: 'name' },
+                                        { id: 'status', header: 'Status', render: (r) => (
+                                            <Badge variant={r.is_active ? 'default' : 'secondary'}>
+                                                {r.is_active ? (<div className="flex items-center gap-1"><Zap className="h-3 w-3" /> Ativo</div>) : 'Inativo'}
+                                            </Badge>
+                                        ) },
+                                        { id: 'content', header: 'Conteúdo', render: (r) => <span className="text-xs text-muted-foreground">{truncateContent(r.content)}</span> },
+                                        { id: 'created', header: 'Criado Em', render: (r) => <span className="text-xs text-muted-foreground">{formatDate(r.created_at)}</span> },
+                                        { id: 'actions', header: 'Ações', render: (r) => (
+                                            <div className="flex items-center gap-2">
+                                                <Button variant="outline" size="sm" onClick={() => handleActivate(r.id)} disabled={r.is_active || isActivating === r.id} className="gap-1">
+                                                    {isActivating === r.id ? (<Loader2 className="h-3 w-3 animate-spin" />) : r.is_active ? (<Check className="h-3 w-3" />) : (<Zap className="h-3 w-3" />)}
+                                                    {r.is_active ? 'Ativo' : 'Ativar'}
+                                                </Button>
+                                                <Button variant="outline" size="sm" onClick={() => handleOpenModal(r)} className="gap-1"><Edit className="h-3 w-3" />Editar</Button>
+                                                <Button variant="outline" size="sm" onClick={() => handleDelete(r)} disabled={isDeleting === r.id} className="gap-1 text-red-600 hover:text-red-700">{isDeleting === r.id ? (<Loader2 className="h-3 w-3 animate-spin" />) : (<Trash2 className="h-3 w-3" />)}Excluir</Button>
+                                            </div>
+                                        ) },
+                                    ] as ResponsiveColumn<PromptTemplate>[])}
+                                />
+                            </div>
 
-                                            <TableCell>
-                                                <Badge variant={prompt.is_active ? 'default' : 'secondary'}>
-                                                    {prompt.is_active ? (
-                                                        <div className="flex items-center gap-1">
-                                                            <Zap className="h-3 w-3" />
-                                                            Ativo
-                                                        </div>
-                                                    ) : (
-                                                        'Inativo'
-                                                    )}
-                                                </Badge>
-                                            </TableCell>
-
-                                            <TableCell>
-                                                <div className="max-w-[300px] text-sm text-muted-foreground">
-                                                    {truncateContent(prompt.content)}
-                                                </div>
-                                            </TableCell>
-
-                                            <TableCell>
-                                                <div className="text-sm text-muted-foreground">
-                                                    {formatDate(prompt.created_at)}
-                                                </div>
-                                            </TableCell>
-
-                                            <TableCell>
-                                                <div className="flex items-center gap-2">
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={() => handleActivate(prompt.id)}
-                                                        disabled={prompt.is_active || isActivating === prompt.id}
-                                                        className="gap-1"
-                                                    >
-                                                        {isActivating === prompt.id ? (
-                                                            <Loader2 className="h-3 w-3 animate-spin" />
-                                                        ) : prompt.is_active ? (
-                                                            <Check className="h-3 w-3" />
-                                                        ) : (
-                                                            <Zap className="h-3 w-3" />
-                                                        )}
-                                                        {prompt.is_active ? 'Ativo' : 'Ativar'}
-                                                    </Button>
-
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={() => handleOpenModal(prompt)}
-                                                        className="gap-1"
-                                                    >
-                                                        <Edit className="h-3 w-3" />
-                                                        Editar
-                                                    </Button>
-
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={() => handleDelete(prompt)}
-                                                        disabled={isDeleting === prompt.id}
-                                                        className="gap-1 text-red-600 hover:text-red-700"
-                                                    >
-                                                        {isDeleting === prompt.id ? (
-                                                            <Loader2 className="h-3 w-3 animate-spin" />
-                                                        ) : (
-                                                            <Trash2 className="h-3 w-3" />
-                                                        )}
-                                                        Excluir
-                                                    </Button>
-                                                </div>
-                                            </TableCell>
+                            {/* Desktop/Tablet: tabela original */}
+                            <div className="hidden sm:block rounded-md border">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Nome do Template</TableHead>
+                                            <TableHead>Status</TableHead>
+                                            <TableHead>Conteúdo</TableHead>
+                                            <TableHead>Criado Em</TableHead>
+                                            <TableHead>Ações</TableHead>
                                         </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </div>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {prompts.map((prompt) => (
+                                            <TableRow key={prompt.id}>
+                                                <TableCell>
+                                                    <div className="font-medium">{prompt.name}</div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Badge variant={prompt.is_active ? 'default' : 'secondary'}>
+                                                        {prompt.is_active ? (<div className="flex items-center gap-1"><Zap className="h-3 w-3" /> Ativo</div>) : 'Inativo'}
+                                                    </Badge>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <div className="max-w-[300px] text-sm text-muted-foreground">{truncateContent(prompt.content)}</div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <div className="text-sm text-muted-foreground">{formatDate(prompt.created_at)}</div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <div className="flex items-center gap-2">
+                                                        <Button variant="outline" size="sm" onClick={() => handleActivate(prompt.id)} disabled={prompt.is_active || isActivating === prompt.id} className="gap-1">
+                                                            {isActivating === prompt.id ? (<Loader2 className="h-3 w-3 animate-spin" />) : prompt.is_active ? (<Check className="h-3 w-3" />) : (<Zap className="h-3 w-3" />)}
+                                                            {prompt.is_active ? 'Ativo' : 'Ativar'}
+                                                        </Button>
+                                                        <Button variant="outline" size="sm" onClick={() => handleOpenModal(prompt)} className="gap-1"><Edit className="h-3 w-3" />Editar</Button>
+                                                        <Button variant="outline" size="sm" onClick={() => handleDelete(prompt)} disabled={isDeleting === prompt.id} className="gap-1 text-red-600 hover:text-red-700">{isDeleting === prompt.id ? (<Loader2 className="h-3 w-3 animate-spin" />) : (<Trash2 className="h-3 w-3" />)}Excluir</Button>
+                                                    </div>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        </>
                     )}
                 </CardContent>
             </Card>

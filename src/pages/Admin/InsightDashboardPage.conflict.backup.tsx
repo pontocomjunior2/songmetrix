@@ -9,7 +9,6 @@ import DOMPurify from 'dompurify';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ResponsiveDataTable, type ResponsiveColumn } from '@/components/ui/responsive-data-table';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -731,219 +730,167 @@ const InsightDashboardPage: React.FC = () => {
             </div>
           )}
 
-          {/* Lista de rascunhos responsiva */}
+          {/* Tabela de rascunhos */}
           {!isLoading && !error && filteredDrafts.length > 0 && (
-            <>
-              {/* Mobile: cards */}
-              <div className="sm:hidden">
-                <ResponsiveDataTable<Draft>
-                  data={filteredDrafts}
-                  getRowKey={(row) => row.id}
-                  emptyState={<div className="text-center py-8 text-muted-foreground">Nenhum rascunho para revisar</div>}
-                  columns={([
-                    {
-                      id: 'main',
-                      header: 'Insight',
-                      isPrimaryMobileField: true,
-                      render: (row) => (
-                        <div className="flex items-start gap-2">
-                          <User className="h-4 w-4 text-muted-foreground mt-0.5" />
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium truncate">{row.users.full_name || row.users.email}</div>
-                            <div className="text-[11px] text-muted-foreground truncate">{row.subject}</div>
-                          </div>
-                        </div>
-                      ),
-                    },
-                    {
-                      id: 'type',
-                      header: 'Tipo',
-                      render: (r) => (
-                        <Badge 
-                          variant={r.insight_type === 'custom_insight' ? 'default' : 'secondary'}
-                          className={r.insight_type === 'custom_insight' ? 'bg-purple-100 text-purple-800 border-purple-200' : ''}
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[50px]">
+                      <div className="flex items-center">
+                        <button
+                          onClick={handleSelectAll}
+                          className="p-1 hover:bg-muted rounded"
+                          title={selectedDrafts.size === filteredDrafts.length ? 'Desmarcar todos' : 'Selecionar todos'}
                         >
-                          {r.insight_type === 'custom_insight' ? '✨ Personalizado' : '🤖 Automático'}
-                        </Badge>
-                      ),
-                    },
-                    { id: 'created', header: 'Criado Em', render: (r) => (
-                      <span className="text-sm text-muted-foreground flex items-center gap-1"><Calendar className="h-3 w-3" /> {formatDate(r.created_at)}</span>
-                    ) },
-                    { id: 'status', header: 'Status', render: (r) => getStatusBadge(r.status) },
-                    { id: 'actions', header: 'Ações', render: (r) => (
-                      <div className="flex flex-wrap items-center gap-1">
-                        <Button variant="outline" size="sm" onClick={() => handleReview(r)} className="gap-1"><Eye className="h-3 w-3" /> Revisar</Button>
-                        <Button variant="outline" size="sm" onClick={() => handleApprove(r.id)} disabled={isApproving || r.status !== 'draft'} className="gap-1">{isApproving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Aprovar</Button>
-                        <Button variant="outline" size="sm" onClick={() => handleSend(r.id)} disabled={isSending || r.status === 'sent'} className="gap-1">{isSending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />} Enviar</Button>
-                        <Button variant="outline" size="sm" onClick={() => handleDeleteSingle(r.id)} disabled={isDeleting} className="gap-1 text-destructive hover:text-destructive"><Trash2 className="h-3 w-3" /> Deletar</Button>
+                          {selectedDrafts.size === filteredDrafts.length && filteredDrafts.length > 0 ? (
+                            <CheckSquare className="h-4 w-4" />
+                          ) : (
+                            <Square className="h-4 w-4" />
+                          )}
+                        </button>
                       </div>
-                    ) },
-                  ] as ResponsiveColumn<Draft>[])}
-                />
-              </div>
-
-              {/* Desktop/Tablet: tabela original */}
-              <div className="hidden sm:block rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[50px]">
+                    </TableHead>
+                    <TableHead className="w-[200px]">
+                      Usuário
+                      {draftsSearch && (
+                        <Search className="inline h-3 w-3 ml-1 text-muted-foreground" />
+                      )}
+                    </TableHead>
+                    <TableHead>
+                      Assunto
+                      {draftsSearch && (
+                        <Search className="inline h-3 w-3 ml-1 text-muted-foreground" />
+                      )}
+                    </TableHead>
+                    <TableHead className="w-[120px]">
+                      Tipo
+                      {draftsFilter !== 'all' && (
+                        <span className="inline-block w-2 h-2 bg-primary rounded-full ml-1"></span>
+                      )}
+                    </TableHead>
+                    <TableHead className="w-[150px]">Criado Em</TableHead>
+                    <TableHead className="w-[100px]">Status</TableHead>
+                    <TableHead className="w-[200px]">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredDrafts.map((draft) => (
+                    <TableRow key={draft.id}>
+                      <TableCell>
                         <div className="flex items-center">
                           <button
-                            onClick={handleSelectAll}
+                            onClick={() => handleSelectDraft(draft.id)}
                             className="p-1 hover:bg-muted rounded"
-                            title={selectedDrafts.size === filteredDrafts.length ? 'Desmarcar todos' : 'Selecionar todos'}
+                            title={selectedDrafts.has(draft.id) ? 'Desmarcar' : 'Selecionar'}
                           >
-                            {selectedDrafts.size === filteredDrafts.length && filteredDrafts.length > 0 ? (
-                              <CheckSquare className="h-4 w-4" />
+                            {selectedDrafts.has(draft.id) ? (
+                              <CheckSquare className="h-4 w-4 text-primary" />
                             ) : (
                               <Square className="h-4 w-4" />
                             )}
                           </button>
                         </div>
-                      </TableHead>
-                      <TableHead className="w-[200px]">
-                        Usuário
-                        {draftsSearch && (
-                          <Search className="inline h-3 w-3 ml-1 text-muted-foreground" />
-                        )}
-                      </TableHead>
-                      <TableHead>
-                        Assunto
-                        {draftsSearch && (
-                          <Search className="inline h-3 w-3 ml-1 text-muted-foreground" />
-                        )}
-                      </TableHead>
-                      <TableHead className="w-[120px]">
-                        Tipo
-                        {draftsFilter !== 'all' && (
-                          <span className="inline-block w-2 h-2 bg-primary rounded-full ml-1"></span>
-                        )}
-                      </TableHead>
-                      <TableHead className="w-[150px]">Criado Em</TableHead>
-                      <TableHead className="w-[100px]">Status</TableHead>
-                      <TableHead className="w-[200px]">Ações</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredDrafts.map((draft) => (
-                      <TableRow key={draft.id}>
-                        <TableCell>
-                          <div className="flex items-center">
-                            <button
-                              onClick={() => handleSelectDraft(draft.id)}
-                              className="p-1 hover:bg-muted rounded"
-                              title={selectedDrafts.has(draft.id) ? 'Desmarcar' : 'Selecionar'}
-                            >
-                              {selectedDrafts.has(draft.id) ? (
-                                <CheckSquare className="h-4 w-4 text-primary" />
-                              ) : (
-                                <Square className="h-4 w-4" />
-                              )}
-                            </button>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <User className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <div className="font-medium">
-                                {draft.users.full_name || 'Nome não informado'}
-                              </div>
-                              <div className="text-sm text-muted-foreground">
-                                {draft.users.email}
-                              </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <User className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <div className="font-medium">
+                              {draft.users.full_name || 'Nome não informado'}
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              {draft.users.email}
                             </div>
                           </div>
-                        </TableCell>
-                        
-                        <TableCell>
-                          <div className="max-w-[300px] truncate" title={draft.subject}>
-                            {draft.subject}
-                          </div>
-                        </TableCell>
-                        
-                        <TableCell>
-                          <Badge 
-                            variant={draft.insight_type === 'custom_insight' ? 'default' : 'secondary'}
-                            className={draft.insight_type === 'custom_insight' ? 'bg-purple-100 text-purple-800 border-purple-200' : ''}
+                        </div>
+                      </TableCell>
+                      
+                      <TableCell>
+                        <div className="max-w-[300px] truncate" title={draft.subject}>
+                          {draft.subject}
+                        </div>
+                      </TableCell>
+                      
+                      <TableCell>
+                        <Badge 
+                          variant={draft.insight_type === 'custom_insight' ? 'default' : 'secondary'}
+                          className={draft.insight_type === 'custom_insight' ? 'bg-purple-100 text-purple-800 border-purple-200' : ''}
+                        >
+                          {draft.insight_type === 'custom_insight' ? '✨ Personalizado' : '🤖 Automático'}
+                        </Badge>
+                      </TableCell>
+                      
+                      <TableCell>
+                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                          <Calendar className="h-3 w-3" />
+                          {formatDate(draft.created_at)}
+                        </div>
+                      </TableCell>
+                      
+                      <TableCell>
+                        {getStatusBadge(draft.status)}
+                      </TableCell>
+                      
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleReview(draft)}
+                            className="gap-1"
                           >
-                            {draft.insight_type === 'custom_insight' ? '✨ Personalizado' : '🤖 Automático'}
-                          </Badge>
-                        </TableCell>
-                        
-                        <TableCell>
-                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                            <Calendar className="h-3 w-3" />
-                            {formatDate(draft.created_at)}
-                          </div>
-                        </TableCell>
-                        
-                        <TableCell>
-                          {getStatusBadge(draft.status)}
-                        </TableCell>
-                        
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleReview(draft)}
-                              className="gap-1"
-                            >
-                              <Eye className="h-3 w-3" />
-                              Revisar
-                            </Button>
-                            
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleApprove(draft.id)}
-                              disabled={isApproving || draft.status !== 'draft'}
-                              className="gap-1"
-                            >
-                              {isApproving ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <Check className="h-3 w-3" />
-                              )}
-                              Aprovar
-                            </Button>
-                            
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleSend(draft.id)}
-                              disabled={isSending || draft.status === 'sent'}
-                              className="gap-1"
-                            >
-                              {isSending ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <Send className="h-3 w-3" />
-                              )}
-                              Enviar
-                            </Button>
-                            
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleDeleteSingle(draft.id)}
-                              disabled={isDeleting}
-                              className="gap-1 text-destructive hover:text-destructive"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                              Deletar
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </>
+                            <Eye className="h-3 w-3" />
+                            Revisar
+                          </Button>
+                          
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleApprove(draft.id)}
+                            disabled={isApproving || draft.status !== 'draft'}
+                            className="gap-1"
+                          >
+                            {isApproving ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Check className="h-3 w-3" />
+                            )}
+                            Aprovar
+                          </Button>
+                          
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleSend(draft.id)}
+                            disabled={isSending || draft.status === 'sent'}
+                            className="gap-1"
+                          >
+                            {isSending ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Send className="h-3 w-3" />
+                            )}
+                            Enviar
+                          </Button>
+                          
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDeleteSingle(draft.id)}
+                            disabled={isDeleting}
+                            className="gap-1 text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            Deletar
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>

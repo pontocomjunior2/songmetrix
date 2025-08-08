@@ -1,15 +1,8 @@
 'use client';
 
 import React from 'react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"; // Usando alias
 import { Badge } from "@/components/ui/badge"; // Usando alias
+import { ResponsiveDataTable, type ResponsiveColumn } from "@/components/ui/responsive-data-table";
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale'; // Para formatar datas em pt-BR
 import type { Notification } from './notification-list'; // Importando tipo do componente pai
@@ -30,36 +23,47 @@ function formatDate(dateString: string | null | undefined): string {
 }
 
 export default function NotificationTable({ notifications }: NotificationTableProps) {
+  const columns: ResponsiveColumn<Notification>[] = [
+    {
+      id: "title",
+      header: "Título",
+      accessorKey: "title",
+      className: "font-medium",
+      isPrimaryMobileField: true,
+    },
+    {
+      id: "audience",
+      header: "Público",
+      accessorKey: "target_audience",
+    },
+    {
+      id: "created",
+      header: "Criada em",
+      render: (row) => formatDate(row.created_at),
+      hideOnMobile: true,
+    },
+    {
+      id: "scheduled",
+      header: "Agendada para",
+      render: (row) => formatDate(row.scheduled_at),
+    },
+    {
+      id: "status",
+      header: "Status",
+      render: (row) => (
+        <Badge variant={row.sent_at ? "secondary" : "outline"}>
+          {row.sent_at ? `Enviada ${formatDate(row.sent_at)}` : (row.scheduled_at ? 'Agendada' : 'Pendente')}
+        </Badge>
+      ),
+    },
+  ];
+
   return (
-    <div className="rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Título</TableHead>
-            <TableHead>Público</TableHead>
-            <TableHead>Criada em</TableHead>
-            <TableHead>Agendada para</TableHead>
-            <TableHead>Status</TableHead>
-            {/* <TableHead>Ações</TableHead> */}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {notifications.map((notification) => (
-            <TableRow key={notification.id}>
-              <TableCell className="font-medium">{notification.title}</TableCell>
-              <TableCell>{notification.target_audience}</TableCell>
-              <TableCell>{formatDate(notification.created_at)}</TableCell>
-              <TableCell>{formatDate(notification.scheduled_at)}</TableCell>
-              <TableCell>
-                <Badge variant={notification.sent_at ? "secondary" : "outline"}>
-                  {notification.sent_at ? `Enviada ${formatDate(notification.sent_at)}` : (notification.scheduled_at ? 'Agendada' : 'Pendente')}
-                </Badge>
-              </TableCell>
-              {/* <TableCell>Dropdown com ações (editar, deletar, reenviar?)</TableCell> */}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+    <ResponsiveDataTable
+      data={notifications}
+      columns={columns}
+      getRowKey={(row) => row.id}
+      tableClassName="min-w-full"
+    />
   );
-} 
+}

@@ -25,14 +25,8 @@ import {
     DialogTrigger,
     DialogClose,
 } from "@/components/ui/dialog";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ResponsiveDataTable, type ResponsiveColumn } from "@/components/ui/responsive-data-table";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -234,8 +228,51 @@ export function MessageTemplatesClient({ initialTemplates, fetchError }: Message
                 </Dialog>
             </div>
 
-            {/* Tabela de Templates */} 
-            <div className="border rounded-lg overflow-hidden shadow-sm">
+            {/* Lista Responsiva de Templates (Mobile) */} 
+            <div className="sm:hidden">
+                <ResponsiveDataTable<MessageTemplate>
+                    data={templates}
+                    getRowKey={(row) => row.id}
+                    emptyState={<div className="text-center py-8 text-muted-foreground">Nenhum template cadastrado.</div>}
+                    columns={([
+                        { id: 'name', header: 'Nome', isPrimaryMobileField: true, accessorKey: 'name' },
+                        { id: 'content', header: 'Conteúdo (Prévia)', render: (r) => <span className="text-xs text-muted-foreground">{r.content}</span> },
+                        { id: 'actions', header: 'Ações', render: (r) => (
+                            <div className="text-right space-x-1">
+                                <Button variant="ghost" size="icon" onClick={() => handleEdit(r)} disabled={isPending} aria-label="Editar" className="h-8 w-8">
+                                    <Edit className="h-4 w-4" />
+                                </Button>
+                                <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <Button variant="ghost" size="icon" disabled={isPending} className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" aria-label="Excluir">
+                                             <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                Tem certeza que deseja excluir o template "<span className="font-semibold">{r.name}</span>"?
+                                                Esta ação não pode ser desfeita.
+                                            </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel disabled={isPending}>Cancelar</AlertDialogCancel>
+                                            <AlertDialogAction onClick={() => handleDelete(r.id, r.name)} disabled={isPending} variant="destructive">
+                                                 {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                                Excluir
+                                            </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
+                            </div>
+                        ) },
+                    ] as ResponsiveColumn<MessageTemplate>[])}
+                />
+            </div>
+
+            {/* Tabela de Templates (Desktop/Tablet) */} 
+            <div className="hidden sm:block border rounded-lg overflow-hidden shadow-sm">
                 <Table>
                     <TableHeader>
                         <TableRow className="bg-muted/50 hover:bg-muted/50">
@@ -270,7 +307,7 @@ export function MessageTemplatesClient({ initialTemplates, fetchError }: Message
                                         >
                                             <Edit className="h-4 w-4" />
                                         </Button>
-
+                                        
                                         {/* Botão Excluir com Confirmação */} 
                                         <AlertDialog>
                                             <AlertDialogTrigger asChild>
@@ -297,8 +334,7 @@ export function MessageTemplatesClient({ initialTemplates, fetchError }: Message
                                                     <AlertDialogAction
                                                         onClick={() => handleDelete(template.id, template.name)}
                                                         disabled={isPending}
-                                                        // className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                                        variant="destructive" // Usa a variante destructive do botão
+                                                        variant="destructive"
                                                     >
                                                          {isPending ? (
                                                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />

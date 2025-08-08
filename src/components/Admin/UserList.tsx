@@ -10,6 +10,7 @@ import { Tooltip } from 'react-tooltip';
 import { syncUserWithSendPulse, type UserData as SendPulseUserData } from '../../utils/sendpulse-service';
 import { Input } from '../ui/input';
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '../ui/table';
+import { ResponsiveDataTable, type ResponsiveColumn } from '@/components/ui/responsive-data-table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
 import { Loader2 } from 'lucide-react';
@@ -825,8 +826,124 @@ export default function UserList() {
           <ErrorAlert message={error} onClose={() => setError('')} />
         )}
         
-        {/* Renderizar a tabela de usuários */}
-        <div className="mt-6 relative overflow-x-auto shadow-md sm:rounded-lg">
+        {/* Lista responsiva (Mobile) */}
+        <div className="sm:hidden mt-6 space-y-2">
+          {filteredUsers.length > 0 && (
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                aria-label="Selecionar todos"
+                checked={filteredUsers.length > 0 && filteredUsers.every(u => selectedUserIds.has(u.id))}
+                onChange={handleToggleSelectAllVisible}
+                className="h-4 w-4 accent-blue-600"
+              />
+              <span className="text-sm text-muted-foreground">Selecionar todos</span>
+            </div>
+          )}
+          <ResponsiveDataTable<User>
+            data={filteredUsers}
+            getRowKey={(row) => row.id}
+            emptyState={<div className="text-center py-8 text-gray-500 dark:text-gray-400">Nenhum usuário encontrado</div>}
+            columns={([
+              {
+                id: 'user',
+                header: 'Usuário',
+                isPrimaryMobileField: true,
+                render: (row) => (
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      aria-label={`Selecionar ${row.email || row.full_name || row.id}`}
+                      checked={selectedUserIds.has(row.id)}
+                      onChange={() => handleToggleSelectUser(row.id)}
+                      className="mt-1 h-4 w-4 accent-blue-600"
+                    />
+                    <UserAvatar email={row.email || ''} photoURL={row.photoURL} size="sm" />
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{row.full_name || row.email || 'Usuário'}</div>
+                      <div className="text-[11px] text-muted-foreground truncate">{row.email}</div>
+                    </div>
+                  </div>
+                ),
+              },
+              {
+                id: 'plan',
+                header: 'Status/Plano',
+                render: (row) => (
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={row.plan_id || 'TRIAL'}
+                      onValueChange={(newPlan) => handlePlanChange(row.id, newPlan)}
+                      disabled={!currentUser || updatingPlanId === row.id}
+                    >
+                      <SelectTrigger className="w-[160px] h-8 text-xs">
+                        <SelectValue placeholder="Alterar..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SELECTABLE_PLANS.map((planValue) => (
+                          <SelectItem key={planValue} value={planValue}>
+                            {PLAN_DISPLAY_NAMES[planValue] || planValue}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {updatingPlanId === row.id && <Loader2 className="animate-spin h-4 w-4" />}
+                  </div>
+                ),
+              },
+              { id: 'created', header: 'Data Criação', render: (row) => formatDate(row.created_at) },
+              { id: 'last_login', header: 'Último Login', render: (row) => formatDateTime(row.last_sign_in_at) },
+              { id: 'whats', header: 'WhatsApp', render: (row) => row.whatsapp || <span className="text-gray-400">Não informado</span> },
+              {
+                id: 'actions',
+                header: 'Ações',
+                render: (row) => (
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => handleSyncUserWithSendPulse(row)}
+                      disabled={syncingUsers.includes(row.id) || !row.email}
+                      title={!row.email ? "Usuário sem email" : "Sincronizar com SendPulse"}
+                      className="p-1 text-blue-600 hover:text-blue-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {syncingUsers.includes(row.id) ? <RefreshCw className="w-4 h-4 animate-spin"/> : <MailCheck className="w-4 h-4" />}
+                    </button>
+                    <button 
+                      onClick={() => handleRemoveUser(row.id)} 
+                      disabled={!currentUser || updatingPlanId === row.id}
+                      title="Remover Usuário"
+                      className="p-1 text-red-600 hover:text-red-800 disabled:opacity-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleSimulateTrialEnd(row.id, row.full_name || row.email)}
+                      disabled={!currentUser || updatingPlanId === row.id}
+                      className="p-1 text-yellow-600 hover:text-yellow-800 disabled:opacity-50"
+                      title="Simular Fim do Período de Teste (Muda para Gratuito)"
+                    >
+                      <Hourglass className="w-4 h-4" />
+                    </button>
+                    {row.plan_id?.toUpperCase() === 'TRIAL' && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEndTrialNow(row.id)}
+                        disabled={!currentUser || updatingPlanId === row.id}
+                        className="h-6 w-6 text-red-600 hover:text-red-800"
+                        title="Encerrar período de teste imediatamente (Muda para Gratuito)"
+                      >
+                        <TimerOff className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ),
+              },
+            ] as ResponsiveColumn<User>[])}
+          />
+        </div>
+
+        {/* Tabela (Desktop/Tablet) */}
+        <div className="hidden sm:block mt-6 relative overflow-x-auto shadow-md sm:rounded-lg">
           <Table>
             <TableHeader>
               <TableRow>
