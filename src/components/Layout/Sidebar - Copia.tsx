@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Radio, BarChart3, Clock, Users, FileText, Type, X, LogOut } from 'lucide-react';
+import { LayoutDashboard, Radio, BarChart3, Clock, Users, FileText, Type, X, LogOut, Brain } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserStatus } from '../../lib/auth';
 import UserAvatar from '../Common/UserAvatar';
@@ -54,6 +54,16 @@ export default function Sidebar({ currentView, onNavigate, onClose, isMobile }: 
       name: 'Abreviações',
       icon: Type,
       view: 'admin/abbreviations'
+    },
+    {
+      name: 'Insights de IA',
+      icon: Brain,
+      view: 'admin/insights'
+    },
+    {
+      name: 'Configurações de IA',
+      icon: Settings,
+      view: 'admin/llm-settings'
     }
   ];
 

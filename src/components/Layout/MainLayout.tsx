@@ -54,6 +54,9 @@ const MainLayout: React.FC = () => {
     if (pathname === '/admin/relay-streams') return 'Gerenciar Relay Streams';
     if (pathname === '/admin/emails') return 'Gerenciar Emails';
     if (pathname === '/admin/notifications') return 'Gerenciar Notificações';
+    if (pathname === '/admin/insights') return 'Painel de Insights';
+    if (pathname === '/admin/llm-settings') return 'Configurações de IA';
+    if (pathname === '/admin/prompts') return 'Gerenciar Prompts';
     return '';
   };
 
