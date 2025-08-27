@@ -18,6 +18,79 @@ const pool = new Pool({
   }
 });
 
+// Cache simples em memória para colunas existentes na tabela
+let cachedStreamsColumns = null;
+async function getStreamsColumns() {
+  if (cachedStreamsColumns) return cachedStreamsColumns;
+  try {
+    const result = await pool.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'streams'`
+    );
+    cachedStreamsColumns = new Set(result.rows.map(r => r.column_name));
+  } catch (e) {
+    console.error('[streams.js] Falha ao obter colunas de streams:', e);
+    cachedStreamsColumns = new Set();
+  }
+  return cachedStreamsColumns;
+}
+
+function buildInsertStatement(existingCols, payload) {
+  // Map de campos aceitos -> chave no payload
+  const fieldOrder = [
+    'url', 'name', 'sheet', 'cidade', 'estado', 'regiao', 'segmento', 'index',
+    // Campos opcionais (só se existirem na tabela)
+    'formato', 'frequencia', 'pais', 'facebook', 'instagram', 'twitter', 'youtube', 'site', 'monitoring_url', 'logo_url'
+  ];
+
+  const cols = [];
+  const vals = [];
+  const params = [];
+
+  fieldOrder.forEach((col) => {
+    if (existingCols.has(col) && payload[col] !== undefined && payload[col] !== null) {
+      cols.push(col);
+      params.push(`$${params.length + 1}`);
+      vals.push(payload[col]);
+    }
+  });
+
+  if (cols.length === 0) {
+    throw new Error('Nenhuma coluna válida para inserir.');
+  }
+
+  const text = `INSERT INTO streams (${cols.join(', ')}) VALUES (${params.join(', ')}) RETURNING *`;
+  return { text, values: vals };
+}
+
+function buildUpdateStatement(existingCols, payload, id) {
+  const updatable = [
+    'url', 'name', 'sheet', 'cidade', 'estado', 'regiao', 'segmento', 'index',
+    'formato', 'frequencia', 'pais', 'facebook', 'instagram', 'twitter', 'youtube', 'site', 'monitoring_url', 'logo_url'
+  ];
+
+  const sets = [];
+  const values = [];
+
+  updatable.forEach((col) => {
+    if (existingCols.has(col) && payload[col] !== undefined) {
+      sets.push(`${col} = $${values.length + 1}`);
+      values.push(payload[col]);
+    }
+  });
+
+  if (existingCols.has('updated_at')) {
+    sets.push(`updated_at = NOW()`);
+  }
+
+  if (sets.length === 0) {
+    throw new Error('Nenhum campo válido para atualizar.');
+  }
+
+  const text = `UPDATE streams SET ${sets.join(', ')} WHERE id = $${values.length + 1} RETURNING *`;
+  values.push(id);
+  return { text, values };
+}
+
 /**
  * @route GET /api/streams
  * @desc Obter todos os streams
@@ -310,28 +383,26 @@ router.get('/:id', requireAuth, async (req, res) => {
  */
 router.post('/', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { 
-      url, name, sheet, cidade, estado, regiao, segmento, index,
-      formato, frequencia, pais, facebook, instagram, twitter, youtube, site, monitoring_url, logo_url 
-    } = req.body;
-    
-    // Validação básica dos campos obrigatórios
-    if (!url || !name || !sheet || !cidade || !estado || !regiao || !segmento || !index) {
-      return res.status(400).json({ error: 'Todos os campos obrigatórios devem ser preenchidos' });
+    const existingCols = await getStreamsColumns();
+
+    const payload = { ...req.body };
+    // Defaults mínimos
+    if (payload.pais === undefined && existingCols.has('pais')) payload.pais = 'Brasil';
+    // Se formato não existir, ignoramos; se existir e nao enviado, podemos preencher com segmento
+    if (existingCols.has('formato') && payload.formato == null && payload.segmento != null) {
+      payload.formato = payload.segmento;
     }
-    
-    const result = await pool.query(
-      `INSERT INTO streams (
-        url, name, sheet, cidade, estado, regiao, segmento, index,
-        formato, frequencia, pais, facebook, instagram, twitter, youtube, site, monitoring_url, logo_url
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
-      [
-        url, name, sheet, cidade, estado, regiao, segmento, index,
-        formato || segmento, frequencia, pais || 'Brasil', facebook, instagram, twitter, youtube, site, monitoring_url, logo_url
-      ]
-    );
-    
-    res.status(201).json(result.rows[0]);
+
+    // Validação básica (apenas campos que existem na tabela)
+    const required = ['url', 'name', 'sheet', 'cidade', 'estado', 'regiao', 'segmento', 'index'];
+    const missing = required.filter((k) => (!payload[k] || payload[k] === '') && existingCols.has(k));
+    if (missing.length > 0) {
+      return res.status(400).json({ error: `Campos obrigatórios faltando: ${missing.join(', ')}` });
+    }
+
+    const stmt = buildInsertStatement(existingCols, payload);
+    const result = await pool.query(stmt.text, stmt.values);
+    return res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error('Erro ao criar stream:', error);
     res.status(500).json({ error: 'Erro ao criar stream' });
@@ -349,16 +420,7 @@ router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
     console.log('Atualizando stream com ID:', id);
     console.log('Dados recebidos:', req.body);
     
-    const { 
-      url, name, sheet, cidade, estado, regiao, segmento, index,
-      formato, frequencia, pais, facebook, instagram, twitter, youtube, site, monitoring_url, logo_url 
-    } = req.body;
-    
-    // Validação básica dos campos obrigatórios
-    if (!url || !name || !sheet || !cidade || !estado || !regiao || !segmento || !index) {
-      console.log('Validação falhou. Campos obrigatórios faltando.');
-      return res.status(400).json({ error: 'Todos os campos obrigatórios devem ser preenchidos' });
-    }
+    const payload = { ...req.body };
     
     // Verificar se o stream existe
     const checkResult = await pool.query('SELECT * FROM streams WHERE id = $1', [id]);
@@ -368,23 +430,15 @@ router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
     }
     
     console.log('Stream encontrado. Atualizando...');
-    
-    const queryText = `UPDATE streams SET 
-      url = $1, name = $2, sheet = $3, cidade = $4, estado = $5, regiao = $6, segmento = $7, index = $8,
-      formato = $9, frequencia = $10, pais = $11, facebook = $12, instagram = $13, twitter = $14, youtube = $15, site = $16,
-      monitoring_url = $17, logo_url = $18, updated_at = NOW() 
-    WHERE id = $19 RETURNING *`;
-    
-    const values = [
-      url, name, sheet, cidade, estado, regiao, segmento, index,
-      formato || segmento, frequencia, pais || 'Brasil', facebook, instagram, twitter, youtube, site,
-      monitoring_url, logo_url, id
-    ];
-    
-    console.log('Query SQL:', queryText);
-    console.log('Valores:', values);
-    
-    const result = await pool.query(queryText, values);
+    const existingCols = await getStreamsColumns();
+    if (existingCols.has('formato') && payload.formato == null && payload.segmento != null) {
+      payload.formato = payload.segmento;
+    }
+
+    const stmt = buildUpdateStatement(existingCols, payload, id);
+    console.log('Query SQL:', stmt.text);
+    console.log('Valores:', stmt.values);
+    const result = await pool.query(stmt.text, stmt.values);
     
     console.log('Atualização bem-sucedida. Linhas afetadas:', result.rowCount);
     console.log('Dados atualizados:', result.rows[0]);

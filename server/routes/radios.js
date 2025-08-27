@@ -59,12 +59,20 @@ router.get('/status', authenticateBasicUser, async (req, res) => {
     let favoriteRadiosSet = new Set(favoriteRadios); // Inicia com rádios antigas (fallback inicial)
 
     // ** Lógica Correta: Priorizar Segmentos **
-    if (favoriteSegments.length > 0) {
-      console.log(`[Radios Router /status] Buscando rádios para os segmentos:`, favoriteSegments);
+    // Normalizar segmentos (dividir por vírgula, trim e remover duplicatas)
+    const normalizedSegments = Array.from(new Set(
+      (favoriteSegments || [])
+        .flatMap((s) => String(s).split(',').map(t => t.trim()))
+        .filter(Boolean)
+    ));
+
+    if (normalizedSegments.length > 0) {
+      console.log(`[Radios Router /status] Buscando rádios para os segmentos (normalizados):`, normalizedSegments);
       try {
-        const segmentsQuery = `SELECT name FROM streams WHERE formato = ANY($1::text[])`;
-        console.log(`[Radios Router /status] Executando query de segmentos:`, segmentsQuery, favoriteSegments);
-        const segmentsResult = await safeQuery(segmentsQuery, [favoriteSegments]);
+        // Produção não possui coluna 'formato'; usar apenas 'segmento'
+        const segmentsQuery = `SELECT name FROM streams WHERE segmento = ANY($1::text[])`;
+        console.log(`[Radios Router /status] Executando query de segmentos:`, segmentsQuery, normalizedSegments);
+        const segmentsResult = await safeQuery(segmentsQuery, [normalizedSegments]);
         console.log(`[Radios Router /status] Resultado da query de segmentos:`, segmentsResult?.rows?.length ?? 0, 'rows');
 
         if (segmentsResult?.rows?.length > 0) {
@@ -106,7 +114,7 @@ router.get('/status', authenticateBasicUser, async (req, res) => {
         GROUP BY name
       ),
       all_radios AS (
-        SELECT name, created_at, updated_at, cidade, estado, formato, url FROM streams ORDER BY name
+        SELECT name, created_at, updated_at, cidade, estado, segmento, url FROM streams ORDER BY name
       )
       SELECT
         r.name,
@@ -115,7 +123,7 @@ router.get('/status', authenticateBasicUser, async (req, res) => {
         r.updated_at,
         r.cidade,
         r.estado,
-        r.formato,
+        r.segmento,
         r.url
       FROM all_radios r
       LEFT JOIN latest_entries l ON r.name = l.name
@@ -171,7 +179,7 @@ router.get('/status', authenticateBasicUser, async (req, res) => {
           isFavorite: isFavorite,
           city: row.cidade,
           state: row.estado,
-          formato: row.formato,
+          formato: row.segmento,
           streamUrl: row.url
         };
       });

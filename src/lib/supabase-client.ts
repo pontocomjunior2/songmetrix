@@ -7,228 +7,118 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
-// Constantes para armazenamento
+// Constantes para controle de sessão
 const LAST_ACTIVITY_KEY = 'songmetrix_last_activity';
-const SESSION_EXPIRATION_TIME = 15 * 60 * 1000; // 15 minutos em milissegundos
-const STORAGE_KEY = `sb-${supabaseUrl.split('//')[1].split('.')[0]}-auth-token`;
+const SESSION_INACTIVITY_TIMEOUT = 2 * 60 * 60 * 1000; // 2 horas em milissegundos (mais realista)
+const ACTIVITY_UPDATE_THROTTLE = 30 * 1000; // 30 segundos entre atualizações
 
-let isRedirecting = false; // Flag para prevenir redirecionamentos múltiplos
-let isInitialized = false; // Flag para controlar a inicialização única
+let isRedirecting = false;
+let lastActivityUpdate = 0;
 
-// Função para limpar todos os dados de sessão
-const clearAllSessionData = () => {
-  try {
-    // Limpar localStorage
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(LAST_ACTIVITY_KEY);
-    
-    // Limpar sessionStorage
-    sessionStorage.removeItem(STORAGE_KEY);
-    sessionStorage.removeItem(LAST_ACTIVITY_KEY);
-    
-    // Limpar cookies relacionados (se houver)
-    document.cookie.split(';').forEach(cookie => {
-      const [name] = cookie.trim().split('=');
-      if (name.includes('supabase') || name.includes('sb-')) {
-        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-      }
-    });
-  } catch (error) {
-    console.error('Erro ao limpar dados de sessão:', error);
-  }
-};
-
-// Função para atualizar o timestamp de último acesso
+// Função para atualizar atividade (throttled)
 const updateLastActivity = () => {
-  try {
-    const timestamp = Date.now().toString();
-    sessionStorage.setItem(LAST_ACTIVITY_KEY, timestamp);
-  } catch (error) {
-    console.error('Erro ao atualizar atividade:', error);
+  const now = Date.now();
+  if (now - lastActivityUpdate > ACTIVITY_UPDATE_THROTTLE) {
+    try {
+      localStorage.setItem(LAST_ACTIVITY_KEY, now.toString());
+      lastActivityUpdate = now;
+    } catch (error) {
+      console.error('Erro ao atualizar atividade:', error);
+    }
   }
 };
 
-// Função para verificar se a sessão expirou por inatividade
-const hasSessionExpired = () => {
+// Verificar se a sessão expirou por inatividade
+const hasSessionExpiredByInactivity = () => {
   try {
-    // Verificar se há um token de sessão
-    const sessionData = sessionStorage.getItem(STORAGE_KEY);
-    if (!sessionData) {
-      return false;
-    }
-    
-    // Verificar última atividade
-    const lastActivity = sessionStorage.getItem(LAST_ACTIVITY_KEY);
+    const lastActivity = localStorage.getItem(LAST_ACTIVITY_KEY);
     if (!lastActivity) {
-      // Se temos um token mas não temos registro de atividade, atualizamos
       updateLastActivity();
       return false;
     }
-    
+
     const inactiveTime = Date.now() - parseInt(lastActivity);
-    return inactiveTime > SESSION_EXPIRATION_TIME;
-  } catch (error) {
-    return false; // Em caso de erro, não consideramos como expirada
-  }
-};
-
-// Verificar se há uma sessão válida no storage
-const hasStoredSession = () => {
-  try {
-    // Verificar sessionStorage primeiro (principal)
-    if (sessionStorage.getItem(STORAGE_KEY)) {
-      return true;
-    }
-    
-    // Verificar localStorage como fallback
-    const localData = localStorage.getItem(STORAGE_KEY);
-    if (localData) {
-      // Migrar para sessionStorage
-      sessionStorage.setItem(STORAGE_KEY, localData);
-      updateLastActivity();
-      return true;
-    }
-    
-    return false;
+    return inactiveTime > SESSION_INACTIVITY_TIMEOUT;
   } catch (error) {
     return false;
   }
 };
 
-// Implementação otimizada de armazenamento
-const customStorage = {
-  getItem: (key: string) => {
-    try {
-      // Verificar expiração apenas para a chave de sessão
-      if (key === STORAGE_KEY && hasSessionExpired()) {
-        clearAllSessionData();
-        return null;
-      }
-      
-      // Buscar do sessionStorage primeiro
-      const value = sessionStorage.getItem(key);
-      if (value) {
-        if (key === STORAGE_KEY) updateLastActivity();
-        return value;
-      }
-      
-      // Fallback para localStorage (migração de sistemas antigos)
-      const localValue = localStorage.getItem(key);
-      if (localValue && key === STORAGE_KEY) {
-        sessionStorage.setItem(key, localValue);
-        updateLastActivity();
-        return localValue;
-      }
-      
-      return localValue || null;
-    } catch (error) {
-      return null;
-    }
-  },
-  setItem: (key: string, value: string) => {
-    try {
-      // Usar sessionStorage como principal
-      sessionStorage.setItem(key, value);
-      if (key === STORAGE_KEY) {
-        updateLastActivity();
-        isRedirecting = false;
-      }
-    } catch (error) {
-      console.error('Erro ao definir item:', error);
-    }
-  },
-  removeItem: (key: string) => {
-    try {
-      // Remover de ambos storages
-      sessionStorage.removeItem(key);
-      localStorage.removeItem(key);
-    } catch (error) {
-      console.error('Erro ao remover item:', error);
-    }
-  }
-};
-
-// Inicialização rápida - verificar sessão existente
-const hasExistingSession = hasStoredSession();
-
-// Criar cliente Supabase com armazenamento personalizado
+// Criar cliente Supabase com configuração otimizada
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    autoRefreshToken: true,
-    persistSession: true,
+    autoRefreshToken: true, // Deixar o Supabase gerenciar o refresh automático
+    persistSession: true,   // Usar localStorage para persistir sessão
     detectSessionInUrl: true,
-    storage: customStorage
+    // Remover storage customizado - usar o padrão do Supabase
+    flowType: 'pkce' // Usar PKCE para maior segurança
   }
 });
 
-// Garantir que já temos atividade registrada se houver sessão
-if (hasExistingSession && !sessionStorage.getItem(LAST_ACTIVITY_KEY)) {
-  updateLastActivity();
-}
+// Configurar listeners apenas uma vez
+let isInitialized = false;
 
-// Inicialização única para evitar múltiplas verificações
-if (!isInitialized) {
+if (!isInitialized && typeof window !== 'undefined') {
   isInitialized = true;
-  
-  // Verificar sessão inicial sem bloquear renderização
+
+  // Verificar sessão inicial
   supabase.auth.getSession().then(({ data: { session } }) => {
     if (session) {
       updateLastActivity();
     }
-  }).catch(() => {});
-  
+  }).catch((error) => {
+    console.error('Erro ao verificar sessão inicial:', error);
+  });
+
   // Listener para mudanças de autenticação
-  supabase.auth.onAuthStateChange((event, session) => {
+  supabase.auth.onAuthStateChange(async (event, session) => {
+    console.log('Auth state change:', event, !!session);
+
     if (event === 'SIGNED_OUT') {
-      clearAllSessionData();
+      localStorage.removeItem(LAST_ACTIVITY_KEY);
       if (!isRedirecting && window.location.pathname !== '/login') {
         isRedirecting = true;
         window.location.href = '/login';
       }
       return;
     }
-    
-    if (session) {
+
+    if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
       updateLastActivity();
       isRedirecting = false;
     }
+
+    // Verificar inatividade apenas em eventos relevantes
+    if (session && hasSessionExpiredByInactivity()) {
+      console.log('Sessão expirada por inatividade');
+      await supabase.auth.signOut();
+    }
   });
-  
-  // Monitoramento de atividade do usuário (reduzido)
-  if (typeof window !== 'undefined') {
-    // Throttled update para interações do usuário
-    let lastUpdate = 0;
-    const throttledUpdate = () => {
-      const now = Date.now();
-      if (now - lastUpdate > 10000) { // 10 segundos
-        lastUpdate = now;
-        if (sessionStorage.getItem(STORAGE_KEY)) {
-          updateLastActivity();
-        }
-      }
-    };
-    
-    // Principais eventos de interação
-    document.addEventListener('click', throttledUpdate);
-    document.addEventListener('keydown', throttledUpdate);
-    
-    // Verificação periódica de expiração (reduzida)
-    setInterval(() => {
-      if (hasSessionExpired() && sessionStorage.getItem(STORAGE_KEY)) {
-        clearAllSessionData();
-        if (!isRedirecting && window.location.pathname !== '/login') {
-          isRedirecting = true;
-          window.location.href = '/login';
-        }
-      }
-    }, 60000); // 1 minuto
-    
-    // Detectar refresh/reload da página para melhorar experiência
-    window.addEventListener('beforeunload', () => {
-      // Atualizar atividade antes do refresh para garantir persistência
-      if (sessionStorage.getItem(STORAGE_KEY)) {
-        updateLastActivity();
-      }
-    });
-  }
+
+  // Monitoramento de atividade otimizado
+  const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+
+  const handleActivity = () => {
+    updateLastActivity();
+  };
+
+  // Adicionar listeners de atividade
+  activityEvents.forEach(event => {
+    document.addEventListener(event, handleActivity, { passive: true });
+  });
+
+  // Verificação periódica de inatividade (menos frequente)
+  setInterval(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (session && hasSessionExpiredByInactivity()) {
+      console.log('Sessão expirada por inatividade - fazendo logout');
+      await supabase.auth.signOut();
+    }
+  }, 5 * 60 * 1000); // Verificar a cada 5 minutos
+
+  // Atualizar atividade antes de fechar/recarregar a página
+  window.addEventListener('beforeunload', () => {
+    updateLastActivity();
+  });
 }

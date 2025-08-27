@@ -59,7 +59,7 @@ export const authenticateBasicUser = async (req, res, next) => {
     const userMetadata = user.user_metadata || {};
     let userPlanId = userMetadata.plan_id;
     let userTrialEndsAt = userMetadata.trial_ends_at;
-    console.log('[AuthMiddleware] User metadata from Auth:', userMetadata);
+
 
     // Verificar se o trial expirou (usando dados do metadata)
     if (userPlanId?.trim().toUpperCase() === 'TRIAL' && userTrialEndsAt) { 
@@ -79,7 +79,7 @@ export const authenticateBasicUser = async (req, res, next) => {
         userPlanId = userPlanId.trim().toUpperCase();
     }
 
-    console.log(`[AuthMiddleware] User: ${user.id}, Determined Plan ID (from plan_id, trimmed, uppercase): '${userPlanId}'`);
+
 
     // --- DECISÃO DE ACESSO --- 
     const allowedPlans = ['ADMIN', 'ATIVO', 'TRIAL', 'FREE'];
@@ -93,20 +93,13 @@ export const authenticateBasicUser = async (req, res, next) => {
     };
 
     // Lógica de verificação (agora baseada em plan_id novamente)
-    console.log(`[AuthMiddleware] Checking if plan '${userPlanId}' is in allowedPlans: ${allowedPlans}`);
     if (allowedPlans.includes(userPlanId)) { 
-      console.log(`[AuthMiddleware] Condition MET: Plan '${userPlanId}' IS in allowedPlans.`);
-      console.log(`[AuthMiddleware] Access GRANTED for user ${user.id} with plan ${userPlanId} to ${req.originalUrl}`);
-      console.log(`[${new Date().toISOString()}] [AuthMiddleware] Chamando next() para rota permitida.`);
       next();
     } else {
       // Acesso negado apenas se não for um dos planos permitidos (Ex: INATIVO)
-      console.log(`[AuthMiddleware] Condition FAILED: Plan '${userPlanId}' IS NOT in allowedPlans.`);
-      console.log(`[AuthMiddleware] Access DENIED for user ${user.id} with invalid/inactive plan ${userPlanId} to ${req.originalUrl}`);
       return res.status(403).json({ 
           error: 'Acesso negado. Plano inválido ou inativo.', 
-          code: 'ACCESS_DENIED',
-          planId: userPlanId 
+          code: 'ACCESS_DENIED'
       });
     }
 
@@ -237,7 +230,7 @@ export const authenticateUser = async (req, res, next) => {
       console.log('Definindo plan_id como FREE por padrão'); // Mensagem ajustada
     }
 
-    console.log('Plan ID correto determinado:', correctPlanId);
+
 
     // Verificar se há inconsistência entre o plan_id determinado e os registros
     const needsMetadataUpdate = correctPlanId !== userStatus;
@@ -313,13 +306,11 @@ export const authenticateUser = async (req, res, next) => {
 
     // Permitir acesso à rota de criação de cobrança independentemente do status/plano
     if (req.originalUrl === '/api/payments/create-charge' && req.method === 'POST') {
-        console.log(`[AuthMiddleware] Access GRANTED for specific route ${req.method} ${req.originalUrl} for user ${user.id} with determined plan ${correctPlanId}`);
-        // Adicionar informações ao objeto user ANTES de chamar next()
         req.user = {
           id: user.id, 
           email: user.email,
-          planId: correctPlanId, // Usar o planId determinado
-          user_metadata: user.user_metadata // Incluir metadata original
+          planId: correctPlanId,
+          user_metadata: user.user_metadata
         };
         return next(); 
     }
@@ -389,7 +380,6 @@ export const authenticateUser = async (req, res, next) => {
       req.user.trial_days_remaining = Math.max(0, 14 - diffDays);
     }
     
-    console.log(`[AuthMiddleware] Access GRANTED (passed status checks) for user ${user.id} to ${req.originalUrl}`);
     next();
   } catch (error) {
     console.error('Erro de autenticação:', error);

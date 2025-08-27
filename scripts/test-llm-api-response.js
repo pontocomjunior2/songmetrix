@@ -4,27 +4,27 @@ console.log('🧪 Testando resposta da API LLM...');
 console.log('\n📋 Verificações necessárias:');
 
 const checks = [
-  {
-    name: 'API retorna array',
-    description: 'Verificar se /api/admin/llm-settings retorna um array',
-    test: 'Array.isArray(response)'
-  },
-  {
-    name: 'Estrutura dos dados',
-    description: 'Verificar se cada item tem as propriedades necessárias',
-    test: 'item.id, item.provider_name, item.api_key, etc.'
-  },
-  {
-    name: 'Tratamento de erro',
-    description: 'Verificar se erros são tratados corretamente',
-    test: 'try/catch com fallback para array vazio'
-  }
+    {
+        name: 'API retorna array',
+        description: 'Verificar se /api/admin/llm-settings retorna um array',
+        test: 'Array.isArray(response)'
+    },
+    {
+        name: 'Estrutura dos dados',
+        description: 'Verificar se cada item tem as propriedades necessárias',
+        test: 'item.id, item.provider_name, item.api_key, etc.'
+    },
+    {
+        name: 'Tratamento de erro',
+        description: 'Verificar se erros são tratados corretamente',
+        test: 'try/catch com fallback para array vazio'
+    }
 ];
 
 checks.forEach((check, index) => {
-  console.log(`\n${index + 1}. ✅ ${check.name}`);
-  console.log(`   📝 ${check.description}`);
-  console.log(`   🧪 ${check.test}`);
+    console.log(`\n${index + 1}. ✅ ${check.name}`);
+    console.log(`   📝 ${check.description}`);
+    console.log(`   🧪 ${check.test}`);
 });
 
 console.log('\n🔧 Correções aplicadas:');

@@ -11,19 +11,32 @@ const API_BASE_URL = isDevelopment ? '/api' : (env.VITE_API_BASE_URL || 'https:/
 class ApiClient {
     private async getAuthHeaders() {
         try {
-            // Obter sessão atual via Supabase
-            const { data: { session } } = await supabase.auth.getSession();
-            const token = session?.access_token || '';
+            // Usar ensureValidToken para garantir que o token seja válido
+            const { ensureValidToken } = await import('./auth');
+            const token = await ensureValidToken();
             
             return {
-                'Authorization': token ? `Bearer ${token}` : '',
+                'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json',
             };
-        } catch (e) {
-            console.error('Erro ao obter token de autenticação:', e);
-            return {
-                'Content-Type': 'application/json',
-            };
+        } catch (error) {
+            console.error('Erro ao obter token de autenticação:', error);
+            
+            // Fallback: tentar obter sessão diretamente
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                const token = session?.access_token;
+                
+                return {
+                    'Authorization': token ? `Bearer ${token}` : '',
+                    'Content-Type': 'application/json',
+                };
+            } catch (fallbackError) {
+                console.error('Erro no fallback de autenticação:', fallbackError);
+                return {
+                    'Content-Type': 'application/json',
+                };
+            }
         }
     }
 
@@ -45,7 +58,7 @@ class ApiClient {
                 cleanParams[key] = value;
             });
             
-            console.log(`Fazendo requisição GET para ${endpoint} com parâmetros:`, cleanParams);
+
             
             // Incluir um parâmetro de timestamp quando force=true para evitar cache do navegador
             const requestParams = force 
@@ -55,16 +68,15 @@ class ApiClient {
             const response = await axios.get<T>(`${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`, {
                 headers,
                 params: requestParams,
-                validateStatus: (status) => status < 500, // Não rejeitar respostas com erro 4xx
-                timeout: 10000, // 10 segundos de timeout
-                // Definir paramsSerializer para arrays no formato radio=A&radio=B&radio=C
+                validateStatus: (status) => status < 500,
+                timeout: 10000,
                 paramsSerializer: {
-                    indexes: null // Isso garante que arrays sejam serializados sem índices
+                    indexes: null
                 }
             });
             
             if (response.status >= 400) {
-                console.error(`Erro ${response.status} na requisição para ${endpoint}:`, response.data);
+                console.error(`Erro ${response.status} na requisição para ${endpoint}`);
                 throw new Error(`Erro ${response.status}: ${response.statusText}`);
             }
             
@@ -92,12 +104,12 @@ class ApiClient {
                     ...headers,
                     ...(config.headers || {}),
                 },
-                validateStatus: (status) => status < 500, // Não rejeitar respostas com erro 4xx
-                timeout: 10000 // 10 segundos de timeout
+                validateStatus: (status) => status < 500,
+                timeout: 10000
             });
             
             if (response.status >= 400) {
-                console.error(`Erro ${response.status} na requisição para ${endpoint}:`, response.data);
+                console.error(`Erro ${response.status} na requisição para ${endpoint}`);
                 throw new Error(`Erro ${response.status}: ${response.statusText}`);
             }
             
@@ -144,7 +156,7 @@ class ApiClient {
                 return null;
             }
             
-            console.log('Buscando dados do dashboard para rádios:', validRadios);
+
             
             // O backend espera que as rádios sejam enviadas como parâmetros repetidos
             // Ex: radio=A&radio=B&radio=C ao invés de radio=A,B,C
@@ -256,7 +268,7 @@ class ApiClient {
             if (filters.startTime) requestParams.start_time = filters.startTime;
             if (filters.endTime) requestParams.end_time = filters.endTime;
             
-            console.log(`Requisitando execuções com parâmetros:`, requestParams);
+
             
             // Endpoint corrigido para evitar duplo prefixo '/api'
             return this.get('/executions', requestParams, force);

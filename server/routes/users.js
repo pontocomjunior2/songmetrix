@@ -141,7 +141,7 @@ router.put('/:id/status', authenticateBasicUser, async (req, res) => {
 // Rota para remover usuário (ADMIN) - Caminho relativo: POST /remove
 router.post('/remove', authenticateBasicUser, async (req, res) => {
   // Log de entrada na rota específica do router
-  console.log(`[${new Date().toISOString()}] [ROUTE ENTRY users.js] POST /remove`);
+  
 
   // A verificação de ADMIN já foi feita implicitamente pelo middleware que deixou passar
   // Mas podemos adicionar uma verificação extra aqui por segurança, usando o req.user populado pelo middleware
@@ -150,12 +150,12 @@ router.post('/remove', authenticateBasicUser, async (req, res) => {
       return res.status(403).json({ error: 'Acesso negado. Apenas administradores.' });
   }
 
-  console.log(`[${new Date().toISOString()}] [users.js] Verificação de Admin OK (planId: ${req.user?.planId}).`);
+  
 
   try {
-    console.log(`[${new Date().toISOString()}] [users.js] Dentro do try block`);
+
     const { userId } = req.body;
-    console.log(`[${new Date().toISOString()}] [users.js] User ID recebido: ${userId}`);
+
 
     if (!userId) {
       console.log(`[${new Date().toISOString()}] [users.js] Erro: ID do usuário não fornecido.`);
@@ -167,11 +167,11 @@ router.post('/remove', authenticateBasicUser, async (req, res) => {
       return res.status(400).json({ error: 'Você não pode remover seu próprio usuário' });
     }
 
-    console.log(`[${new Date().toISOString()}] [users.js] Preparando para chamar supabaseAdmin.auth.admin.deleteUser para: ${userId}`);
+
 
     const { error: deleteAuthError } = await supabaseAdmin.auth.admin.deleteUser(userId);
 
-    console.log(`[${new Date().toISOString()}] [users.js] Chamada a deleteUser concluída. Erro:`, deleteAuthError);
+
 
     if (deleteAuthError) {
       console.error(`[${new Date().toISOString()}] [users.js] Erro DETECTADO ao remover usuário ${userId} do Auth:`, deleteAuthError);
@@ -181,7 +181,7 @@ router.post('/remove', authenticateBasicUser, async (req, res) => {
       });
     }
 
-    console.log(`[${new Date().toISOString()}] [users.js] Usuário ${userId} removido com sucesso do Auth.`);
+
 
     // Tentar remover da tabela 'users' (opcional se CASCADE está OK)
     const { error: deleteDbError } = await supabaseAdmin
@@ -192,13 +192,11 @@ router.post('/remove', authenticateBasicUser, async (req, res) => {
     if (deleteDbError) {
        console.error(`[${new Date().toISOString()}] [users.js] Erro ao remover usuário ${userId} do banco (ignorar se CASCADE OK):`, deleteDbError);
        if (deleteDbError.code === '23503') {
-         console.log(`[${new Date().toISOString()}] [users.js] Nota: Erro na tabela 'users' provavelmente devido a CASCADE.`);
        }
     } else {
-       console.log(`[${new Date().toISOString()}] [users.js] Remoção (ou tentativa) da tabela 'users' concluída sem erro explícito.`);
+      
     }
 
-    console.log(`[${new Date().toISOString()}] [users.js] Usuário ${userId} processado com sucesso para remoção.`);
     res.status(200).json({
       message: 'Usuário removido com sucesso',
       userId
@@ -212,7 +210,7 @@ router.post('/remove', authenticateBasicUser, async (req, res) => {
 
 // Rota para obter o planId do usuário logado
 router.get('/my-plan', authenticateBasicUser, async (req, res) => {
-  console.log(`[${new Date().toISOString()}] [ROUTE ENTRY users.js] GET /my-plan for user: ${req.user?.id}`);
+
   if (!req.user?.id) {
     console.error(`[${new Date().toISOString()}] [users.js /my-plan] Erro: ID do usuário não encontrado na requisição após autenticação.`);
     return res.status(401).json({ error: 'Usuário não autenticado.' });
@@ -228,7 +226,7 @@ router.get('/my-plan', authenticateBasicUser, async (req, res) => {
         if (getUserError) throw getUserError; // Propaga o erro para o catch principal
         if (!userData?.user) throw new Error('Usuário não encontrado na API de Auth Admin.');
         authPlanId = userData.user.user_metadata?.plan_id;
-        console.log(`[${new Date().toISOString()}] [users.js /my-plan] PlanId from Auth metadata: ${authPlanId}`);
+
     } catch (authError) {
         // Logar erro do Auth mas continuar para verificar DB
         console.error(`[${new Date().toISOString()}] [users.js /my-plan] Erro ao buscar metadados Auth para usuário ${userId} (continuando para DB check):`, authError);
@@ -248,7 +246,6 @@ router.get('/my-plan', authenticateBasicUser, async (req, res) => {
 
         if (dbUserData) {
             dbPlanId = dbUserData.plan_id;
-            console.log(`[${new Date().toISOString()}] [users.js /my-plan] PlanId from DB table 'users': ${dbPlanId}`);
         } else {
             console.warn(`[${new Date().toISOString()}] [users.js /my-plan] Usuário ${userId} não encontrado na tabela 'users'.`);
             // Se não existe na tabela users, authPlanId (se existir) é a melhor aposta
@@ -270,7 +267,6 @@ router.get('/my-plan', authenticateBasicUser, async (req, res) => {
         console.warn(`[${new Date().toISOString()}] [users.js /my-plan] Discrepância encontrada para usuário ${userId}: DB plan='${dbPlanId}', Auth plan='${authPlanId}'. Usando DB.`);
     }
 
-    console.log(`[${new Date().toISOString()}] [users.js /my-plan] Retornando finalPlanId '${finalPlanId}' para usuário ${userId}.`);
     res.status(200).json({ planId: finalPlanId });
 
   } catch (error) {

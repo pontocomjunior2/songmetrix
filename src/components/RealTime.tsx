@@ -145,10 +145,10 @@ export default function RealTime() {
       localStorage.setItem('realtime_radios_cache', JSON.stringify(data));
       localStorage.setItem('realtime_radios_cache_time', Date.now().toString());
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) {
-          console.error('Error in fetchAndUpdateCache:', error);
-      }
-      provideFallbackData();
+                    if (!(error instanceof DOMException && error.name === 'AbortError')) {
+            console.error('Erro ao atualizar lista de rádios');
+        }
+        provideFallbackData();
     } finally {
       clearTimeout(timeoutId);
     }
@@ -168,7 +168,7 @@ export default function RealTime() {
       }
       await fetchAndUpdateCache();
     } catch (error) {
-      console.error('Error in fetchRadios (already handled by fetchAndUpdateCache):', error);
+             console.error('Erro ao buscar lista de rádios');
     } finally {
       setLoadingRadios(false);
     }
@@ -177,7 +177,7 @@ export default function RealTime() {
   const fetchExecutions = useCallback(async (targetPage: number, isReset: boolean): Promise<boolean> => {
     setLoadingContent(true);
     const currentFilters = filtersRef.current;
-    console.log(`[RealTime fetchExecutions] Attempting to fetch page: ${targetPage} (Reset: ${isReset}) with filters:`, currentFilters);
+
 
     try {
       const headers = await getAuthHeaders();
@@ -202,11 +202,7 @@ export default function RealTime() {
         setExecutions(currentExecutions => {
           const existingIds = new Set(currentExecutions.map(exec => exec.id));
           const newData = isReset ? data : data.filter(exec => !existingIds.has(exec.id));
-           if (!isReset) {
-            console.log(`[RealTime fetchExecutions] Received ${data.length} items for page ${targetPage}. Added ${newData.length} new unique items.`);
-           } else {
-             console.log(`[RealTime fetchExecutions] Received ${data.length} items for new search (page ${targetPage}).`);
-           }
+           
           return isReset ? newData : [...currentExecutions, ...newData];
         });
         setHasMore(data.length === 100);
@@ -214,13 +210,13 @@ export default function RealTime() {
         else setPage(targetPage + 1);
         return true;
       } else {
-        console.warn("Received non-array data from /api/executions:", data);
+        
         setHasMore(false);
         if (isReset) setExecutions([]);
         return false;
       }
     } catch (error) {
-      console.error('Error fetching executions:', error);
+             console.error('Erro ao buscar execuções');
       setHasMore(false);
       if (isReset) setExecutions([]);
       return false;
@@ -245,15 +241,15 @@ export default function RealTime() {
 
   const handleSearch = useCallback((e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    console.log("[RealTime handleSearch] Search button clicked or triggered.");
+
 
     if (filters.radio === '' && filters.artist === '' && filters.song === '') {
-      console.warn("[RealTime handleSearch] Busca abortada: Pelo menos um filtro (Rádio, Artista ou Música) deve ser preenchido para pesquisar.");
+
       return;
     }
 
     if (!validateDates()) {
-      console.warn("[RealTime handleSearch] Search aborted due to invalid date range.");
+
       return;
     }
 
@@ -261,7 +257,7 @@ export default function RealTime() {
   }, [fetchExecutions, validateDates, filters.radio, filters.artist, filters.song]);
 
   const clearFilters = useCallback(() => {
-    console.log("[RealTime clearFilters] Clearing filters.");
+
     setFilters({
       radio: '',
       artist: '',
@@ -291,7 +287,7 @@ export default function RealTime() {
       }
       return dateStr;
     } catch (error) {
-      console.warn("Error parsing date for display:", dateStr, error);
+
       return dateStr;
     }
   }, []);
@@ -318,7 +314,7 @@ export default function RealTime() {
 
   useEffect(() => {
     const fetchInitialData = async () => {
-      console.log("[RealTime useEffect] Fetching initial radios AND executions.");
+
       await fetchRadios();
       await fetchExecutions(0, true);
     };
@@ -330,7 +326,7 @@ export default function RealTime() {
 
   const loadMore = useCallback(() => {
     if (!loadingContent && hasMore) {
-      console.log(`[RealTime loadMore] Loading more, current page: ${page}`);
+
       fetchExecutions(page, false);
     }
   }, [loadingContent, hasMore, page, fetchExecutions]);

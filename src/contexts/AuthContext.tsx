@@ -226,11 +226,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       if (event === 'SIGNED_IN') {
-        console.log('[AuthContext] onAuthStateChange: SIGNED_IN event received. IGNORING - login function handles refresh.');
+
       } 
       
       else if (event === 'SIGNED_OUT') {
-        console.log('[AuthContext] onAuthStateChange: SIGNED_OUT event received. Clearing state.');
+
         if (isMounted.current) {
           setCurrentUser(null);
           setPlanId(null);
@@ -292,7 +292,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (needsMigration) {
         migrationAttempted.current = true;
-        console.log(`[AuthContext Migration] Usuário ${currentUser.id} precisa de migração. Rádios antigas:`, metadata.favorite_radios);
+        
 
         try {
           const { data: { session } } = await supabase.auth.getSession();
@@ -316,11 +316,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }
 
           const mappedSegments: string[] = await response.json();
-          console.log('[AuthContext Migration] Segmentos mapeados:', mappedSegments);
+          
 
           if (mappedSegments.length > 0) {
             await updateFavoriteSegments(mappedSegments);
-            console.log('[AuthContext Migration] Segmentos salvos com sucesso.');
+            
 
             try {
               const { error: cleanupError } = await supabase.auth.updateUser({
@@ -329,7 +329,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               if (cleanupError) {
                 console.warn('[AuthContext Migration] Falha ao limpar favorite_radios antigos:', cleanupError);
               } else {
-                console.log('[AuthContext Migration] favorite_radios antigos removidos.');
+                
                 setCurrentUser(prevUser => {
                   if (!prevUser) return null;
                   const newMeta = { ...prevUser.user_metadata };
@@ -341,7 +341,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                console.warn('[AuthContext Migration] Exceção ao limpar favorite_radios antigos:', cleanupCatchError);
             }
           } else {
-            console.log('[AuthContext Migration] Nenhum segmento encontrado para as rádios antigas. Nenhuma atualização necessária.');
+ 
           }
         } catch (migrationError) {
           console.error('[AuthContext Migration] Falha durante o processo de migração:', migrationError);
@@ -384,7 +384,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
          throw loginError;
       }
 
-      console.log('[AuthContext] Login successful in Supabase Auth.');
+      
 
       const refreshSuccess = await refreshUserData();
 
@@ -392,7 +392,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
          await sendWelcomeEmail();
       }
       
-      console.log('[AuthContext] Login process complete. Navigating to dashboard...');
+
       navigate('/dashboard');
 
       return { error: null };

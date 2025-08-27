@@ -8,7 +8,7 @@ interface ContactProps {
 
 function WhatsAppContact({ onClick, className = '' }: ContactProps) {
   const handleWhatsAppClick = () => {
-    window.open('https://wa.me/5527998242137', '_blank');
+    window.open('https://wa.me/5527997101531', '_blank');
   };
 
   const handleEmailClick = () => {
@@ -38,4 +38,4 @@ function WhatsAppContact({ onClick, className = '' }: ContactProps) {
   );
 }
 
-export default WhatsAppContact; 
+export default WhatsAppContact;

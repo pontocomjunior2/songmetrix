@@ -15,16 +15,11 @@ const supabase = createClient(
  */
 export const requireAuth = async (req, res, next) => {
   try {
-    console.log('Iniciando verificação de autenticação');
-    
     // Verificar se o token de autenticação está presente
     const authHeader = req.headers.authorization;
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log('Token de autenticação ausente ou inválido');
-      
       if (process.env.NODE_ENV !== 'production') {
-        console.log('Ambiente de desenvolvimento: permitindo acesso sem autenticação');
         req.user = { 
           id: 'temp-dev-user', 
           email: 'dev@example.com',
@@ -45,10 +40,7 @@ export const requireAuth = async (req, res, next) => {
     const { data: { user }, error } = await supabase.auth.getUser(token);
     
     if (error || !user) {
-      console.log('Erro ao verificar token:', error);
-      
       if (process.env.NODE_ENV !== 'production') {
-        console.log('Permitindo acesso temporário após erro de token');
         req.user = { 
           id: 'temp-user-after-error', 
           email: 'temp-error@example.com',
@@ -63,16 +55,13 @@ export const requireAuth = async (req, res, next) => {
       return res.status(401).json({ error: 'Não autorizado' });
     }
     
-    // Adicionar o usuário à requisição
-    console.log('Usuário autenticado com sucesso:', user.email);
-    console.log('Dados de metadados do usuário:', JSON.stringify(user.user_metadata, null, 2));
+    // Adicionar o usuário à requisição (evitar logar dados sensíveis)
     req.user = user;
     next();
   } catch (error) {
-    console.error('Erro no middleware de autenticação:', error);
+    console.error('Erro no middleware de autenticação');
     
     if (process.env.NODE_ENV !== 'production') {
-      console.log('Permitindo acesso temporário após erro de autenticação');
       req.user = { 
         id: 'temp-user-after-exception', 
         email: 'temp-exception@example.com',
@@ -98,19 +87,17 @@ export const requireAdmin = async (req, res, next) => {
   try {
     // Verificar se o usuário existe na requisição (deve ser chamado após requireAuth)
     if (!req.user) {
-      console.log('Usuário não encontrado na requisição');
       return res.status(401).json({ error: 'Não autorizado' });
     }
     
     // Verificar se o usuário é administrador
     if (req.user.user_metadata?.status !== 'ADMIN') {
-      console.log('Usuário não é administrador:', req.user.id);
       return res.status(403).json({ error: 'Acesso negado' });
     }
     
     next();
   } catch (error) {
-    console.error('Erro no middleware de verificação de admin:', error);
+    console.error('Erro no middleware de verificação de admin');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 };
@@ -122,16 +109,11 @@ export const requireAdmin = async (req, res, next) => {
  */
 export const verifyAuth = async (req) => {
   try {
-    console.log('Iniciando verificação de autenticação');
-    
     // Verificar se o token de autenticação está presente
     const authHeader = req.headers.authorization;
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log('Token de autenticação ausente ou inválido');
-      
       if (process.env.NODE_ENV !== 'production') {
-        console.log('Ambiente de desenvolvimento: permitindo acesso sem autenticação');
         return { 
           authenticated: true, 
           user: { 
@@ -154,10 +136,7 @@ export const verifyAuth = async (req) => {
     const { data: { user }, error } = await supabase.auth.getUser(token);
     
     if (error || !user) {
-      console.log('Erro ao verificar token:', error);
-      
       if (process.env.NODE_ENV !== 'production') {
-        console.log('Permitindo acesso temporário após erro de token');
         return { 
           authenticated: true, 
           user: { 
@@ -175,14 +154,11 @@ export const verifyAuth = async (req) => {
     }
     
     // Retornar o resultado da autenticação
-    console.log('Usuário autenticado com sucesso:', user.email);
-    console.log('Dados de metadados do usuário:', JSON.stringify(user.user_metadata, null, 2));
     return { authenticated: true, user };
   } catch (error) {
-    console.error('Erro na verificação de autenticação:', error);
+    console.error('Erro na verificação de autenticação');
     
     if (process.env.NODE_ENV !== 'production') {
-      console.log('Permitindo acesso temporário após erro de autenticação');
       return { 
         authenticated: true, 
         user: { 

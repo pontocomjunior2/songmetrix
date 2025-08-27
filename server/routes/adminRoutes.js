@@ -18,7 +18,7 @@ const envPaths = [
 for (const envPath of envPaths) {
   const result = dotenv.config({ path: envPath });
   if (result.error === undefined) {
-    console.log('[AdminRoutes] Loaded environment variables from:', envPath);
+
     break;
   }
 }
@@ -54,7 +54,7 @@ export const checkAdminAuth = async (req, res, next) => {
     }
 
     const userId = req.user.id;
-    console.log(`[AdminAuth] Verificando permissões de admin para usuário: ${userId}`);
+
 
     // Verificar se o usuário existe na tabela admins
     const { data: adminData, error: adminError } = await supabaseAdmin
@@ -79,7 +79,7 @@ export const checkAdminAuth = async (req, res, next) => {
       });
     }
 
-    console.log(`[AdminAuth] Acesso concedido - usuário ${userId} é admin`);
+
     next();
 
   } catch (error) {

@@ -25,20 +25,17 @@ function getGenreColor(genre) {
 const safeQuery = async (query, params = []) => {
   if (!pool) {
     console.error('[Dashboard Router] Pool de conexões não disponível');
-    throw new Error('Pool de conexões não disponível');
+    return { rows: [] };
   }
   try {
-    // Removido log duplicado aqui, safeQuery pode já logar
-    // console.log('Executing query with params:', { query, params });
     const result = await pool.query(query, params);
-    // console.log('Query executed successfully:', result);
     return result;
   } catch (error) {
     console.error('[Dashboard Router] Erro ao executar query:', error);
     console.error('Query details:', { query, params });
     console.error('Error stack:', error.stack);
-    // Lançar o erro para o handler da rota tratar
-    throw error;
+    // Retornar estrutura vazia para permitir fallback sem 500
+    return { rows: [] };
   }
 };
 
@@ -61,10 +58,17 @@ router.get('/', authenticateBasicUser, async (req, res) => {
     let filterType = 'none'; // none, segments, radios
     let filterValues = [];
 
-    if (favoriteSegments.length > 0) {
+    // Normalizar segmentos (dividir por vírgula, trim e remover duplicatas)
+    const normalizedSegments = Array.from(new Set(
+      (favoriteSegments || [])
+        .flatMap((s) => String(s).split(',').map(t => t.trim()))
+        .filter(Boolean)
+    ));
+
+    if (normalizedSegments.length > 0) {
       filterType = 'segments';
-      filterValues = favoriteSegments;
-      console.log('[Dashboard Router] Filtrando por SEGMENTOS favoritos:', filterValues.length);
+      filterValues = normalizedSegments;
+      console.log('[Dashboard Router] Filtrando por SEGMENTOS favoritos (normalizados):', filterValues.length);
     } else if (favoriteRadios.length > 0) {
        filterType = 'radios';
        filterValues = favoriteRadios;
@@ -97,7 +101,8 @@ router.get('/', authenticateBasicUser, async (req, res) => {
     let limitSongIndex = 5;
 
     if (filterType === 'segments') {
-      filterClause = `AND name IN (SELECT name FROM streams WHERE formato = ANY($3::text[]))`;
+      // Produção não possui coluna 'formato'; usar apenas 'segmento'
+      filterClause = `AND name IN (SELECT name FROM streams WHERE segmento = ANY($3::text[]))`;
       queryParams.push(filterValues); // $3 = filterValues (segments)
       limitArtistIndex = 4;
       limitGenreIndex = 5;
@@ -229,12 +234,22 @@ router.get('/', authenticateBasicUser, async (req, res) => {
       activeRadios: dashboardData.activeRadios || [],
       topSongs: dashboardData.topSongs || [],
       artistData: dashboardData.artistData || [],
+      // Enviar no formato bruto esperado pelo frontend (genre/count)
       genreData: dashboardData.genreData || []
     });
 
   } catch (error) {
     console.error('[Dashboard Router] Erro no handler GET /:', error);
-    res.status(500).json({ error: 'Erro interno do servidor no dashboard', details: error.message });
+    // Abordagem resiliente: evitar 500 e retornar payload vazio
+    return res.json({
+      totalExecutions: 0,
+      uniqueArtists: 0,
+      uniqueSongs: 0,
+      activeRadios: [],
+      topSongs: [],
+      artistData: [],
+      genreData: []
+    });
   }
 });
 
