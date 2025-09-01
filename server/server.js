@@ -48,7 +48,7 @@ import { authenticateBasicUser, authenticateUser } from './auth-middleware.js';
 import { createClient } from '@supabase/supabase-js';
 import { reportQuery } from './report-query.js';
 import registerRoutes from './index.js';
-import { pool } from './db.js';
+import { pool } from './db-optimized.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
