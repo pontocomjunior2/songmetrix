@@ -1,0 +1,177 @@
+{
+  "budgets": [
+    {
+      "path": "/*",
+      "timings": [
+        {
+          "metric": "first-contentful-paint",
+          "budget": 2000,
+          "tolerance": 200
+        },
+        {
+          "metric": "largest-contentful-paint",
+          "budget": 3000,
+          "tolerance": 500
+        },
+        {
+          "metric": "speed-index",
+          "budget": 4000,
+          "tolerance": 500
+        },
+        {
+          "metric": "interactive",
+          "budget": 5000,
+          "tolerance": 1000
+        },
+        {
+          "metric": "total-blocking-time",
+          "budget": 300,
+          "tolerance": 100
+        }
+      ],
+      "resourceSizes": [
+        {
+          "resourceType": "script",
+          "budget": 500000,
+          "tolerance": 100000
+        },
+        {
+          "resourceType": "stylesheet",
+          "budget": 100000,
+          "tolerance": 20000
+        },
+        {
+          "resourceType": "image",
+          "budget": 1000000,
+          "tolerance": 200000
+        },
+        {
+          "resourceType": "font",
+          "budget": 200000,
+          "tolerance": 50000
+        },
+        {
+          "resourceType": "total",
+          "budget": 2000000,
+          "tolerance": 400000
+        }
+      ],
+      "resourceCounts": [
+        {
+          "resourceType": "script",
+          "budget": 20,
+          "tolerance": 5
+        },
+        {
+          "resourceType": "stylesheet",
+          "budget": 10,
+          "tolerance": 2
+        },
+        {
+          "resourceType": "image",
+          "budget": 50,
+          "tolerance": 10
+        },
+        {
+          "resourceType": "font",
+          "budget": 5,
+          "tolerance": 1
+        },
+        {
+          "resourceType": "third-party",
+          "budget": 10,
+          "tolerance": 3
+        }
+      ]
+    },
+    {
+      "path": "/dashboard",
+      "timings": [
+        {
+          "metric": "first-contentful-paint",
+          "budget": 1800,
+          "tolerance": 200
+        },
+        {
+          "metric": "largest-contentful-paint",
+          "budget": 2500,
+          "tolerance": 300
+        },
+        {
+          "metric": "speed-index",
+          "budget": 3500,
+          "tolerance": 500
+        },
+        {
+          "metric": "interactive",
+          "budget": 4000,
+          "tolerance": 500
+        }
+      ]
+    },
+    {
+      "path": "/login",
+      "timings": [
+        {
+          "metric": "first-contentful-paint",
+          "budget": 1500,
+          "tolerance": 200
+        },
+        {
+          "metric": "largest-contentful-paint",
+          "budget": 2000,
+          "tolerance": 300
+        },
+        {
+          "metric": "interactive",
+          "budget": 3000,
+          "tolerance": 500
+        }
+      ]
+    }
+  ],
+  "categories": {
+    "performance": {
+      "budget": 70,
+      "tolerance": 10
+    },
+    "accessibility": {
+      "budget": 90,
+      "tolerance": 5
+    },
+    "best-practices": {
+      "budget": 80,
+      "tolerance": 10
+    },
+    "seo": {
+      "budget": 80,
+      "tolerance": 10
+    }
+  },
+  "audits": {
+    "cumulative-layout-shift": {
+      "budget": 0.1,
+      "tolerance": 0.05
+    },
+    "unused-javascript": {
+      "budget": 100000,
+      "tolerance": 50000
+    },
+    "unused-css-rules": {
+      "budget": 50000,
+      "tolerance": 20000
+    },
+    "render-blocking-resources": {
+      "budget": 500,
+      "tolerance": 200
+    },
+    "uses-optimized-images": {
+      "budget": 1,
+      "tolerance": 0
+    },
+    "uses-webp-images": {
+      "budget": 1,
+      "tolerance": 0
+    }
+  }
+}

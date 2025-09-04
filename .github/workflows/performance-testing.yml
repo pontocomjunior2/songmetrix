@@ -1,0 +1,331 @@
+name: Performance Testing
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run performance tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+    # Run performance monitoring every 4 hours
+    - cron: '0 */4 * * *'
+
+jobs:
+  performance-test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: |
+        npm ci
+        
+    - name: Build application
+      run: |
+        npm run build
+        
+    - name: Install Lighthouse CI
+      run: |
+        npm install -g @lhci/cli@0.12.x
+        
+    - name: Run Lighthouse CI
+      run: |
+        lhci autorun
+      env:
+        LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+        
+    - name: Upload Lighthouse results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: lighthouse-results
+        path: lighthouse-results/
+        retention-days: 30
+        
+    - name: Comment PR with results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          
+          // Read Lighthouse results
+          const resultsDir = './lighthouse-results';
+          if (fs.existsSync(resultsDir)) {
+            const files = fs.readdirSync(resultsDir);
+            const reportFiles = files.filter(f => f.endsWith('.json'));
+            
+            if (reportFiles.length > 0) {
+              let comment = '## 🚀 Performance Test Results\n\n';
+              
+              reportFiles.forEach(file => {
+                const reportPath = path.join(resultsDir, file);
+                const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+                
+                const url = report.finalUrl || report.requestedUrl;
+                const scores = report.categories;
+                
+                comment += `### ${url}\n`;
+                comment += `- **Performance**: ${Math.round(scores.performance.score * 100)}/100\n`;
+                comment += `- **Accessibility**: ${Math.round(scores.accessibility.score * 100)}/100\n`;
+                comment += `- **Best Practices**: ${Math.round(scores['best-practices'].score * 100)}/100\n`;
+                comment += `- **SEO**: ${Math.round(scores.seo.score * 100)}/100\n\n`;
+                
+                // Add Core Web Vitals
+                const audits = report.audits;
+                if (audits['largest-contentful-paint']) {
+                  comment += `**Core Web Vitals:**\n`;
+                  comment += `- LCP: ${Math.round(audits['largest-contentful-paint'].numericValue)}ms\n`;
+                  comment += `- FID: ${audits['max-potential-fid'] ? Math.round(audits['max-potential-fid'].numericValue) : 'N/A'}ms\n`;
+                  comment += `- CLS: ${audits['cumulative-layout-shift'] ? audits['cumulative-layout-shift'].numericValue.toFixed(3) : 'N/A'}\n\n`;
+                }
+              });
+              
+              // Post comment
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            }
+          }
+          
+    - name: Fail on performance regression
+      run: |
+        # Check if any performance scores are below thresholds
+        node -e "
+          const fs = require('fs');
+          const path = require('path');
+          
+          const resultsDir = './lighthouse-results';
+          if (!fs.existsSync(resultsDir)) {
+            console.log('No results directory found');
+            process.exit(0);
+          }
+          
+          const files = fs.readdirSync(resultsDir);
+          const reportFiles = files.filter(f => f.endsWith('.json'));
+          
+          let hasFailures = false;
+          
+          reportFiles.forEach(file => {
+            const reportPath = path.join(resultsDir, file);
+            const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+            
+            const perfScore = report.categories.performance.score * 100;
+            const accessScore = report.categories.accessibility.score * 100;
+            
+            if (perfScore < 70) {
+              console.error(\`Performance score too low: \${perfScore} < 70 for \${report.finalUrl}\`);
+              hasFailures = true;
+            }
+            
+            if (accessScore < 90) {
+              console.error(\`Accessibility score too low: \${accessScore} < 90 for \${report.finalUrl}\`);
+              hasFailures = true;
+            }
+          });
+          
+          if (hasFailures) {
+            process.exit(1);
+          }
+        "
+
+  performance-monitoring:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18.x'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run performance monitoring
+      run: |
+        # Run extended performance monitoring for scheduled runs
+        npm run perf:test:ci
+        
+    - name: Send Slack notification on failure
+      if: failure()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: failure
+        text: 'Performance monitoring detected regressions in production'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        
+    - name: Archive performance trends
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-trends-${{ github.run_number }}
+        path: lighthouse-results/
+        retention-days: 90
+
+  continuous-monitoring:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' && contains(github.event.schedule, '*/4')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18.x'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run comprehensive performance tests
+      run: |
+        npm run perf:comprehensive -- --suite dashboard
+        
+    - name: Run performance validation
+      run: |
+        npm run perf:validate -- --version ${{ github.sha }}
+        
+    - name: Check for performance regressions
+      run: |
+        # Check if baseline exists and run regression test
+        if [ -f "performance-baseline.json" ]; then
+          npm run perf:regression-test -- --baseline $(cat performance-baseline.json | jq -r '.id') --version ${{ github.sha }}
+        else
+          echo "No baseline found, skipping regression test"
+        fi
+        
+    - name: Upload performance results
+      uses: actions/upload-artifact@v3
+      with:
+        name: continuous-monitoring-${{ github.run_number }}
+        path: |
+          lighthouse-results/
+          performance-results/
+        retention-days: 30
+        
+    - name: Send performance alert on regression
+      if: failure()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: failure
+        text: |
+          🚨 Performance Regression Detected!
+          
+          Commit: ${{ github.sha }}
+          Branch: ${{ github.ref }}
+          
+          Check the performance results for details.
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  regression-detection:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18.x'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Build application
+      run: npm run build
+      
+    - name: Download previous baseline
+      uses: actions/download-artifact@v3
+      with:
+        name: performance-baseline
+        path: ./baseline/
+      continue-on-error: true
+      
+    - name: Run regression test
+      run: |
+        if [ -f "./baseline/baseline.json" ]; then
+          BASELINE_ID=$(cat ./baseline/baseline.json | jq -r '.id')
+          npm run perf:regression-test -- --baseline $BASELINE_ID --version ${{ github.sha }}
+        else
+          echo "Creating new baseline for main branch"
+          npm run perf:baseline -- --name "Main Branch Baseline" --version ${{ github.sha }}
+          mkdir -p ./baseline
+          npm run perf:export-baseline > ./baseline/baseline.json
+        fi
+        
+    - name: Upload baseline
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-baseline
+        path: ./baseline/
+        retention-days: 365
+        
+    - name: Comment PR with regression results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          
+          // Read regression test results
+          if (fs.existsSync('./regression-results.json')) {
+            const results = JSON.parse(fs.readFileSync('./regression-results.json', 'utf8'));
+            
+            let comment = '## 📈 Performance Regression Test Results\n\n';
+            comment += `**Overall Status:** ${results.overallStatus === 'pass' ? '✅ PASS' : results.overallStatus === 'warning' ? '⚠️ WARNING' : '❌ FAIL'}\n\n`;
+            
+            if (results.regressions.length > 0) {
+              comment += '### 🔴 Performance Regressions\n';
+              results.regressions.forEach(regression => {
+                comment += `- **${regression.metric}**: ${regression.change.toFixed(2)}% increase (${regression.baseline} → ${regression.current})\n`;
+              });
+              comment += '\n';
+            }
+            
+            if (results.improvements.length > 0) {
+              comment += '### 🟢 Performance Improvements\n';
+              results.improvements.forEach(improvement => {
+                comment += `- **${improvement.metric}**: ${improvement.improvement.toFixed(2)}% improvement\n`;
+              });
+              comment += '\n';
+            }
+            
+            comment += `### 📊 Summary\n`;
+            comment += `- **Performance Change:** ${results.summary.overallPerformanceChange > 0 ? '+' : ''}${results.summary.overallPerformanceChange.toFixed(2)}%\n`;
+            comment += `- **Recommendation:** ${results.summary.recommendation}\n`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+          }
