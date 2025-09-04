@@ -220,16 +220,22 @@ export const PerformanceAlerts: React.FC<PerformanceAlertsProps> = ({
   );
 };
 
-// Compact alert indicator for minimal UI impact
+// Compact alert indicator for minimal UI impact - DEV MODE ONLY
 export const PerformanceAlertIndicator: React.FC = () => {
+  // Only show in development mode
+  const isDevelopment = import.meta.env.DEV;
+
   const [alertCount, setAlertCount] = useState(0);
   const [highestSeverity, setHighestSeverity] = useState<string>('');
 
   useEffect(() => {
+    // Skip if not in development mode
+    if (!isDevelopment) return;
+
     const updateAlerts = () => {
       const activeAlerts = performanceAlertsService.getActiveAlerts();
       setAlertCount(activeAlerts.length);
-      
+
       if (activeAlerts.length > 0) {
         const severityOrder = ['critical', 'high', 'medium', 'low'];
         const highest = activeAlerts.reduce((prev, current) => {
@@ -247,9 +253,10 @@ export const PerformanceAlertIndicator: React.FC = () => {
     const unsubscribe = performanceAlertsService.subscribe(updateAlerts);
 
     return unsubscribe;
-  }, []);
+  }, [isDevelopment]);
 
-  if (alertCount === 0) return null;
+  // Don't render anything in production
+  if (!isDevelopment || alertCount === 0) return null;
 
   const getIndicatorColor = (): string => {
     switch (highestSeverity) {
