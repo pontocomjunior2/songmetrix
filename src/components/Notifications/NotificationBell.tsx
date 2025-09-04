@@ -1,11 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Bell, X, Circle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { supabase } from '../../lib/supabase-client';
 import type { Tables } from '../../types/database.types.generated';
@@ -31,7 +26,7 @@ function mapSupabaseNotification(dbNotification: Tables<'notifications'>): Notif
         scheduled_at: dbNotification.scheduled_at,
         sent_at: dbNotification.sent_at,
         target_audience: dbNotification.target_audience,
-        is_read: dbNotification.is_read,
+        is_read: false, // Default to unread since the column might not exist
     };
 }
 
@@ -115,64 +110,82 @@ export default function NotificationBell() {
 
   }, [currentUser, notifications, unreadCount]);
 
-  const handleOpenChange = (open: boolean) => {
-    setIsOpen(open);
-    if (open) {
-      markAsRead(); 
+  const toggleNotifications = () => {
+    console.log("[NotificationBell] Toggle clicked, current isOpen:", isOpen);
+    const newState = !isOpen;
+    console.log("[NotificationBell] Setting isOpen to:", newState);
+    setIsOpen(newState);
+    if (newState) {
+      markAsRead();
     }
   };
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (isOpen && !target.closest('.notification-dropdown')) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
   return (
-    <Popover open={isOpen} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative rounded-full text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-          aria-label="Notificações"
-        >
-          <Bell className="h-5 w-5" />
-          {unreadCount > 0 && (
-            <span className="absolute top-0 right-0 block h-2.5 w-2.5 transform translate-x-1/2 -translate-y-1/2 rounded-full bg-red-500 ring-2 ring-white dark:ring-gray-800" />
-          )}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-80 mr-4 mt-2 p-0">
-        <div className="p-4">
-          <h4 className="text-sm font-medium leading-none">Notificações</h4>
-        </div>
-        <Separator />
-        {loading ? (
-            <p className="p-4 text-sm text-center text-gray-500">Carregando...</p>
-        ) : error ? (
-            <p className="p-4 text-sm text-center text-red-500">{error}</p>
-        ) : notifications.length > 0 ? (
-          <div className="max-h-96 overflow-y-auto">
-            {notifications.map((notification) => (
-              <div
-                key={notification.id}
-                className={`p-4 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 ${
-                  !notification.is_read ? 'font-semibold text-foreground' : 'text-muted-foreground'
-                }`}
-              >
-                {notification.title && <p className="mb-0.5 font-medium">{notification.title}</p>}
-                <p className="mb-1">{notification.message}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {new Date(notification.created_at).toLocaleString('pt-BR')}
-                </p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="p-4 text-sm text-center text-gray-500">Nenhuma notificação nova.</p>
+    <div className="relative notification-dropdown">
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={toggleNotifications}
+        className="relative rounded-full text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+        aria-label="Notificações"
+      >
+        <Bell className="h-5 w-5" />
+        {unreadCount > 0 && (
+          <span className="absolute top-0 right-0 block h-2.5 w-2.5 transform translate-x-1/2 -translate-y-1/2 rounded-full bg-red-500 ring-2 ring-white dark:ring-gray-800" />
         )}
-         <Separator />
-         <div className="p-2 text-center">
-           <Button variant="link" size="sm" className="text-xs">
-             Ver todas as notificações {/* TODO: Link para página de notificações se houver */}
-           </Button>
-         </div>
-      </PopoverContent>
-    </Popover>
+      </Button>
+
+      {isOpen && (
+        <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50">
+          <div className="p-4">
+            <h4 className="text-sm font-medium leading-none">Notificações</h4>
+          </div>
+          <Separator />
+          {loading ? (
+              <p className="p-4 text-sm text-center text-gray-500">Carregando...</p>
+          ) : error ? (
+              <p className="p-4 text-sm text-center text-red-500">{error}</p>
+          ) : notifications.length > 0 ? (
+            <div className="max-h-96 overflow-y-auto">
+              {notifications.map((notification) => (
+                <div
+                  key={notification.id}
+                  className={`p-4 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 ${
+                    !notification.is_read ? 'font-semibold text-foreground' : 'text-muted-foreground'
+                  }`}
+                >
+                  {notification.title && <p className="mb-0.5 font-medium">{notification.title}</p>}
+                  <p className="mb-1">{notification.message}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {new Date(notification.created_at).toLocaleString('pt-BR')}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="p-4 text-sm text-center text-gray-500">Nenhuma notificação nova.</p>
+          )}
+            <Separator />
+            <div className="p-2 text-center">
+              <Button variant="link" size="sm" className="text-xs">
+                Ver todas as notificações {/* TODO: Link para página de notificações se houver */}
+              </Button>
+            </div>
+        </div>
+      )}
+    </div>
   );
 } 
