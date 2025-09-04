@@ -4,9 +4,16 @@ import supabaseAdmin from '../supabase-admin.js';
 import pkg from 'pg';
 import { format } from 'date-fns';
 import { pool } from '../db.js';
+import { createCacheMiddleware } from '../middleware/cache-middleware.js';
 const { Pool } = pkg;
 
 const router = express.Router();
+
+// Create cache middleware for dashboard routes
+const dashboardCache = createCacheMiddleware({
+  enabled: true,
+  ttl: 300000 // 5 minutes
+});
 
 // Função auxiliar para atribuir cores aos gêneros (movida para cá)
 function getGenreColor(genre) {
@@ -40,7 +47,7 @@ const safeQuery = async (query, params = []) => {
 };
 
 // Rota principal do dashboard (agora é a raiz '/' do router montado em /api/dashboard)
-router.get('/', authenticateBasicUser, async (req, res) => {
+router.get('/', authenticateBasicUser, dashboardCache, async (req, res) => {
   console.log('*** [Dashboard Router] Rota / ACESSADA ***');
   try {
     const endDate = new Date();
@@ -311,6 +318,266 @@ router.get('/complete', authenticateBasicUser, async (req, res) => {
     res.status(500).json({
       error: 'Erro ao carregar dados do dashboard',
       details: error.message
+    });
+  }
+});
+
+// Progressive loading endpoints
+
+// Essential data endpoint - user info, basic metrics, active radios
+router.get('/essential', authenticateBasicUser, dashboardCache, async (req, res) => {
+  console.log('*** [Dashboard Router] Rota /essential ACESSADA ***');
+  try {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 7);
+
+    // Get user preferences
+    const userMetadata = req.user?.user_metadata || {};
+    const favoriteSegments = userMetadata.favorite_segments || [];
+    const favoriteRadios = userMetadata.favorite_radios || [];
+
+    // Determine filter
+    let filterClause = '';
+    let queryParams = [
+      format(startDate, 'yyyy-MM-dd'),
+      format(endDate, 'yyyy-MM-dd')
+    ];
+
+    const normalizedSegments = Array.from(new Set(
+      (favoriteSegments || [])
+        .flatMap((s) => String(s).split(',').map(t => t.trim()))
+        .filter(Boolean)
+    ));
+
+    if (normalizedSegments.length > 0) {
+      filterClause = `AND name IN (SELECT name FROM streams WHERE segmento = ANY($3::text[]))`;
+      queryParams.push(normalizedSegments);
+    } else if (favoriteRadios.length > 0) {
+      filterClause = `AND name = ANY($3::text[])`;
+      queryParams.push(favoriteRadios);
+    }
+
+    const query = `
+      WITH adjusted_dates AS (
+        SELECT
+          artist,
+          song_title,
+          name,
+          (date + INTERVAL '3 hours')::date as adjusted_date
+        FROM music_log
+        WHERE (date + INTERVAL '3 hours')::date BETWEEN $1 AND $2
+          ${filterClause}
+      ),
+      radio_status AS (
+        SELECT DISTINCT
+          name,
+          true as is_online
+        FROM adjusted_dates
+      ),
+      total_stats AS (
+        SELECT
+          COUNT(*) as total_executions,
+          COUNT(DISTINCT artist) as unique_artists,
+          COUNT(DISTINCT song_title) as unique_songs
+        FROM adjusted_dates
+      )
+      SELECT
+        json_build_object(
+          'totalExecutions', (SELECT total_executions FROM total_stats),
+          'uniqueArtists', (SELECT unique_artists FROM total_stats),
+          'uniqueSongs', (SELECT unique_songs FROM total_stats),
+          'activeRadios', (SELECT json_agg(radio_status.*) FROM radio_status WHERE radio_status.name IS NOT NULL)
+        ) as essential_data
+    `;
+
+    const result = await safeQuery(query, queryParams);
+    const essentialData = result.rows[0]?.essential_data || {
+      totalExecutions: 0,
+      uniqueArtists: 0,
+      uniqueSongs: 0,
+      activeRadios: []
+    };
+
+    res.json(essentialData);
+
+  } catch (error) {
+    console.error('[Dashboard Router] Erro no handler GET /essential:', error);
+    res.json({
+      totalExecutions: 0,
+      uniqueArtists: 0,
+      uniqueSongs: 0,
+      activeRadios: []
+    });
+  }
+});
+
+// Secondary data endpoint - top songs and artists
+router.get('/secondary', authenticateBasicUser, dashboardCache, async (req, res) => {
+  console.log('*** [Dashboard Router] Rota /secondary ACESSADA ***');
+  try {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 7);
+
+    // Get user preferences
+    const userMetadata = req.user?.user_metadata || {};
+    const favoriteSegments = userMetadata.favorite_segments || [];
+    const favoriteRadios = userMetadata.favorite_radios || [];
+
+    // Get limits from query
+    const limitSongs = parseInt(req.query.limit_songs) || 5;
+    const limitArtists = parseInt(req.query.limit_artists) || 5;
+
+    // Determine filter
+    let filterClause = '';
+    let queryParams = [
+      format(startDate, 'yyyy-MM-dd'),
+      format(endDate, 'yyyy-MM-dd')
+    ];
+
+    const normalizedSegments = Array.from(new Set(
+      (favoriteSegments || [])
+        .flatMap((s) => String(s).split(',').map(t => t.trim()))
+        .filter(Boolean)
+    ));
+
+    if (normalizedSegments.length > 0) {
+      filterClause = `AND name IN (SELECT name FROM streams WHERE segmento = ANY($3::text[]))`;
+      queryParams.push(normalizedSegments);
+    } else if (favoriteRadios.length > 0) {
+      filterClause = `AND name = ANY($3::text[])`;
+      queryParams.push(favoriteRadios);
+    }
+
+    const query = `
+      WITH adjusted_dates AS (
+        SELECT
+          artist,
+          song_title,
+          name,
+          (date + INTERVAL '3 hours')::date as adjusted_date
+        FROM music_log
+        WHERE (date + INTERVAL '3 hours')::date BETWEEN $1 AND $2
+          ${filterClause}
+      ),
+      artist_counts AS (
+        SELECT
+          artist,
+          COUNT(*) as executions
+        FROM adjusted_dates
+        GROUP BY artist
+        ORDER BY executions DESC
+        LIMIT ${limitArtists}
+      ),
+      song_counts AS (
+        SELECT 
+          song_title,
+          artist,
+          COUNT(*) as executions
+        FROM adjusted_dates
+        GROUP BY song_title, artist
+        ORDER BY executions DESC
+        LIMIT ${limitSongs}
+      )
+      SELECT
+        json_build_object(
+          'artistData', (SELECT json_agg(artist_counts.*) FROM artist_counts WHERE artist_counts.artist IS NOT NULL),
+          'topSongs', (SELECT json_agg(song_counts.*) FROM song_counts WHERE song_counts.song_title IS NOT NULL)
+        ) as secondary_data
+    `;
+
+    const result = await safeQuery(query, queryParams);
+    const secondaryData = result.rows[0]?.secondary_data || {
+      artistData: [],
+      topSongs: []
+    };
+
+    res.json(secondaryData);
+
+  } catch (error) {
+    console.error('[Dashboard Router] Erro no handler GET /secondary:', error);
+    res.json({
+      artistData: [],
+      topSongs: []
+    });
+  }
+});
+
+// Optional data endpoint - genre distribution
+router.get('/optional', authenticateBasicUser, async (req, res) => {
+  console.log('*** [Dashboard Router] Rota /optional ACESSADA ***');
+  try {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 7);
+
+    // Get user preferences
+    const userMetadata = req.user?.user_metadata || {};
+    const favoriteSegments = userMetadata.favorite_segments || [];
+    const favoriteRadios = userMetadata.favorite_radios || [];
+
+    // Get limits from query
+    const limitGenres = parseInt(req.query.limit_genres) || 5;
+
+    // Determine filter
+    let filterClause = '';
+    let queryParams = [
+      format(startDate, 'yyyy-MM-dd'),
+      format(endDate, 'yyyy-MM-dd')
+    ];
+
+    const normalizedSegments = Array.from(new Set(
+      (favoriteSegments || [])
+        .flatMap((s) => String(s).split(',').map(t => t.trim()))
+        .filter(Boolean)
+    ));
+
+    if (normalizedSegments.length > 0) {
+      filterClause = `AND name IN (SELECT name FROM streams WHERE segmento = ANY($3::text[]))`;
+      queryParams.push(normalizedSegments);
+    } else if (favoriteRadios.length > 0) {
+      filterClause = `AND name = ANY($3::text[])`;
+      queryParams.push(favoriteRadios);
+    }
+
+    const query = `
+      WITH adjusted_dates AS (
+        SELECT
+          genre,
+          (date + INTERVAL '3 hours')::date as adjusted_date
+        FROM music_log
+        WHERE (date + INTERVAL '3 hours')::date BETWEEN $1 AND $2
+          ${filterClause}
+      ),
+      genre_counts AS (
+        SELECT
+          genre,
+          COUNT(*) as count
+        FROM adjusted_dates
+        WHERE genre IS NOT NULL AND genre <> ''
+        GROUP BY genre
+        HAVING COUNT(*) > 0
+        ORDER BY count DESC
+        LIMIT ${limitGenres}
+      )
+      SELECT
+        json_build_object(
+          'genreData', (SELECT json_agg(genre_counts.*) FROM genre_counts WHERE genre_counts.genre IS NOT NULL)
+        ) as optional_data
+    `;
+
+    const result = await safeQuery(query, queryParams);
+    const optionalData = result.rows[0]?.optional_data || {
+      genreData: []
+    };
+
+    res.json(optionalData);
+
+  } catch (error) {
+    console.error('[Dashboard Router] Erro no handler GET /optional:', error);
+    res.json({
+      genreData: []
     });
   }
 });

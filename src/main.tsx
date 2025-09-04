@@ -5,6 +5,11 @@ import './index.css';
 import './components/ui/styles.css';
 import { AuthProvider } from './contexts/AuthContext';
 import { BrowserRouter } from 'react-router-dom';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { queryClient } from './lib/queryClient';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { setupWebVitalsReporting } from './lib/performance';
 
 // --- INÍCIO: Lógica de Inicialização do Meta Pixel ---
 
@@ -53,6 +58,9 @@ if (metaPixelId) {
 
 // --- FIM: Lógica de Inicialização do Meta Pixel ---
 
+// Setup performance monitoring
+setupWebVitalsReporting();
+
 // Carrega o tema salvo ou o tema do sistema
 const savedTheme = localStorage.getItem('theme');
 if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
@@ -64,10 +72,18 @@ if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-s
 // Renderizar sem React.StrictMode para teste
 ReactDOM.createRoot(document.getElementById('root')!).render(
   // <React.StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </BrowserRouter>
+        {/* React Query DevTools - only in development */}
+        {process.env.NODE_ENV === 'development' && (
+          <ReactQueryDevtools initialIsOpen={false} />
+        )}
+      </QueryClientProvider>
+    </ErrorBoundary>
   // </React.StrictMode>
 );

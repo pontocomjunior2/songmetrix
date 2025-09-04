@@ -3,6 +3,7 @@ import express from 'express';
 import streamsRoutes from './routes/streams.js';
 import uploadsRoutes from './routes/uploads.js';
 import dashboardRoutes from './routes/dashboard.js';
+import dashboardBatchRoutes from './routes/dashboard-batch.js';
 import executionsRoutes from './routes/executions.js';
 import radiosRoutes from './routes/radios.js';
 import relayStreamsRoutes from './routes/relay-streams.js';
@@ -45,6 +46,9 @@ export default function registerRoutes(app) {
   
   // Registrar as rotas do dashboard
   app.use('/api/dashboard', dashboardRoutes);
+  
+  // Registrar as rotas do dashboard batch
+  app.use('/api/dashboard-batch', dashboardBatchRoutes);
   
   // Registrar as rotas de execuções
   app.use('/api/executions', executionsRoutes);

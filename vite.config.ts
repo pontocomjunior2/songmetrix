@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import { visualizer } from 'rollup-plugin-visualizer';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -13,7 +14,18 @@ export default defineConfig(({ mode }) => {
   console.log('API Base URL:', env.VITE_API_BASE_URL || 'http://localhost:3001');
   
   return {
-    plugins: [react()],
+    plugins: [
+      react(),
+      // Bundle analyzer - only in production or when ANALYZE=true
+      ...(process.env.ANALYZE === 'true' || (isProduction && process.env.SKIP_ANALYZE !== 'true') ? [
+        visualizer({
+          filename: 'dist/bundle-analysis.html',
+          open: process.env.ANALYZE === 'true',
+          gzipSize: true,
+          brotliSize: true,
+        })
+      ] : [])
+    ],
     server: {
       port: 5173,
       proxy: {
@@ -42,18 +54,59 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       sourcemap: isProduction ? false : true,
-      rollupOptions: {
-        output: {
-          manualChunks: {
-            vendor: ['react', 'react-dom', 'react-router-dom'],
-            charts: ['recharts', 'chart.js', 'react-chartjs-2'],
-            ui: ['@chakra-ui/react', '@headlessui/react', 'lucide-react']
-          },
+      // Optimize build performance
+      target: 'esnext',
+      minify: 'terser',
+      terserOptions: {
+        compress: {
+          drop_console: isProduction,
+          drop_debugger: isProduction,
         },
       },
+      rollupOptions: {
+        output: {
+          // Disable manual chunks to use Vite's default safe configuration
+          // This prevents dependency issues between chunks
+          // manualChunks: (id) => { ... },
+          // Optimize chunk file names
+          chunkFileNames: (chunkInfo) => {
+            const facadeModuleId = chunkInfo.facadeModuleId ? chunkInfo.facadeModuleId.split('/').pop() : 'chunk';
+            return `js/[name]-[hash].js`;
+          },
+          entryFileNames: 'js/[name]-[hash].js',
+          assetFileNames: (assetInfo) => {
+            const info = assetInfo.name!.split('.');
+            const ext = info[info.length - 1];
+            if (/png|jpe?g|svg|gif|tiff|bmp|ico/i.test(ext)) {
+              return `images/[name]-[hash][extname]`;
+            }
+            if (/css/i.test(ext)) {
+              return `css/[name]-[hash][extname]`;
+            }
+            return `assets/[name]-[hash][extname]`;
+          },
+        },
+        // Optimize external dependencies
+        external: (id) => {
+          // Don't bundle these in development for faster builds
+          if (!isProduction && id.includes('node_modules')) {
+            return false;
+          }
+          return false;
+        },
+      },
+      // Chunk size warnings
+      chunkSizeWarningLimit: 1000,
     },
     optimizeDeps: {
-      include: ['@stripe/stripe-js'],
+      include: [
+        '@stripe/stripe-js',
+        '@tanstack/react-query',
+        'react-router-dom',
+        'web-vitals',
+      ],
+      // Force optimization of these packages
+      force: isProduction,
     },
     define: {
       // Não é necessário definir aqui, pois o Vite substitui automaticamente import.meta.env.VITE_*
