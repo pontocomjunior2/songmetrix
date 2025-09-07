@@ -155,9 +155,68 @@ const localStoragePersister = {
 
 // Query cache with enhanced error handling and logging
 const queryCache = new QueryCache({
-  onError: (error, query) => {
+  onError: (error: any, query) => {
     console.error(`Query failed for key: ${JSON.stringify(query.queryKey)}`, error);
-    
+
+    // Detectar e tratar erros específicos de rede
+    const isNetworkError = error?.message?.includes('ERR_BLOCKED_BY_CLIENT') ||
+                          error?.message?.includes('ERR_NETWORK') ||
+                          error?.message?.includes('Failed to fetch') ||
+                          error?.message?.includes('ERR_INTERNET_DISCONNECTED') ||
+                          error?.message?.includes('ERR_CONNECTION_REFUSED') ||
+                          error?.code === 'NETWORK_ERROR' ||
+                          error?.name === 'TypeError' && error?.message?.includes('fetch') ||
+                          !navigator.onLine;
+
+    // Detectar problemas relacionados ao Facebook Pixel
+    const isFacebookPixelError = error?.message?.includes('connect.facebook.net') ||
+                                error?.message?.includes('fbevents.js') ||
+                                window.metaPixelBlocked === true;
+
+    if (isNetworkError) {
+      console.warn('Erro de rede detectado - tentando recuperação automática');
+
+      // Invalidar queries relacionadas para forçar refetch
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: query.queryKey });
+      }, 2000);
+
+      // Tentar refetch após um atraso maior se estiver offline
+      if (!navigator.onLine) {
+        console.log('Dispositivo offline - aguardando reconexão');
+        window.addEventListener('online', () => {
+          console.log('Conexão restaurada - refetching queries');
+          queryClient.invalidateQueries({ queryKey: query.queryKey });
+        }, { once: true });
+      }
+    }
+
+    // Tratamento específico para erros do Facebook Pixel
+    if (isFacebookPixelError) {
+      console.warn('Erro relacionado ao Facebook Pixel detectado - não afetará funcionalidade principal');
+
+      // Marcar como bloqueado se ainda não estiver
+      if (!window.metaPixelBlocked) {
+        window.metaPixelBlocked = true;
+        console.log('Facebook Pixel marcado como bloqueado');
+      }
+
+      // Não invalidar queries para erros do Facebook Pixel
+      // Apenas logar e continuar normalmente
+      return;
+    }
+
+    // Detectar erros de autenticação
+    if (error?.status === 401 || error?.code === 'UNAUTHORIZED') {
+      console.warn('Erro de autenticação detectado - tentando renovar sessão');
+
+      // Invalidar queries de autenticação
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['essential'] });
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      }, 1000);
+    }
+
     // Log performance metrics for failed queries
     if (window.performance && window.performance.mark) {
       window.performance.mark(`query-error-${query.queryHash}`);

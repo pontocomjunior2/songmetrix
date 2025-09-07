@@ -19,55 +19,108 @@ export default function ResetPassword() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Listener para o evento de recuperação de senha
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        console.log('Evento PASSWORD_RECOVERY recebido, sessão:', session);
-        if (session) {
-          setIsValidSession(true);
-          setError(''); // Limpa erro de link inválido se houver
-        } else {
-          // Isso não deveria acontecer normalmente se o evento é PASSWORD_RECOVERY
-          setError('Link inválido ou expirado. Por favor, solicite a redefinição novamente.');
-          setIsValidSession(false);
+    let timeoutId: NodeJS.Timeout;
+
+    const checkPasswordRecovery = async () => {
+      try {
+        // Verificar se há parâmetros de recuperação na URL
+        const urlParams = new URLSearchParams(window.location.hash.substring(1));
+        const accessToken = urlParams.get('access_token');
+        const refreshToken = urlParams.get('refresh_token');
+        const type = urlParams.get('type');
+
+        // Se temos tokens de recuperação na URL, processar
+        if (accessToken && refreshToken && type === 'recovery') {
+          console.log('Tokens de recuperação encontrados na URL');
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          });
+
+          if (error) {
+            console.error('Erro ao definir sessão de recuperação:', error);
+            setError('Link inválido ou expirado. Por favor, solicite a redefinição novamente.');
+            setIsValidSession(false);
+          } else if (data.session) {
+            console.log('Sessão de recuperação estabelecida:', data.session);
+            setIsValidSession(true);
+            setError('');
+          }
+          setSessionChecked(true);
+          return;
         }
-        setSessionChecked(true);
-      } else if (event === 'SIGNED_IN' && sessionChecked) {
-        // Se já está logado de alguma forma e a checagem inicial passou
-        // Mantém o estado atual
-      } else if (!session && !sessionChecked) {
-         // Se não há sessão e a verificação inicial ainda não ocorreu
-         // Espera o evento PASSWORD_RECOVERY ou a verificação inicial
-         // Se após um tempo não vier, considerar inválido
-         setTimeout(() => {
-            if (!isValidSession && !sessionChecked) {
-                 setError('Link inválido ou expirado. Por favor, solicite a redefinição novamente.');
-                 setSessionChecked(true);
-                 setIsValidSession(false);
+
+        // Verificar sessão atual
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+        if (sessionError) {
+          console.error('Erro ao verificar sessão:', sessionError);
+          setError('Erro ao verificar o link. Tente novamente.');
+          setIsValidSession(false);
+          setSessionChecked(true);
+          return;
+        }
+
+        if (session) {
+          // Verificar se é uma sessão de recuperação válida
+          const isRecoverySession = session.user?.email_confirmed_at &&
+                                   session.user?.recovery_sent_at &&
+                                   new Date(session.user.recovery_sent_at) > new Date(Date.now() - 3600000); // 1 hora
+
+          if (isRecoverySession) {
+            setIsValidSession(true);
+            setError('');
+          } else {
+            setError('Esta sessão não é válida para redefinição de senha.');
+            setIsValidSession(false);
+          }
+        } else {
+          // Aguardar um pouco para ver se o evento PASSWORD_RECOVERY chega
+          timeoutId = setTimeout(() => {
+            if (!isValidSession) {
+              setError('Link inválido ou expirado. Por favor, solicite a redefinição novamente.');
+              setIsValidSession(false);
             }
-         }, 2000); // Espera 2 segundos pelo evento
+          }, 3000); // Aumentado para 3 segundos
+        }
+
+        setSessionChecked(true);
+      } catch (err) {
+        console.error('Erro inesperado na verificação:', err);
+        setError('Erro inesperado. Tente novamente.');
+        setIsValidSession(false);
+        setSessionChecked(true);
+      }
+    };
+
+    // Listener para mudanças de estado de autenticação
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Evento de auth:', event, session);
+
+      if (event === 'PASSWORD_RECOVERY' && session) {
+        setIsValidSession(true);
+        setError('');
+        setSessionChecked(true);
+        if (timeoutId) clearTimeout(timeoutId);
+      } else if (event === 'TOKEN_REFRESHED' && session) {
+        // Verificar se ainda é uma sessão válida de recuperação
+        const isRecoverySession = session.user?.recovery_sent_at &&
+                                 new Date(session.user.recovery_sent_at) > new Date(Date.now() - 3600000);
+        if (isRecoverySession) {
+          setIsValidSession(true);
+          setError('');
+        }
       }
     });
 
-    // Verificação inicial da sessão (caso o usuário atualize a página)
-    const checkInitialSession = async () => {
-        const { data: { session } } = await supabase.auth.getSession();
-        // A sessão aqui pode não ser a de PASSWORD_RECOVERY ainda
-        // O listener acima é mais confiável para o estado pós-clique no link
-        if (!session && !sessionChecked) {
-             // Se não há sessão inicial e o listener ainda não pegou o evento,
-             // aguarda um pouco pelo listener.
-        }
-        // Se tiver uma sessão aqui, o listener provavelmente já tratou ou tratará
-    };
+    checkPasswordRecovery();
 
-    checkInitialSession();
-
-    // Limpa o listener ao desmontar
+    // Limpa o listener e timeout ao desmontar
     return () => {
       authListener?.subscription?.unsubscribe();
+      if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [sessionChecked, isValidSession]); // Adicionado isValidSession para reavaliar se necessário
+  }, []); // Removidas dependências problemáticas
 
   const handlePasswordReset = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

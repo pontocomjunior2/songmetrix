@@ -130,14 +130,21 @@ export const safeQuery = async (query, params = [], options = {}) => {
       console.error(`[db-optimized.js] Erro na tentativa ${attempt + 1}/${retries}:`, {
         error: error.message,
         code: error.code,
-        query: query.substring(0, 100) + '...'
+        query: query.substring(0, 100) + '...',
+        poolHealth: checkPoolHealth()
       });
-      
+
+      // Verificar se é erro de pool encerrado
+      if (error.message.includes('Cannot use a pool after calling end on the pool')) {
+        console.error('[db-optimized.js] ERRO CRÍTICO: Pool foi encerrado! Verificar cleanupIdleConnections');
+        console.error('[db-optimized.js] Pool health no momento do erro:', checkPoolHealth());
+      }
+
       // Se for timeout, não tentar novamente
       if (error.message === 'Query timeout') {
         break;
       }
-      
+
       // Esperar antes de tentar novamente (backoff exponencial)
       if (attempt < retries - 1) {
         const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
@@ -197,12 +204,12 @@ export const cleanupIdleConnections = async () => {
   try {
     const health = checkPoolHealth();
     console.log('[db-optimized.js] Saúde do pool:', health);
-    
+
     // Se há muitas conexões inativas, forçar cleanup
     if (health.idle > health.total * 0.7) {
-      console.log('[db-optimized.js] Muitas conexões inativas, forçando cleanup...');
-      await pool.end();
-      console.log('[db-optimized.js] Pool encerrado para cleanup');
+      console.log('[db-optimized.js] Muitas conexões inativas detectadas, mas NÃO encerrando pool para evitar problemas de produção');
+      console.log('[db-optimized.js] Em vez disso, apenas logando estado do pool para monitoramento');
+      // REMOVIDO: await pool.end(); - Isso estava causando o problema
     }
   } catch (error) {
     console.error('[db-optimized.js] Erro no cleanup:', error);

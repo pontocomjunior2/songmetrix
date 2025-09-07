@@ -1,5 +1,6 @@
 import { QueryClient } from '@tanstack/react-query';
 import { queryKeys, cacheWarming, invalidateQueries } from '../lib/queryClient';
+import { supabase } from '../lib/supabase-client';
 
 /**
  * Cache Manager Service - Centralized cache management with intelligent strategies
@@ -201,26 +202,35 @@ export class CacheManager {
     priority?: 'high' | 'medium' | 'low';
   }) {
     const { type, userId, affectedData = [], priority = 'medium' } = context;
-    
+
     console.log(`Cache invalidation - Type: ${type}, Priority: ${priority}`, { userId, affectedData });
-    
+
     switch (type) {
       case 'user-login':
         if (userId) {
           // Invalidate all user-related data on login
           this.queryClient.invalidateQueries({ queryKey: queryKeys.user.all });
           this.queryClient.invalidateQueries({ queryKey: queryKeys.essential.all });
-          
+
           // Warm cache for new user session
           setTimeout(() => {
             cacheWarming.warmFrequentData(userId);
           }, 500);
         }
         break;
-        
+
       case 'user-logout':
         // Clear all cache on logout
         this.queryClient.clear();
+        break;
+
+      case 'session-expiry':
+        // Don't clear cache on session expiry - just mark as stale
+        // This prevents "Carregando" state when session is temporarily invalid
+        console.log('Session expired - marking cache as stale instead of clearing');
+        this.queryClient.invalidateQueries({
+          predicate: (query) => !JSON.stringify(query.queryKey).includes('auth')
+        });
         break;
         
       case 'preferences-update':
@@ -261,6 +271,29 @@ export class CacheManager {
       case 'network-error':
         // Don't invalidate on network errors, keep stale data
         console.log('Network error - keeping stale data available');
+        break;
+
+      case 'auth-error':
+        // On auth errors, don't clear cache immediately - try to recover
+        console.log('Auth error detected - attempting to recover session');
+
+        // Mark auth-related queries as stale but keep others
+        this.queryClient.invalidateQueries({
+          predicate: (query) => JSON.stringify(query.queryKey).includes('auth')
+        });
+
+        // Try to refresh auth data in background
+        setTimeout(async () => {
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+              console.log('Session recovered - refreshing auth data');
+              this.invalidateByContext({ type: 'user-login', userId: session.user.id });
+            }
+          } catch (error) {
+            console.error('Failed to recover session:', error);
+          }
+        }, 1000);
         break;
         
       default:

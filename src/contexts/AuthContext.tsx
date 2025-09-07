@@ -213,12 +213,51 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Efeito para inicializar autenticação e configurar listeners
   useEffect(() => {
     // Chamar refreshUserData incondicionalmente na montagem inicial
-    refreshUserData(); 
+    refreshUserData();
+
+    // Configurar renovação automática de tokens - mais agressiva
+    const tokenRefreshInterval = setInterval(async () => {
+      if (currentUser && isMounted.current) {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+
+          if (session) {
+            const expiresAt = session.expires_at;
+            const now = Math.floor(Date.now() / 1000);
+            const timeToExpiry = expiresAt ? expiresAt - now : 0;
+
+            // Se faltar menos de 15 minutos para expirar, renovar automaticamente
+            if (timeToExpiry > 0 && timeToExpiry < 15 * 60) {
+              console.log(`Token expirando em ${Math.floor(timeToExpiry / 60)} minutos - renovando automaticamente`);
+              const { data: newSession, error } = await supabase.auth.refreshSession();
+
+              if (error) {
+                console.error('Erro ao renovar token automaticamente:', error);
+                // Se falhar, tentar novamente em 1 minuto
+                setTimeout(async () => {
+                  console.log('Tentando renovar token novamente...');
+                  const { error: retryError } = await supabase.auth.refreshSession();
+                  if (retryError) {
+                    console.error('Falha na segunda tentativa de renovação:', retryError);
+                  }
+                }, 60 * 1000);
+              } else if (newSession) {
+                console.log('Token renovado automaticamente com sucesso');
+              }
+            }
+          } else {
+            console.warn('Sessão não encontrada durante verificação de renovação');
+          }
+        } catch (error) {
+          console.error('Erro na verificação de renovação de token:', error);
+        }
+      }
+    }, 2 * 60 * 1000); // Verificar a cada 2 minutos (mais frequente)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'INITIAL_SESSION') {
         if (session && !isInitialized && isMounted.current) {
-          await refreshUserData(); 
+          await refreshUserData();
         } else if (!session && !isInitialized && isMounted.current) {
           setIsInitialized(true);
         }
@@ -227,8 +266,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (event === 'SIGNED_IN') {
 
-      } 
-      
+      }
+
       else if (event === 'SIGNED_OUT') {
 
         if (isMounted.current) {
@@ -238,7 +277,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           setFavoriteSegments(null);
           setLoading(false);
         }
-      } 
+      }
       else if (event === 'USER_UPDATED') {
         if (session && session.user) {
             const userFromEvent = session.user;
@@ -246,7 +285,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             const dbPlanId = (userMetadata.plan_id || 'FREE').trim().toUpperCase();
             const dbTrialEndsAt = userMetadata.trial_ends_at;
             const dbFavoriteSegments = userMetadata.favorite_segments as string[] | undefined;
-            
+
             let finalPlanId = dbPlanId;
             if (finalPlanId === 'TRIAL' && dbTrialEndsAt) {
               const now = new Date();
@@ -255,7 +294,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 finalPlanId = 'FREE';
               }
             }
-            
+
             if (isMounted.current) {
               setCurrentUser(userFromEvent);
               setPlanId(finalPlanId);
@@ -270,15 +309,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
       }
       else if (event === 'TOKEN_REFRESHED') {
+        console.log('Token renovado - atualizando dados do usuário');
         await refreshUserData();
       }
     });
 
     return () => {
       subscription?.unsubscribe();
+      clearInterval(tokenRefreshInterval);
       isMounted.current = false;
     };
-  }, []);
+  }, [currentUser]);
 
   // Efeito para tentar migração de rádios para segmentos (EXISTENTE, AGORA APÓS AS FUNÇÕES QUE USA)
   useEffect(() => {

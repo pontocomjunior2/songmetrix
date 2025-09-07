@@ -419,16 +419,20 @@ router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
     const { id } = req.params;
     console.log('Atualizando stream com ID:', id);
     console.log('Dados recebidos:', req.body);
-    
+
     const payload = { ...req.body };
-    
-    // Verificar se o stream existe
+
+    // Verificar se o stream existe e obter o nome atual
     const checkResult = await pool.query('SELECT * FROM streams WHERE id = $1', [id]);
     if (checkResult.rows.length === 0) {
       console.log('Stream não encontrado com ID:', id);
       return res.status(404).json({ error: 'Stream não encontrado' });
     }
-    
+
+    const currentStream = checkResult.rows[0];
+    const oldName = currentStream.name;
+    const newName = payload.name;
+
     console.log('Stream encontrado. Atualizando...');
     const existingCols = await getStreamsColumns();
     if (existingCols.has('formato') && payload.formato == null && payload.segmento != null) {
@@ -439,10 +443,29 @@ router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
     console.log('Query SQL:', stmt.text);
     console.log('Valores:', stmt.values);
     const result = await pool.query(stmt.text, stmt.values);
-    
+
     console.log('Atualização bem-sucedida. Linhas afetadas:', result.rowCount);
     console.log('Dados atualizados:', result.rows[0]);
-    
+
+    // Se o nome da rádio foi alterado, atualizar também os registros na music_log
+    if (newName && oldName !== newName) {
+      console.log(`Nome da rádio alterado de "${oldName}" para "${newName}". Atualizando music_log...`);
+
+      try {
+        const updateMusicLogQuery = `
+          UPDATE music_log
+          SET name = $1
+          WHERE name = $2
+        `;
+        const musicLogResult = await pool.query(updateMusicLogQuery, [newName, oldName]);
+
+        console.log(`${musicLogResult.rowCount} registros na music_log atualizados do nome "${oldName}" para "${newName}"`);
+      } catch (musicLogError) {
+        console.error('Erro ao atualizar music_log:', musicLogError);
+        // Não falhar a operação principal por causa deste erro
+      }
+    }
+
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Erro ao atualizar stream:', error);

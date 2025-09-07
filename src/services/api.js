@@ -9,12 +9,12 @@ const getAuthenticatedUserToken = async () => {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
-    
+
     if (!token) {
       console.warn('Token de autenticação não encontrado');
       return '';
     }
-    
+
     return token;
   } catch (error) {
     console.error('Erro ao obter token de autenticação:', error);
@@ -22,9 +22,128 @@ const getAuthenticatedUserToken = async () => {
   }
 };
 
+// Função para fazer retry automático em caso de erro de rede
+const fetchWithRetry = async (url, options, maxRetries = 3) => {
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`Tentativa ${attempt}/${maxRetries} para: ${url}`);
+
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          ...options.headers,
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      });
+
+      // Se a resposta for bem-sucedida, retorna
+      if (response.ok) {
+        return response;
+      }
+
+      // Se for erro de cliente (4xx), não tenta novamente
+      if (response.status >= 400 && response.status < 500) {
+        return response;
+      }
+
+      // Para erros de servidor (5xx) ou rede, tenta novamente
+      lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
+      console.warn(`Tentativa ${attempt} falhou: ${lastError.message}`);
+
+    } catch (error) {
+      lastError = error;
+      console.warn(`Tentativa ${attempt} falhou com erro de rede:`, error.message);
+
+      // Se for erro ERR_BLOCKED_BY_CLIENT, adiciona delay extra
+      if (error.message?.includes('ERR_BLOCKED_BY_CLIENT')) {
+        console.warn('Erro ERR_BLOCKED_BY_CLIENT detectado - possível bloqueio por extensão');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+
+    // Delay exponencial entre tentativas
+    if (attempt < maxRetries) {
+      const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
+      console.log(`Aguardando ${delay}ms antes da próxima tentativa...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError;
+};
+
 // Função para verificar se está em produção
 const isProduction = () => {
   return window.location.hostname !== 'localhost';
+};
+
+// Função de diagnóstico para problemas de conectividade
+const diagnoseNetworkIssues = async () => {
+  const diagnostics = {
+    online: navigator.onLine,
+    userAgent: navigator.userAgent,
+    cookiesEnabled: navigator.cookieEnabled,
+    https: window.location.protocol === 'https:',
+    hostname: window.location.hostname,
+    timestamp: new Date().toISOString(),
+    issues: []
+  };
+
+  // Verificar conectividade básica
+  try {
+    const testResponse = await fetch(`${API_URL}/api/radios/status`, {
+      method: 'HEAD',
+      cache: 'no-cache'
+    });
+    diagnostics.apiReachable = testResponse.ok;
+  } catch (error) {
+    diagnostics.apiReachable = false;
+    diagnostics.issues.push(`API não acessível: ${error.message}`);
+  }
+
+  // Verificar se há extensões que podem bloquear
+  const extensions = [];
+  if (window.chrome && window.chrome.runtime) {
+    try {
+      // Tentar detectar ad blockers comuns
+      const adBlockTest = await fetch('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js', {
+        method: 'HEAD',
+        mode: 'no-cors'
+      }).catch(() => ({ ok: false }));
+
+      if (!adBlockTest.ok) {
+        extensions.push('Possível ad blocker detectado');
+      }
+    } catch (e) {
+      // Ignorar erros de detecção
+    }
+  }
+
+  if (extensions.length > 0) {
+    diagnostics.issues.push(...extensions);
+  }
+
+  // Verificar se há service workers
+  if ('serviceWorker' in navigator) {
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      if (registrations.length > 0) {
+        diagnostics.serviceWorkers = registrations.length;
+        diagnostics.issues.push(`${registrations.length} service worker(s) ativo(s)`);
+      }
+    } catch (error) {
+      diagnostics.serviceWorkers = 'Erro ao verificar';
+    }
+  }
+
+  console.log('Diagnóstico de rede:', diagnostics);
+  return diagnostics;
 };
 
 // Função para normalizar URLs de imagens
@@ -131,18 +250,20 @@ const streams = {
   getAll: async () => {
     try {
       const token = await getAuthenticatedUserToken();
-      const response = await fetch(`${API_URL}/api/streams`, {
+      const response = await fetchWithRetry(`${API_URL}/api/streams`, {
+        method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
-      
+
       if (!response.ok) {
-        throw new Error('Erro ao buscar streams');
+        const errorText = await response.text();
+        throw new Error(`Erro ao buscar streams: ${response.status} ${response.statusText} - ${errorText}`);
       }
-      
+
       const data = await response.json();
-      
+
       // Garantir que todas as URLs de imagens estejam corretas
       return data.map(stream => ({
         ...stream,
@@ -206,7 +327,7 @@ const streams = {
       console.log('URL de atualização:', `${API_URL}/api/streams/${id}`);
       console.log('Dados formatados para envio:', dataToSend);
       
-      const response = await fetch(`${API_URL}/api/streams/${id}`, {
+      const response = await fetchWithRetry(`${API_URL}/api/streams/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -806,7 +927,8 @@ const apiServices = {
   dashboard,
   executions,
   uploads,
-  reports
+  reports,
+  diagnoseNetworkIssues
 };
 
 export default apiServices;

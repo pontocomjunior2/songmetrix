@@ -455,8 +455,16 @@ app.use((req, res, next) => {
 });
 
 // Configurar middleware para servir arquivos estáticos
-app.use(express.static(path.join(__dirname, 'public')));
-console.log('Diretório de arquivos estáticos:', path.join(__dirname, 'public'));
+app.use(express.static(path.join(__dirname, '..')));
+console.log('Diretório de arquivos estáticos:', path.join(__dirname, '..'));
+
+// Middleware para logar requisições de arquivos estáticos
+app.use((req, res, next) => {
+  if (req.path.endsWith('.js') || req.path.endsWith('.css') || req.path.endsWith('.html') || req.path === '/') {
+    console.log(`[FRONTEND] Requisição para arquivo estático: ${req.method} ${req.path}`);
+  }
+  next();
+});
 
 // Verificar se o diretório de uploads existe
 const uploadsDir = path.join(__dirname, 'public', 'uploads', 'logos');
@@ -567,18 +575,35 @@ testConnection();
 // Helper function to safely execute database queries (usará o pool importado)
 const safeQuery = async (query, params = []) => {
   if (!pool) {
-    console.error('Pool de conexões não disponível');
+    console.error('[server.js safeQuery] Pool de conexões não disponível');
     return { rows: [] };
   }
 
   try {
-    console.log('Executing query with params:', { query, params });
+    console.log('[server.js safeQuery] Executando query:', {
+      query: query.substring(0, 100) + (query.length > 100 ? '...' : ''),
+      paramsCount: params.length,
+      timestamp: new Date().toISOString()
+    });
     const result = await pool.query(query, params);
-    console.log('Query executed successfully:', result);
+    console.log('[server.js safeQuery] Query executada com sucesso:', {
+      rowCount: result.rows.length,
+      command: result.command
+    });
     return result;
   } catch (error) {
-    console.error('Erro ao executar query:', error);
-    console.error('Query details:', { query, params });
+    console.error('[server.js safeQuery] Erro ao executar query:', {
+      error: error.message,
+      code: error.code,
+      query: query.substring(0, 100) + (query.length > 100 ? '...' : ''),
+      timestamp: new Date().toISOString()
+    });
+
+    // Verificar se é erro de pool encerrado
+    if (error.message.includes('Cannot use a pool after calling end on the pool')) {
+      console.error('[server.js safeQuery] ERRO CRÍTICO: Pool foi encerrado no server.js!');
+    }
+
     console.error('Error stack:', error.stack);
     return { rows: [] };
   }
