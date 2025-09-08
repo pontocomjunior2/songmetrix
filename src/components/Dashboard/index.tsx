@@ -130,9 +130,9 @@ const Dashboard = () => {
   const daysRemaining = useMemo(() => calculateDaysRemaining(trialEndsAt), [trialEndsAt]);
 
   const fetchDashboardData = useCallback(async (forceRefresh = false) => {
-    if (!currentUser || !hasPreferences) { 
+    if (!currentUser || !hasPreferences) {
       if (preferencesChecked && !hasPreferences) {
-           setLoading(false);
+            setLoading(false);
       }
       return;
     }
@@ -254,14 +254,12 @@ const Dashboard = () => {
     console.log(`[Dashboard useEffect] planId changed to: ${planId}`);
   }, [planId]); // Executa sempre que planId mudar
 
-  // ---> ADICIONAR useEffect PARA META PIXEL <--- 
+  // ---> ADICIONAR useEffect PARA META PIXEL <---
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const pagamentoSucesso = params.get('pagamento');
 
     if (pagamentoSucesso === 'sucesso') {
-      console.log('Pagamento sucesso detectado via URL, disparando Meta Pixel Purchase...');
-      
       // -- SUBSTITUIR VALOR E MOEDA PELOS DADOS REAIS DA TRANSAÇÃO --
       const purchaseValue = 1299.00; // Placeholder - obter valor real!
       const currency = 'BRL';
@@ -269,20 +267,17 @@ const Dashboard = () => {
       if (typeof window.fbq === 'function') {
         try {
           window.fbq('track', 'Purchase', { value: purchaseValue, currency: currency });
-          console.log('Meta Pixel Purchase event fired.');
         } catch (pixelError) {
             console.error('Erro ao disparar Meta Pixel:', pixelError);
         }
-      } else {
-          console.warn('Função fbq do Meta Pixel não encontrada.');
       }
 
       // Remover o parâmetro da URL para não disparar novamente
       // Usando replace: true para não adicionar ao histórico do navegador
-      navigate(location.pathname, { replace: true }); 
+      navigate(location.pathname, { replace: true });
     }
   // Executar este efeito sempre que a query string (location.search) mudar
-  }, [location.search, navigate]); 
+  }, [location.search, navigate]);
 
   if (!preferencesChecked) {
       return <div className="flex items-center justify-center h-64"><Loading /></div>;

@@ -11,7 +11,6 @@ import NotificationBell from '../Notifications/NotificationBell';
 import { Badge } from '../ui/badge';
 
 const MainLayout: React.FC = () => {
-  console.log('[MainLayout] Rendering...');
   const { theme, toggleTheme } = useTheme();
   const { currentUser, logout, planId } = useAuth();
   const navigate = useNavigate();

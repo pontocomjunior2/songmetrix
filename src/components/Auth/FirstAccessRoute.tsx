@@ -55,11 +55,16 @@ export default function FirstAccessRoute() {
 
     try {
       await updateFavoriteSegments(selectedSegments);
-      toast.success('Preferências salvas!');
+      toast.success('Preferências salvas! Redirecionando...');
+
+      // Aguardar um pouco para o usuário ver o toast e então redirecionar
+      setTimeout(() => {
+        navigate('/dashboard', { replace: true });
+      }, 1500);
     } catch (error) {
       toast.error("Erro ao salvar suas preferências. Tente novamente.");
     }
-  }, [updateFavoriteSegments]);
+  }, [updateFavoriteSegments, navigate]);
 
   if (loadingCheck) {
     return <Loading />;

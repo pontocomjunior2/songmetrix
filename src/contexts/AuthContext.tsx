@@ -109,7 +109,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             setTrialEndsAt(dbTrialEndsAt);
             setFavoriteSegments(dbFavoriteSegments || null);
             setError(null);
-          } else {
           }
           success = true;
         }
@@ -186,11 +185,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           favorite_segments: segments
         }
       });
+
       if (error) {
         toast.error("Não foi possível salvar seus formatos preferidos.");
         throw error;
       }
-      if (data.user && isMounted.current) {
+      if (data.user) {
+        // Atualizar estado mesmo se componente não estiver montado
         setCurrentUser(prevUser => prevUser ? { ...prevUser, user_metadata: data.user!.user_metadata } : null);
         setFavoriteSegments(segments);
         toast.success("Formatos preferidos salvos!");
@@ -203,12 +204,102 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Nova função para verificar preferências (MOVIDA PARA CIMA)
   const userHasPreferences = useCallback(async (): Promise<boolean> => {
-    if (!currentUser) return false;
+    if (!currentUser) {
+      return false;
+    }
     const metadata = currentUser.user_metadata || {};
-    const hasSegments = metadata.favorite_segments && Array.isArray(metadata.favorite_segments) && metadata.favorite_segments.length > 0;
-    const hasRadios = metadata.favorite_radios && Array.isArray(metadata.favorite_radios) && metadata.favorite_radios.length > 0;
+
+    // Corrigir verificação - garantir que retorne boolean
+    const hasSegments = !!(metadata.favorite_segments && Array.isArray(metadata.favorite_segments) && metadata.favorite_segments.length > 0);
+    const hasRadios = !!(metadata.favorite_radios && Array.isArray(metadata.favorite_radios) && metadata.favorite_radios.length > 0);
+
     return hasSegments || hasRadios;
   }, [currentUser]);
+
+  // Função para limpar cache quando houver problemas
+  const clearAuthCache = useCallback(() => {
+    try {
+      // Limpeza completa e agressiva
+      const allKeys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key) allKeys.push(key);
+      }
+      allKeys.forEach(key => localStorage.removeItem(key));
+
+      sessionStorage.clear();
+
+      // Limpar cookies
+      document.cookie.split(";").forEach(c => {
+        document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+      });
+
+      console.log('Cache completamente limpo');
+    } catch (error) {
+      console.error('Erro ao limpar cache:', error);
+    }
+  }, []);
+
+  // Função de emergência para reset completo
+  const emergencyReset = useCallback(() => {
+    console.log('[AuthContext] Executando reset de emergência...');
+
+    // Limpar tudo
+    clearAuthCache();
+
+    // Limpar cache do navegador
+    if ('caches' in window) {
+      caches.keys().then(names => {
+        names.forEach(name => {
+          caches.delete(name);
+        });
+      });
+    }
+
+    // Resetar estado
+    setCurrentUser(null);
+    setPlanId(null);
+    setTrialEndsAt(null);
+    setFavoriteSegments(null);
+    setLoading(false);
+    setError(null);
+    setIsInitialized(false);
+
+    // Recarregar página
+    setTimeout(() => {
+      window.location.href = '/login';
+    }, 500);
+
+  }, [clearAuthCache]);
+
+  // Função específica para limpar cache de reset de senha
+  const clearPasswordResetCache = useCallback(() => {
+    try {
+      console.log('[AuthContext] Limpando cache específico de reset de senha...');
+
+      // Limpar localStorage relacionado ao Supabase
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.includes('supabase') || key.includes('auth'))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+
+      // Limpar sessionStorage
+      sessionStorage.clear();
+
+      // Limpar URL hash se houver tokens
+      if (window.location.hash.includes('access_token')) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+
+      console.log('[AuthContext] Cache de reset de senha limpo');
+    } catch (error) {
+      console.error('[AuthContext] Erro ao limpar cache de reset:', error);
+    }
+  }, []);
 
   // Efeito para inicializar autenticação e configurar listeners
   useEffect(() => {
@@ -402,6 +493,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Envolver login em useCallback
   const login = useCallback(async (email: string, password: string): Promise<{ error: CustomAuthError | null }> => {
     let loginError: CustomAuthError | null = null;
+    let shouldNavigate = false;
+
     if (isMounted.current) {
       setError(null);
       setLoading(true);
@@ -425,16 +518,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
          throw loginError;
       }
 
-      
-
       const refreshSuccess = await refreshUserData();
 
       if (refreshSuccess && isMounted.current && !hasWelcomeEmailBeenSent.current) {
          await sendWelcomeEmail();
       }
-      
 
-      navigate('/dashboard');
+      shouldNavigate = true;
 
       return { error: null };
 
@@ -451,6 +541,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } finally {
        if (isMounted.current) {
          setLoading(false);
+         // Só navega após o loading ser resetado
+         if (shouldNavigate && !loginError) {
+           // Pequeno delay para garantir que o estado seja atualizado
+           setTimeout(() => {
+             navigate('/dashboard');
+           }, 100);
+         }
        }
     }
   }, [refreshUserData, error, navigate, currentUser, sendWelcomeEmail]);
@@ -588,7 +685,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     updateFavoriteRadios,
     updateFavoriteSegments,
     userHasPreferences,
-    sendWelcomeEmail
+    sendWelcomeEmail,
+    emergencyReset,
+    clearPasswordResetCache
   }), [
     currentUser,
     planId,
@@ -604,7 +703,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     updateFavoriteRadios,
     updateFavoriteSegments,
     userHasPreferences,
-    sendWelcomeEmail
+    sendWelcomeEmail,
+    emergencyReset,
+    clearPasswordResetCache
   ]);
 
   return (

@@ -5,6 +5,7 @@ import { PrimaryButton } from '../Common/Button';
 import { ErrorAlert, SuccessAlert } from '../Common/Alert';
 import Loading from '../Common/Loading';
 import { supabase } from '../../lib/supabase-client';
+import { REDIRECT_CONFIG } from '../../lib/supabase-redirect';
 
 export default function RequestPasswordReset() {
   const [email, setEmail] = useState('');
@@ -24,8 +25,8 @@ export default function RequestPasswordReset() {
       return;
     }
 
-    // Garante que a URL de redirecionamento seja absoluta
-    const redirectTo = new URL('/update-password', window.location.origin).toString();
+    // Usar a configuração centralizada de redirecionamento
+    const redirectTo = REDIRECT_CONFIG.passwordResetRedirectTo;
 
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: redirectTo,

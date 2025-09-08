@@ -33,6 +33,8 @@ export interface AuthContextType {
   updateFavoriteSegments: (segments: string[]) => Promise<void>;
   userHasPreferences: () => Promise<boolean>;
   sendWelcomeEmail: () => Promise<boolean>;
+  emergencyReset: () => void;
+  clearPasswordResetCache: () => void;
 }
 
 // Criar e exportar o Contexto

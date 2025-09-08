@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { Loader2 } from 'lucide-react';
+import { Button } from '../ui/button';
 // import { supabase } from '../../lib/supabase-client'; // Não parece ser mais necessário aqui
 
 // Definir rotas que exigem um plano pago (não FREE)
@@ -12,10 +13,12 @@ interface ProtectedRouteProps {
 }
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { currentUser, planId, loading: authLoading, error: authError, isInitialized, userHasPreferences } = useAuth();
+  const { currentUser, planId, loading: authLoading, error: authError, isInitialized, userHasPreferences, emergencyReset } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [checkingPreferences, setCheckingPreferences] = useState(true);
+  const [retryCount, setRetryCount] = useState(0);
+  const [showEmergencyButton, setShowEmergencyButton] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -24,6 +27,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
       const check = async () => {
         try {
           const hasPrefs = await userHasPreferences();
+
           if (isMounted) {
             if (!hasPrefs && location.pathname !== '/first-access') {
               navigate('/first-access', { replace: true });
@@ -31,8 +35,18 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
               setCheckingPreferences(false);
             }
           }
+
+          // Verificação adicional: se já estamos no dashboard e não temos preferências,
+          // mas o usuário acabou de salvar, aguardar um pouco e verificar novamente
+          if (hasPrefs === false && location.pathname === '/dashboard') {
+            setTimeout(async () => {
+              const hasPrefsAgain = await userHasPreferences();
+              if (hasPrefsAgain && isMounted) {
+                setCheckingPreferences(false);
+              }
+            }, 1000);
+          }
         } catch (err) {
-          console.error("[ProtectedRoute] useEffect - Error checking preferences:", err);
           if (isMounted) {
             setCheckingPreferences(false);
           }
@@ -47,12 +61,88 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     };
   }, [isInitialized, currentUser, userHasPreferences, location.pathname, navigate]);
 
+  // Efeito para mostrar botão de emergência após alguns segundos
+  useEffect(() => {
+    if (!isInitialized || authLoading || checkingPreferences) {
+      const buttonTimeout = setTimeout(() => {
+        setShowEmergencyButton(true);
+      }, 5000); // 5 segundos
+
+      return () => clearTimeout(buttonTimeout);
+    } else {
+      setShowEmergencyButton(false);
+    }
+  }, [isInitialized, authLoading, checkingPreferences]);
+
+  // Efeito para detectar travamento no loading e tentar recuperação
+  useEffect(() => {
+    if (!isInitialized || authLoading || checkingPreferences) {
+      const timeout = setTimeout(() => {
+        if (retryCount < 3) {
+          setRetryCount(prev => prev + 1);
+
+          // Limpeza completa e agressiva
+          try {
+            // 1. Limpar localStorage completamente
+            const allKeys = [];
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i);
+              if (key) allKeys.push(key);
+            }
+            allKeys.forEach(key => localStorage.removeItem(key));
+
+            // 2. Limpar sessionStorage
+            sessionStorage.clear();
+
+            // 3. Limpar cookies relacionados
+            document.cookie.split(";").forEach(c => {
+              document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+            });
+
+            // 4. Limpar cache do navegador
+            if ('caches' in window) {
+              caches.keys().then(names => {
+                names.forEach(name => {
+                  caches.delete(name);
+                });
+              });
+            }
+
+            // 5. Forçar recarga da página
+            window.location.href = window.location.href;
+
+          } catch (error) {
+            // Fallback: tentar apenas recarregar
+            window.location.reload();
+          }
+        }
+      }, 8000); // 8 segundos (mais rápido)
+
+      return () => clearTimeout(timeout);
+    } else {
+      setRetryCount(0); // Resetar contador se não estiver mais carregando
+    }
+  }, [isInitialized, authLoading, checkingPreferences, retryCount]);
+
   if (!isInitialized || authLoading || checkingPreferences) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground">Carregando sessão...</p>
+          <p className="text-muted-foreground mb-4">Carregando sessão...</p>
+          {showEmergencyButton && (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Parece que algo está travado.</p>
+              <Button
+                onClick={emergencyReset}
+                variant="outline"
+                size="sm"
+                className="text-xs"
+              >
+                🔄 Resetar Aplicação
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     );

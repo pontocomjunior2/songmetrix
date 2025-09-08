@@ -20,9 +20,9 @@ export interface AuthRedirectOptions {
 export const REDIRECT_CONFIG: RedirectConfig = {
   // URL para redirecionamento após confirmação de email
   emailRedirectTo: 'https://songmetrix.com.br/login',
-  
-  // URL para redirecionamento após recuperação de senha
-  passwordResetRedirectTo: 'https://songmetrix.com.br/login',
+
+  // URL para redirecionamento após recuperação de senha - CORRIGIDO
+  passwordResetRedirectTo: 'https://songmetrix.com.br/update-password',
 };
 
 // Função auxiliar para gerar opções de autenticação com redirecionamento

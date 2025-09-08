@@ -86,7 +86,6 @@ export default function SegmentSelector({ onSave, initialSelection = [] }: Segme
       // O redirecionamento ou mensagem de sucesso será tratado no componente pai (FirstAccessRoute)
     } catch (err) {
       // Erro já tratado e exibido no componente pai
-      console.error("Erro reportado pelo onSave:", err);
     } finally {
       setSaving(false);
     }
@@ -106,6 +105,22 @@ export default function SegmentSelector({ onSave, initialSelection = [] }: Segme
 
   return (
     <div className="w-full">
+      {/* Indicador de progresso */}
+      <div className="mb-6 text-center">
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+          {selectedSegments.length === 0
+            ? "Selecione pelo menos um formato para continuar"
+            : `${selectedSegments.length} formato(s) selecionado(s)`
+          }
+        </p>
+        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+          <div
+            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+            style={{ width: `${Math.min((selectedSegments.length / 1) * 100, 100)}%` }}
+          ></div>
+        </div>
+      </div>
+
       {/* Grid responsivo para os cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-8">
         {availableSegments.map(segment => {
@@ -129,14 +144,34 @@ export default function SegmentSelector({ onSave, initialSelection = [] }: Segme
         })}
       </div>
 
-      <div className="text-center">
+      <div className="text-center space-y-3">
         <PrimaryButton
           onClick={handleSaveClick}
           disabled={saving || selectedSegments.length === 0}
           className="w-full sm:w-auto"
         >
-          {saving ? 'Salvando...' : 'Salvar Preferências'}
+          {saving ? (
+            <div className="flex items-center justify-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+              Salvando...
+            </div>
+          ) : (
+            'Salvar Preferências'
+          )}
         </PrimaryButton>
+
+        {/* Botão de emergência */}
+        <div className="pt-2">
+          <button
+            onClick={() => {
+              console.log('[SegmentSelector] Emergency navigation to dashboard');
+              window.location.href = '/dashboard';
+            }}
+            className="text-xs text-gray-500 hover:text-gray-700 underline"
+          >
+            Pular e ir para o Dashboard
+          </button>
+        </div>
       </div>
     </div>
   );
