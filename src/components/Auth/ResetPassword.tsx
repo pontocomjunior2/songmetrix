@@ -27,17 +27,22 @@ export default function ResetPassword() {
     let retryCount = 0;
     const maxRetries = 3;
 
-    const checkPasswordRecovery = async () => {
-      try {
-        console.log('[ResetPassword] Iniciando verificação de recuperação de senha');
+  const checkPasswordRecovery = async () => {
+    try {
+      console.log('[ResetPassword] 🔍 Iniciando verificação de recuperação de senha');
 
-        // Verificar se há parâmetros de recuperação na URL
-        const urlParams = new URLSearchParams(window.location.hash.substring(1));
-        const accessToken = urlParams.get('access_token');
-        const refreshToken = urlParams.get('refresh_token');
-        const type = urlParams.get('type');
+      // Verificar se há parâmetros de recuperação na URL
+      const urlParams = new URLSearchParams(window.location.hash.substring(1));
+      const accessToken = urlParams.get('access_token');
+      const refreshToken = urlParams.get('refresh_token');
+      const type = urlParams.get('type');
 
-        console.log('[ResetPassword] Parâmetros da URL:', { accessToken: !!accessToken, refreshToken: !!refreshToken, type });
+      console.log('[ResetPassword] 🔗 Parâmetros da URL:', {
+        accessToken: !!accessToken,
+        refreshToken: !!refreshToken,
+        type,
+        fullUrl: window.location.href
+      });
 
         // Se temos tokens de recuperação na URL, processar
         if (accessToken && refreshToken && type === 'recovery') {
@@ -209,21 +214,78 @@ export default function ResetPassword() {
     setLoading(false);
 
     if (updateError) {
-      console.error('Erro ao atualizar a senha:', updateError);
-      if (updateError.message.includes('same password')) {
-          setError('A nova senha não pode ser igual à senha antiga.');
-      } else if (updateError.message.includes('session is missing')) {
-           setError('Sua sessão expirou ou é inválida. Por favor, solicite a redefinição novamente.');
-           setIsValidSession(false); // Marca como inválida
+      console.error('🔥 ERRO na atualização de senha!');
+      console.error('🔍 Mensagem completa:', JSON.stringify(updateError.message));
+      console.error('🔍 Status HTTP:', updateError.status);
+      console.error('🔍 Propriedades do erro:', Object.keys(updateError));
+      console.error('🔍 Tipo do erro:', typeof updateError);
+      console.error('🔍 Todo o erro:', updateError);
+
+      // 🔍 ANALisar EXATAMENTE QUE ERRO ESTÁ VINDO
+      console.log('🔍 Verificações booleanas:');
+      console.log('   - message.toLowerCase().includes("same"):', updateError.message.toLowerCase().includes('same'));
+      console.log('   - message.toLowerCase().includes("igual"):', updateError.message.toLowerCase().includes('igual'));
+      console.log('   - message.includes("422"):', updateError.message.includes('422'));
+      console.log('   - status === 422:', updateError.status === 422);
+      console.log('   - message.includes("password should be"):', updateError.message.includes('password should be'));
+
+      // 🔥 VERIFICACÃO ESPECÍFICA PARA SENHA IGUAL COM DEBUG ABAIXO
+      let isSamePasswordError = false;
+      if (updateError.message.toLowerCase().includes('same') ||
+          updateError.message.toLowerCase().includes('igual') ||
+          updateError.message.toLowerCase().includes('cannot be the same')) {
+        isSamePasswordError = true;
+        console.log('🔍 🎯 ENCONTROU: "same" ou "igual" na mensagem');
+      } else if (updateError.status === 422 || updateError.message.includes('422')) {
+        isSamePasswordError = true;
+        console.log('🔍 🎯 ENCONTROU: HTTP 422 (senha igual)');
+      }
+
+      if (isSamePasswordError) {
+        setError('⚠️ Você não pode usar a mesma senha atual. Por favor, escolha uma senha completamente diferente para continuar.');
+        console.log('[ResetPassword] ✅ CORRETO: Erro identificado como senha igual - mensagem específica aplicada');
+        return; // 🔥 Sair aqui se foi erro de senha igual
+      }
+
+      // Após verificar senha igual, continuar com outras verificações
+      if (updateError.message.includes('session is missing') ||
+          updateError.message.includes('session_not_found') ||
+          updateError.message.includes('session expired') ||
+          updateError.message.includes('invalid session')) {
+        setError('Sua sessão expirou ou é inválida. Por favor, solicite a redefinição novamente.');
+        setIsValidSession(false);
+        console.log('[ResetPassword] ✅ Erro identificado como sessão inválida');
+      } else if (updateError.message.includes('password should be')) {
+        setError('A senha deve atender aos seguintes requisitos: mínimo 6 caracteres, contendo pelo menos 1 letra minúscula e 1 maiúscula. Recomendamos combinações com números e caracteres especiais para maior segurança.');
+        console.log('[ResetPassword] ✅ Erro identificado como senha fraca');
       } else {
-           setError('Não foi possível atualizar sua senha. Tente novamente ou solicite um novo link.');
+        setError('Não foi possível atualizar sua senha. Tente novamente ou solicite um novo link.');
+        console.log('[ResetPassword] ℹ️ Erro genérico - detalhes:', updateError.message);
       }
     } else {
       setMessage('Sua senha foi atualizada com sucesso! Você será redirecionado para o login.');
       setPassword('');
       setConfirmPassword('');
-      // O Supabase pode invalidar a sessão atual após a troca, então redirecionamos
-      setTimeout(() => navigate('/login'), 3000);
+
+      // 🔥 FORCE LOGOUT E CACHE CLEAN UP COMPLETA após troca de senha
+      console.log('[ResetPassword] 🔥 Force logout and complete cache cleanup after password change...');
+
+      // 1. Forçar logout imediatamente
+      await supabase.auth.signOut().catch(err => console.error('[ResetPassword] Error during logout:', err));
+
+      // 2. Limpar cache completamente
+      clearPasswordResetCache();
+
+      // 3. AGUARDAR MAIS TEMPO PARA MOSTRAR MENSAGEM DE SUCESSO
+      setTimeout(async () => {
+        console.log('[ResetPassword] 🔄 Redirecting with logout flag...');
+
+        // Concatenando parâmetros especiais para garantir logout
+        const logoutUrl = '/login?reset=true&logout=true&t=' + Date.now();
+        console.log('[ResetPassword] Final logout URL:', logoutUrl);
+
+        window.location.href = logoutUrl; // 🔥 FORCE SEM AUTO-LOGIN
+      }, 3000); // 🔥 AUMENTADO PARA 3 SEGUNDOS PARA MOSTRAR MENSAGEM
     }
   };
 
@@ -251,7 +313,15 @@ export default function ResetPassword() {
         </div>
 
         {error && <ErrorAlert message={error} onClose={() => setError('')} />}
-        {message && <SuccessAlert message={message} />} {/* Mensagem de sucesso não precisa ser fechável aqui */}
+        {/* 🔥 MENSAGEM DE SUCESSO COM TEMPO PARA LER */}
+        {message && (
+          <div className="mb-6">
+            <SuccessAlert message={message} />
+            <div className="mt-2 text-sm text-center text-green-800 font-medium">
+              🔄 Você será redirecionado para o login automaticamente em instantes...
+            </div>
+          </div>
+        )}
 
         {/* Botão de emergência para limpar cache */}
         {error && (error.includes('expirou') || error.includes('inválida') || error.includes('Link')) && (

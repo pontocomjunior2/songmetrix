@@ -16,13 +16,23 @@ export interface AuthRedirectOptions {
   data: Record<string, any>;
 }
 
+// Função para detectar se está em desenvolvimento
+const isDevelopment = () => {
+  return import.meta.env.DEV || import.meta.env.MODE === 'development' ||
+         window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+};
+
 // Configuração padrão para redirecionamentos de autenticação
 export const REDIRECT_CONFIG: RedirectConfig = {
   // URL para redirecionamento após confirmação de email
-  emailRedirectTo: 'https://songmetrix.com.br/login',
+  emailRedirectTo: isDevelopment()
+    ? 'http://localhost:5173/login'
+    : 'https://songmetrix.com.br/login',
 
-  // URL para redirecionamento após recuperação de senha - CORRIGIDO
-  passwordResetRedirectTo: 'https://songmetrix.com.br/update-password',
+  // URL para redirecionamento após recuperação de senha
+  passwordResetRedirectTo: isDevelopment()
+    ? 'http://localhost:5173/update-password'
+    : 'https://songmetrix.com.br/update-password',
 };
 
 // Função auxiliar para gerar opções de autenticação com redirecionamento

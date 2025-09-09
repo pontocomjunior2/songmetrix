@@ -7,16 +7,30 @@ import Loading from '../Common/Loading';
 import { toast } from 'react-toastify';
 
 export default function FirstAccessRoute() {
+  console.log('[FirstAccessRoute] 🚀 COMPONENT MOUNTED - FirstAccessRoute initialized');
+
   const { currentUser, updateFavoriteSegments, userHasPreferences } = useAuth();
   const [checkedInitialPrefs, setCheckedInitialPrefs] = useState<boolean>(false);
   const [hasInitialPrefs, setHasInitialPrefs] = useState<boolean>(false);
   const [loadingCheck, setLoadingCheck] = useState(true);
   const navigate = useNavigate();
 
+  console.log('[FirstAccessRoute] 📊 Initial state:', {
+    currentUser: !!currentUser,
+    checkedInitialPrefs,
+    hasInitialPrefs,
+    loadingCheck
+  });
+
   useEffect(() => {
+    console.log('[FirstAccessRoute] 🔄 useEffect triggered');
+    console.log('[FirstAccessRoute] 👤 Current user:', !!currentUser);
+    console.log('[FirstAccessRoute] 📊 User metadata:', currentUser?.user_metadata);
+
     let isMounted = true;
     const checkPreferences = async () => {
       if (!currentUser) {
+         console.log('[FirstAccessRoute] ❌ No current user, setting defaults');
          setLoadingCheck(false);
          setCheckedInitialPrefs(true);
          setHasInitialPrefs(false);
@@ -24,13 +38,20 @@ export default function FirstAccessRoute() {
       }
       setLoadingCheck(true);
       try {
+        console.log('[FirstAccessRoute] 🔍 Checking user preferences...');
         const hasPrefs = await userHasPreferences();
+        console.log('[FirstAccessRoute] 📋 User has preferences?', hasPrefs);
+
         if (isMounted) {
           setHasInitialPrefs(hasPrefs);
           setCheckedInitialPrefs(true);
           setLoadingCheck(false);
+
           if (hasPrefs) {
+            console.log('[FirstAccessRoute] ✅ User has preferences, redirecting to dashboard');
             navigate('/dashboard', { replace: true });
+          } else {
+            console.log('[FirstAccessRoute] 🎯 User has no preferences, showing segment selector');
           }
         }
       } catch (error) {
@@ -66,15 +87,24 @@ export default function FirstAccessRoute() {
     }
   }, [updateFavoriteSegments, navigate]);
 
+  console.log('[FirstAccessRoute] 🎯 Render decision:', {
+    loadingCheck,
+    checkedInitialPrefs,
+    hasInitialPrefs
+  });
+
   if (loadingCheck) {
+    console.log('[FirstAccessRoute] ⏳ Showing loading (checking preferences)');
     return <Loading />;
   }
 
   if (checkedInitialPrefs && hasInitialPrefs) {
+    console.log('[FirstAccessRoute] 🔄 Redirecting to dashboard (user has preferences)');
     return <Navigate to="/dashboard" replace />;
   }
 
   if (checkedInitialPrefs && !hasInitialPrefs) {
+    console.log('[FirstAccessRoute] 🎯 Showing segment selector (user has no preferences)');
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-900 p-4">
         <div className="max-w-4xl w-full bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8">
@@ -91,5 +121,6 @@ export default function FirstAccessRoute() {
     );
   }
 
+  console.log('[FirstAccessRoute] ❓ Fallback loading (unexpected state)');
   return <Loading />;
 }

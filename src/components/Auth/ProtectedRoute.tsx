@@ -1,188 +1,111 @@
-import React, { useEffect, useState } from 'react';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { Loader2 } from 'lucide-react';
-import { Button } from '../ui/button';
-// import { supabase } from '../../lib/supabase-client'; // Não parece ser mais necessário aqui
-
-// Definir rotas que exigem um plano pago (não FREE)
-// const PAID_ROUTES = ['/realtime', '/ranking', '/relatorios'];
+import { useState, useEffect } from 'react';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
 }
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { currentUser, planId, loading: authLoading, error: authError, isInitialized, userHasPreferences, emergencyReset } = useAuth();
+  console.log('[ProtectedRoute] 🚀 COMPONENT MOUNTED - ProtectedRoute initialized');
+
+  const { currentUser, loading: authLoading, isInitialized, userHasPreferences } = useAuth();
   const location = useLocation();
-  const navigate = useNavigate();
-  const [checkingPreferences, setCheckingPreferences] = useState(true);
-  const [retryCount, setRetryCount] = useState(0);
-  const [showEmergencyButton, setShowEmergencyButton] = useState(false);
+  const [checkingPreferences, setCheckingPreferences] = useState(false);
+  const [shouldRedirectToFirstAccess, setShouldRedirectToFirstAccess] = useState(false);
 
+  console.log('[ProtectedRoute] 🔒 Check:', {
+    currentUser: !!currentUser,
+    authLoading,
+    isInitialized,
+    checkingPreferences,
+    pathname: location.pathname,
+    hasUser: !!currentUser,
+    userId: currentUser?.id,
+    userEmail: currentUser?.email,
+    userMetadata: currentUser?.user_metadata
+  });
+
+  // 🔥 Efeito para verificar preferências do usuário
   useEffect(() => {
-    let isMounted = true;
-    if (isInitialized && currentUser) {
+    console.log('[ProtectedRoute] 🔄 PREFERENCE CHECK EFFECT triggered');
+    console.log('[ProtectedRoute] 📊 Effect conditions:', {
+      hasCurrentUser: !!currentUser,
+      isInitialized,
+      authLoading,
+      pathname: location.pathname,
+      isNotFirstAccess: location.pathname !== '/first-access',
+      hasUserHasPreferences: !!userHasPreferences
+    });
+
+    if (currentUser && isInitialized && !authLoading && location.pathname !== '/first-access' && userHasPreferences) {
+      console.log('[ProtectedRoute] 🔍 Checking user preferences...');
+      console.log('[ProtectedRoute] 👤 Current user metadata:', currentUser.user_metadata);
       setCheckingPreferences(true);
-      const check = async () => {
-        try {
-          const hasPrefs = await userHasPreferences();
 
-          if (isMounted) {
-            if (!hasPrefs && location.pathname !== '/first-access') {
-              navigate('/first-access', { replace: true });
-            } else {
-              setCheckingPreferences(false);
-            }
-          }
+      userHasPreferences().then((hasPrefs) => {
+        console.log('[ProtectedRoute] 📋 User has preferences?', hasPrefs);
+        console.log('[ProtectedRoute] 📊 Preference check details:', {
+          hasSegments: !!(currentUser.user_metadata?.favorite_segments?.length > 0),
+          hasRadios: !!(currentUser.user_metadata?.favorite_radios?.length > 0),
+          segments: currentUser.user_metadata?.favorite_segments,
+          radios: currentUser.user_metadata?.favorite_radios
+        });
+        setCheckingPreferences(false);
 
-          // Verificação adicional: se já estamos no dashboard e não temos preferências,
-          // mas o usuário acabou de salvar, aguardar um pouco e verificar novamente
-          if (hasPrefs === false && location.pathname === '/dashboard') {
-            setTimeout(async () => {
-              const hasPrefsAgain = await userHasPreferences();
-              if (hasPrefsAgain && isMounted) {
-                setCheckingPreferences(false);
-              }
-            }, 1000);
-          }
-        } catch (err) {
-          if (isMounted) {
-            setCheckingPreferences(false);
-          }
+        if (!hasPrefs) {
+          console.log('[ProtectedRoute] 🎯 No preferences found, will redirect to first access');
+          setShouldRedirectToFirstAccess(true);
+        } else {
+          console.log('[ProtectedRoute] ✅ User has preferences, allowing normal access');
         }
-      };
-      check();
-    } else if (isInitialized && !currentUser) {
-      setCheckingPreferences(false);
-    }
-    return () => {
-      isMounted = false;
-    };
-  }, [isInitialized, currentUser, userHasPreferences, location.pathname, navigate]);
-
-  // Efeito para mostrar botão de emergência após alguns segundos
-  useEffect(() => {
-    if (!isInitialized || authLoading || checkingPreferences) {
-      const buttonTimeout = setTimeout(() => {
-        setShowEmergencyButton(true);
-      }, 5000); // 5 segundos
-
-      return () => clearTimeout(buttonTimeout);
+      }).catch((error) => {
+        console.error('[ProtectedRoute] ❌ Error checking preferences:', error);
+        setCheckingPreferences(false);
+      });
     } else {
-      setShowEmergencyButton(false);
+      console.log('[ProtectedRoute] ⏭️ Skipping preference check - conditions not met');
     }
-  }, [isInitialized, authLoading, checkingPreferences]);
+  }, [currentUser, isInitialized, authLoading, location.pathname, userHasPreferences]);
 
-  // Efeito para detectar travamento no loading e tentar recuperação
-  useEffect(() => {
-    if (!isInitialized || authLoading || checkingPreferences) {
-      const timeout = setTimeout(() => {
-        if (retryCount < 3) {
-          setRetryCount(prev => prev + 1);
+  console.log('[ProtectedRoute] 🎯 RENDER DECISION - Current state:', {
+    authLoading,
+    isInitialized,
+    checkingPreferences,
+    hasCurrentUser: !!currentUser,
+    shouldRedirectToFirstAccess,
+    pathname: location.pathname
+  });
 
-          // Limpeza completa e agressiva
-          try {
-            // 1. Limpar localStorage completamente
-            const allKeys = [];
-            for (let i = 0; i < localStorage.length; i++) {
-              const key = localStorage.key(i);
-              if (key) allKeys.push(key);
-            }
-            allKeys.forEach(key => localStorage.removeItem(key));
-
-            // 2. Limpar sessionStorage
-            sessionStorage.clear();
-
-            // 3. Limpar cookies relacionados
-            document.cookie.split(";").forEach(c => {
-              document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
-            });
-
-            // 4. Limpar cache do navegador
-            if ('caches' in window) {
-              caches.keys().then(names => {
-                names.forEach(name => {
-                  caches.delete(name);
-                });
-              });
-            }
-
-            // 5. Forçar recarga da página
-            window.location.href = window.location.href;
-
-          } catch (error) {
-            // Fallback: tentar apenas recarregar
-            window.location.reload();
-          }
-        }
-      }, 8000); // 8 segundos (mais rápido)
-
-      return () => clearTimeout(timeout);
-    } else {
-      setRetryCount(0); // Resetar contador se não estiver mais carregando
-    }
-  }, [isInitialized, authLoading, checkingPreferences, retryCount]);
-
-  if (!isInitialized || authLoading || checkingPreferences) {
+  // Carregando autenticação ou verificando preferências
+  if (authLoading || !isInitialized || checkingPreferences) {
+    console.log('[ProtectedRoute] ⏳ Showing loading screen');
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground mb-4">Carregando sessão...</p>
-          {showEmergencyButton && (
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Parece que algo está travado.</p>
-              <Button
-                onClick={emergencyReset}
-                variant="outline"
-                size="sm"
-                className="text-xs"
-              >
-                🔄 Resetar Aplicação
-              </Button>
-            </div>
-          )}
+          <p className="text-muted-foreground">
+            {checkingPreferences ? 'Verificando suas preferências...' : 'Carregando...'}
+          </p>
         </div>
       </div>
     );
   }
 
-  if (isInitialized && authError && !currentUser) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-         <div className="text-center p-6 bg-card rounded-lg shadow-md border border-destructive">
-           <h2 className="text-xl font-bold text-destructive mb-4">Erro de Autenticação</h2>
-           <p className="text-muted-foreground mb-4">
-             {authError || 'Não foi possível verificar sua sessão. Tente novamente.'}
-           </p>
-           <button
-             onClick={() => window.location.href = '/login'} // Forçar recarga para /login
-             className="px-4 py-2 bg-destructive text-destructive-foreground rounded hover:bg-destructive/90"
-           >
-             Ir para Login
-           </button>
-         </div>
-       </div>
-    );
-  }
-
-  if (isInitialized && !checkingPreferences && !currentUser) {
-    console.error(`[ProtectedRoute] CRITICAL: Navigating to /login! State: isInitialized=${isInitialized}, currentUser=${!!currentUser}, checkingPreferences=${checkingPreferences}`);
-    return <Navigate to="/login" state={{ from: location }} replace />;
-  }
-
+  // Não logado - redireciona para login
   if (!currentUser) {
-    console.warn('[ProtectedRoute] Warning: Reached end of checks without currentUser, redirecting to login as safeguard.');
+    console.log('[ProtectedRoute] 🔒 User not authenticated, redirecting to login');
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  const isAdminRoute = location.pathname.startsWith('/admin');
-  const isAdminPlan = planId === 'ADMIN';
-
-  if (isAdminRoute && !isAdminPlan) {
-    return <Navigate to="/dashboard" replace />;
+  // 🔥 Nenhuma preferência encontrada - redirecionar para primeiro acesso
+  if (shouldRedirectToFirstAccess && location.pathname !== '/first-access') {
+    console.log('[ProtectedRoute] 🎯 Redirecting to first access due to no preferences');
+    return <Navigate to="/first-access" replace />;
   }
 
+  // Logado e com preferências - permite acesso
+  console.log('[ProtectedRoute] ✅ User authenticated with preferences, allowing access');
   return <>{children}</>;
 }

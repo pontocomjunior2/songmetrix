@@ -6,7 +6,6 @@ import { toast } from 'react-toastify';
 import { getAuthRedirectOptions } from '../lib/supabase-redirect';
 // Importar APENAS o Context e a Interface do novo hook
 import { AuthContext, AuthContextType } from '../hooks/useAuth';
-import { useNavigate } from 'react-router-dom';
 
 // Manter erro customizado aqui pois é usado na função login
 class CustomAuthError extends AuthError {
@@ -38,6 +37,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Manter exportação nomeada do Provider
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  console.log('[AuthProvider] 🚀 COMPONENT MOUNTED - AuthProvider initialized');
+
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [planId, setPlanId] = useState<string | null>(null);
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
@@ -48,8 +49,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isInitialized, setIsInitialized] = useState(false);
   const isMounted = useRef(true);
   const hasWelcomeEmailBeenSent = useRef(false);
-  const navigate = useNavigate();
   const migrationAttempted = useRef(false); // Ref para controlar a tentativa de migração
+
+  console.log('[AuthProvider] 📊 Initial state:', {
+    currentUser: !!currentUser,
+    isInitialized,
+    loading
+  });
 
   // Memoizar funções que não dependem de estados internos mutáveis (ou usar useCallback)
   // Exemplo: checkSessionActive geralmente não depende de estado interno.
@@ -205,38 +211,72 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Nova função para verificar preferências (MOVIDA PARA CIMA)
   const userHasPreferences = useCallback(async (): Promise<boolean> => {
     if (!currentUser) {
+      console.log('[AuthContext] ❌ userHasPreferences: No current user');
       return false;
     }
     const metadata = currentUser.user_metadata || {};
+    console.log('[AuthContext] 🔍 userHasPreferences - Checking metadata:', metadata);
 
     // Corrigir verificação - garantir que retorne boolean
     const hasSegments = !!(metadata.favorite_segments && Array.isArray(metadata.favorite_segments) && metadata.favorite_segments.length > 0);
     const hasRadios = !!(metadata.favorite_radios && Array.isArray(metadata.favorite_radios) && metadata.favorite_radios.length > 0);
 
+    console.log('[AuthContext] 📊 userHasPreferences - Results:', {
+      hasSegments,
+      hasRadios,
+      segmentsLength: metadata.favorite_segments?.length || 0,
+      radiosLength: metadata.favorite_radios?.length || 0,
+      finalResult: hasSegments || hasRadios
+    });
+
     return hasSegments || hasRadios;
   }, [currentUser]);
 
   // Função para limpar cache quando houver problemas
-  const clearAuthCache = useCallback(() => {
+  const clearAuthCache = useCallback((scope: 'auth' | 'all' = 'auth') => {
     try {
-      // Limpeza completa e agressiva
-      const allKeys = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key) allKeys.push(key);
+      console.log(`[AuthContext] Clearing ${scope} cache...`);
+
+      if (scope === 'all') {
+        // Limpeza completa e agressiva
+        const allKeys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key) allKeys.push(key);
+        }
+        allKeys.forEach(key => localStorage.removeItem(key));
+        sessionStorage.clear();
+
+        // Limpar cookies relacionados
+        document.cookie.split(";").forEach(c => {
+          const cookieName = c.split("=")[0].trim();
+          if (cookieName.includes('supabase') || cookieName.includes('auth')) {
+            document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+          }
+        });
+      } else {
+        // Limpeza específica de autenticação
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.includes('supabase') || key.includes('auth') || key.includes('songmetrix'))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+
+        // Limpar apenas sessionStorage de auth
+        const sessionKeys = Object.keys(sessionStorage);
+        sessionKeys.forEach(key => {
+          if (key.includes('supabase') || key.includes('auth')) {
+            sessionStorage.removeItem(key);
+          }
+        });
       }
-      allKeys.forEach(key => localStorage.removeItem(key));
 
-      sessionStorage.clear();
-
-      // Limpar cookies
-      document.cookie.split(";").forEach(c => {
-        document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
-      });
-
-      console.log('Cache completamente limpo');
+      console.log(`[AuthContext] ${scope} cache cleared successfully`);
     } catch (error) {
-      console.error('Erro ao limpar cache:', error);
+      console.error('[AuthContext] Error clearing cache:', error);
     }
   }, []);
 
@@ -272,30 +312,136 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   }, [clearAuthCache]);
 
-  // Função específica para limpar cache de reset de senha
+  // Função para detectar e resolver conflitos de sessão automaticamente
+  const detectAndResolveSessionConflicts = useCallback(async () => {
+    try {
+      console.log('[AuthContext] Checking for session conflicts...');
+
+      // Verificar se há múltiplas sessões ativas
+      const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+
+      if (error) {
+        console.log('[AuthContext] Session error detected, clearing cache:', error.message);
+        clearAuthCache('auth');
+        return true; // Indica que houve resolução
+      }
+
+      if (currentSession) {
+        // Verificar se a sessão é válida e não expirada
+        const now = Math.floor(Date.now() / 1000);
+        const expiresAt = currentSession.expires_at;
+
+        if (expiresAt && expiresAt < now) {
+          console.log('[AuthContext] Session expired, clearing cache');
+          clearAuthCache('auth');
+          return true;
+        }
+
+        // Verificar se há dados inconsistentes no localStorage
+        // Procurar por chaves relacionadas ao Supabase no localStorage
+        const supabaseKeys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.includes('supabase') && key.includes('auth-token')) {
+            supabaseKeys.push(key);
+          }
+        }
+
+        if (supabaseKeys.length > 0) {
+          const storedSessionKey = supabaseKeys[0]; // Pegar a primeira chave encontrada
+          const storedSession = localStorage.getItem(storedSessionKey);
+
+          if (storedSession) {
+            try {
+              const parsedStored = JSON.parse(storedSession);
+              if (parsedStored.access_token !== currentSession.access_token) {
+                console.log('[AuthContext] Session token mismatch detected, clearing cache');
+                clearAuthCache('auth');
+                return true;
+              }
+            } catch (parseError) {
+              console.log('[AuthContext] Invalid session data in localStorage, clearing cache');
+              clearAuthCache('auth');
+              return true;
+            }
+          }
+        }
+
+        // Verificação adicional: verificar se há múltiplas chaves de sessão
+        if (supabaseKeys.length > 1) {
+          console.log('[AuthContext] Multiple session keys detected, clearing cache to prevent conflicts');
+          clearAuthCache('auth');
+          return true;
+        }
+
+        // Verificar se há dados de sessão antiga no sessionStorage
+        const sessionStorageKeys = Object.keys(sessionStorage);
+        const oldSessionKeys = sessionStorageKeys.filter(key =>
+          key.includes('supabase') || key.includes('auth')
+        );
+
+        if (oldSessionKeys.length > 0) {
+          console.log('[AuthContext] Old session data found in sessionStorage, clearing...');
+          oldSessionKeys.forEach(key => sessionStorage.removeItem(key));
+          return true;
+        }
+      } else {
+        // Se não há sessão atual, mas há dados no localStorage, limpar
+        const hasSupabaseData = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i))
+          .some(key => key && (key.includes('supabase') || key.includes('auth')));
+
+        if (hasSupabaseData) {
+          console.log('[AuthContext] No active session but auth data exists, clearing cache');
+          clearAuthCache('auth');
+          return true;
+        }
+      }
+
+      console.log('[AuthContext] No session conflicts detected');
+      return false; // Não houve resolução
+    } catch (error) {
+      console.error('[AuthContext] Error detecting session conflicts:', error);
+      // Em caso de erro, fazer limpeza preventiva
+      clearAuthCache('auth');
+      return true;
+    }
+  }, [clearAuthCache]);
+
+  // Função específica para limpar cache de reset de senha (mais seletiva)
   const clearPasswordResetCache = useCallback(() => {
     try {
       console.log('[AuthContext] Limpando cache específico de reset de senha...');
 
-      // Limpar localStorage relacionado ao Supabase
+      // Limpar apenas dados conflitantes, não todos os dados de auth
       const keysToRemove = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && (key.includes('supabase') || key.includes('auth'))) {
+        if (key && (
+          // Remover apenas tokens antigos e dados de sessão conflitantes
+          (key.includes('supabase') && key.includes('auth-token')) ||
+          (key.includes('supabase') && key.includes('session')) ||
+          // Manter dados importantes como user preferences
+          false // Esta condição nunca será true, mas mantém a estrutura
+        )) {
           keysToRemove.push(key);
         }
       }
       keysToRemove.forEach(key => localStorage.removeItem(key));
 
-      // Limpar sessionStorage
-      sessionStorage.clear();
+      // Limpar apenas sessionStorage de auth, não tudo
+      const sessionKeys = Object.keys(sessionStorage);
+      sessionKeys.forEach(key => {
+        if (key.includes('supabase') && (key.includes('auth') || key.includes('session'))) {
+          sessionStorage.removeItem(key);
+        }
+      });
 
-      // Limpar URL hash se houver tokens
-      if (window.location.hash.includes('access_token')) {
+      // Limpar URL hash se houver tokens de reset
+      if (window.location.hash.includes('access_token') || window.location.hash.includes('refresh_token')) {
         window.history.replaceState(null, '', window.location.pathname);
       }
 
-      console.log('[AuthContext] Cache de reset de senha limpo');
+      console.log('[AuthContext] Cache de reset de senha limpo (seletivamente)');
     } catch (error) {
       console.error('[AuthContext] Erro ao limpar cache de reset:', error);
     }
@@ -303,8 +449,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Efeito para inicializar autenticação e configurar listeners
   useEffect(() => {
-    // Chamar refreshUserData incondicionalmente na montagem inicial
-    refreshUserData();
+    // Detectar e resolver conflitos de sessão antes de inicializar
+    detectAndResolveSessionConflicts().then((wasResolved) => {
+      if (wasResolved) {
+        console.log('[AuthContext] Session conflicts resolved, refreshing user data...');
+      }
+      // Chamar refreshUserData após verificar conflitos
+      refreshUserData();
+    });
 
     // Configurar renovação automática de tokens - mais agressiva
     const tokenRefreshInterval = setInterval(async () => {
@@ -346,17 +498,42 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }, 2 * 60 * 1000); // Verificar a cada 2 minutos (mais frequente)
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[AuthContext] 🔴 Auth state change:', event, !!session);
+
       if (event === 'INITIAL_SESSION') {
+        console.log('[AuthContext] 🔴 Initial session event, session exists:', !!session);
+        console.log('[AuthContext] 🔴 State: isInitialized:', isInitialized, 'currentUser:', !!currentUser);
+
         if (session && !isInitialized && isMounted.current) {
+          console.log('[AuthContext] 🔴 Processing initial session - refreshing user data');
           await refreshUserData();
         } else if (!session && !isInitialized && isMounted.current) {
+          console.log('[AuthContext] 🔴 No session - setting initialized');
           setIsInitialized(true);
+        } else if (session && isInitialized) {
+          console.log('[AuthContext] 🔴 Session exists and initialized - user is logged in');
+
+          // ✅ USUÁRIO JÁ LOGADO - IGNORAR REDIRECIONAMENTOS AUTOMÁTICOS
+          // 🔥 SE ALGO TENTAR RESETAR ESSE ESTADO, BLOCAR!
+          if (!currentUser) {
+            console.error('[AuthContext] 🚨 ALERT: Initial Session EXISTS but currentUser null - recovering...');
+            // Emergency recovery - refresh user data silently
+            await refreshUserData();
+          } else {
+            console.log('[AuthContext] ✅ User session stable - allowing navigation');
+          }
         }
         return;
       }
 
       if (event === 'SIGNED_IN') {
-
+        console.log('[AuthContext] User signed in, checking for session conflicts...');
+        // Verificar conflitos após login (útil para logins após reset de senha)
+        detectAndResolveSessionConflicts().then((wasResolved) => {
+          if (wasResolved) {
+            console.log('[AuthContext] Session conflicts resolved after sign in');
+          }
+        });
       }
 
       else if (event === 'SIGNED_OUT') {
@@ -410,7 +587,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       clearInterval(tokenRefreshInterval);
       isMounted.current = false;
     };
-  }, [currentUser]);
+  }, [currentUser, detectAndResolveSessionConflicts]);
 
   // Efeito para tentar migração de rádios para segmentos (EXISTENTE, AGORA APÓS AS FUNÇÕES QUE USA)
   useEffect(() => {
@@ -495,40 +672,60 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     let loginError: CustomAuthError | null = null;
     let shouldNavigate = false;
 
+    console.log('[AuthContext] 🔐 Starting login process for:', email);
+    console.log('[AuthContext] Current pathname:', window.location.pathname);
+
+    // Verificar se pode ser um login após reset de senha
+    const urlParams = new URLSearchParams(window.location.search);
+    const fromReset = urlParams.get('reset') === 'true' || window.location.pathname === '/update-password';
+
+    if (fromReset) {
+      console.log('[AuthContext] Detected login after password reset, but cache already cleared by Login.tsx...');
+      // Cache já foi limpo pelo Login.tsx, não limpar novamente para evitar conflitos
+    }
+
     if (isMounted.current) {
       setError(null);
       setLoading(true);
     }
 
     try {
+      console.log('[AuthContext] Calling supabase.auth.signInWithPassword...');
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (signInError) {
+         console.error('[AuthContext] Sign in error:', signInError);
          loginError = new CustomAuthError(signInError.message || 'Falha no login.');
          if (isMounted.current) setError(loginError.message);
          throw loginError;
       }
 
       if (!data?.user) {
+         console.error('[AuthContext] No user returned after sign in');
          loginError = new CustomAuthError('Usuário não encontrado após login.');
          if (isMounted.current) setError(loginError.message);
          throw loginError;
       }
 
+      console.log('[AuthContext] Sign in successful, calling refreshUserData...');
       const refreshSuccess = await refreshUserData();
+      console.log('[AuthContext] refreshUserData result:', refreshSuccess);
 
       if (refreshSuccess && isMounted.current && !hasWelcomeEmailBeenSent.current) {
+         console.log('[AuthContext] Sending welcome email...');
          await sendWelcomeEmail();
       }
 
       shouldNavigate = true;
+      console.log('[AuthContext] Login successful, shouldNavigate = true');
 
       return { error: null };
 
     } catch (err: any) {
+      console.error('[AuthContext] Login error:', err);
       loginError = err instanceof CustomAuthError ? err : new CustomAuthError(err.message || 'Erro desconhecido no login');
       if (isMounted.current) {
         setError(loginError.message);
@@ -539,18 +736,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
       return { error: loginError };
     } finally {
+       console.log('[AuthContext] Login finally block, setting loading to false');
        if (isMounted.current) {
          setLoading(false);
+         console.log('[AuthContext] Loading set to false');
          // Só navega após o loading ser resetado
          if (shouldNavigate && !loginError) {
-           // Pequeno delay para garantir que o estado seja atualizado
-           setTimeout(() => {
-             navigate('/dashboard');
-           }, 100);
+           console.log('[AuthContext] Login successful - navigation should happen automatically');
+           // Removido navegação forçada - deixar que o sistema de rotas do React faça seu trabalho
          }
        }
     }
-  }, [refreshUserData, error, navigate, currentUser, sendWelcomeEmail]);
+  }, [refreshUserData, error, currentUser, sendWelcomeEmail, clearAuthCache]);
 
   // Envolver logout em useCallback
   const logout = useCallback(async () => {

@@ -25,27 +25,48 @@ export default function RequestPasswordReset() {
       return;
     }
 
+    console.log('[RequestPasswordReset] 🔐 Iniciando solicitação de reset para:', email);
+
     // Usar a configuração centralizada de redirecionamento
     const redirectTo = REDIRECT_CONFIG.passwordResetRedirectTo;
+    console.log('[RequestPasswordReset] 📧 Redirect URL:', redirectTo);
+    console.log('[RequestPasswordReset] 📧 Full REDIRECT_CONFIG:', REDIRECT_CONFIG);
 
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: redirectTo,
-    });
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: redirectTo,
+      });
 
-    setLoading(false);
+      setLoading(false);
 
-    if (resetError) {
-      console.error('Erro ao solicitar redefinição de senha:', resetError);
-      // Evitar expor detalhes do erro ao usuário, usar mensagem genérica
-      if (resetError.message.includes('rate limit')) {
-           setError('Você tentou solicitar a redefinição muitas vezes. Por favor, aguarde um pouco.');
-      } else {
+      if (resetError) {
+        console.error('[RequestPasswordReset] ❌ Erro ao solicitar redefinição:', resetError);
+        console.error('[RequestPasswordReset] ❌ Detalhes do erro:', {
+          message: resetError.message,
+          name: resetError.name,
+          status: resetError.status
+        });
+
+        // Evitar expor detalhes do erro ao usuário, usar mensagem genérica
+        if (resetError.message.includes('rate limit')) {
+          setError('Você tentou solicitar a redefinição muitas vezes. Por favor, aguarde um pouco.');
+        } else if (resetError.message.includes('Unable to validate email address')) {
+          setError('Por favor, verifique se o endereço de email está correto.');
+        } else if (resetError.message.includes('network') || resetError.message.includes('fetch')) {
+          setError('Erro de conexão. Verifique sua internet e tente novamente.');
+        } else {
           setError('Erro ao enviar o email de redefinição. Verifique o email digitado ou tente novamente mais tarde.');
+        }
+      } else {
+        console.log('[RequestPasswordReset] ✅ Email de reset enviado com sucesso!');
+        // Mensagem genérica para não confirmar existência de emails
+        setMessage('Se um usuário com este email existir em nossa base, um link para redefinir sua senha foi enviado.');
+        setEmail(''); // Limpar o campo após o envio
       }
-    } else {
-      // Mensagem genérica para não confirmar existência de emails
-      setMessage('Se um usuário com este email existir em nossa base, um link para redefinir sua senha foi enviado.');
-      setEmail(''); // Limpar o campo após o envio
+    } catch (unexpectedError) {
+      console.error('[RequestPasswordReset] 💥 Erro inesperado:', unexpectedError);
+      setLoading(false);
+      setError('Erro inesperado. Por favor, tente novamente.');
     }
   };
 
@@ -106,4 +127,4 @@ export default function RequestPasswordReset() {
       </div>
     </div>
   );
-} 
+}

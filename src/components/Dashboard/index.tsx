@@ -1,13 +1,12 @@
 import React, { useState, useEffect, Suspense, memo, useCallback, useMemo } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase-client';
-import { Radio as RadioIcon, Music, Info, Clock, RefreshCw, AlertCircle, Lock } from 'lucide-react';
+import { Radio as RadioIcon, Music, Info, Clock, AlertCircle, Lock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, PieLabelRenderProps } from 'recharts';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { UpgradePrompt } from '../Common/UpgradePrompt';
 import Loading from '../Common/Loading';
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
-import { Button } from '../ui/button';
 import { Link } from 'react-router-dom';
 
 interface TopSong {
@@ -78,7 +77,7 @@ const calculateDaysRemaining = (endDate: string | null): number | null => {
 // Componente de Upsell específico para o Dashboard
 const DashboardUpsellNotice: React.FC = () => (
   <div className="flex justify-center items-center h-[calc(100vh-200px)]">
-    <Alert variant="default" className="max-w-lg border-primary bg-primary/5">
+    <Alert className="max-w-lg border-primary bg-primary/5">
       <Lock className="h-5 w-5 text-primary" />
       <AlertTitle className="font-bold text-lg text-primary">Funcionalidade Exclusiva para Assinantes</AlertTitle>
       <AlertDescription className="mt-2">
@@ -86,7 +85,7 @@ const DashboardUpsellNotice: React.FC = () => (
         <br />
         Faça upgrade para um plano pago e desbloqueie o Dashboard completo.
       </AlertDescription>
-      <Button asChild className="mt-4">
+      <Button className="mt-4">
         <Link to="/plans">Ver Planos de Assinatura</Link>
       </Button>
     </Alert>
@@ -109,7 +108,6 @@ const Dashboard = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const { currentUser, planId, trialEndsAt, userHasPreferences } = useAuth();
   const navigate = useNavigate();
   // Usar useLocation para acessar search params
@@ -118,8 +116,7 @@ const Dashboard = () => {
   const [preferencesChecked, setPreferencesChecked] = useState(false);
   const [hasPreferences, setHasPreferences] = useState(false);
   
-  const CACHE_TTL = 2 * 60 * 1000;
-  const isDevelopment = import.meta.env.MODE === 'development';
+
 
   // Adicionar estados para as métricas
   const [totalExecutions, setTotalExecutions] = useState<number>(0);
@@ -129,15 +126,10 @@ const Dashboard = () => {
 
   const daysRemaining = useMemo(() => calculateDaysRemaining(trialEndsAt), [trialEndsAt]);
 
-  const fetchDashboardData = useCallback(async (forceRefresh = false) => {
+  const fetchDashboardData = useCallback(async () => {
     if (!currentUser || !hasPreferences) {
-      if (preferencesChecked && !hasPreferences) {
-            setLoading(false);
-      }
       return;
     }
-
-    let isMounted = true; // Usado internamente para cleanup simulado, já que não podemos pegar do useEffect
 
     try {
       setLoading(true);
@@ -165,10 +157,6 @@ const Dashboard = () => {
 
       // Calcular e processar dados de gênero
       const genreSourceData = dashboardData.genreData || [];
-      const totalExecutionsMetric = dashboardData.totalExecutions || 0;
-      const uniqueArtistsMetric = dashboardData.uniqueArtists || 0;
-      const uniqueSongsMetric = dashboardData.uniqueSongs || 0;
-
       if (genreSourceData.length > 0) {
         const totalGenreExecutions = genreSourceData.reduce((sum: number, item: any) => sum + (parseInt(item.count) || 0), 0);
         const genreDataFormatted = genreSourceData.map((item: any, index: number) => {
@@ -188,9 +176,9 @@ const Dashboard = () => {
       }
 
       // Definir estado das métricas
-      setTotalExecutions(totalExecutionsMetric);
-      setUniqueArtists(uniqueArtistsMetric);
-      setUniqueSongs(uniqueSongsMetric);
+      setTotalExecutions(dashboardData.totalExecutions || 0);
+      setUniqueArtists(dashboardData.uniqueArtists || 0);
+      setUniqueSongs(dashboardData.uniqueSongs || 0);
 
       setLastUpdated(new Date());
 
@@ -199,24 +187,16 @@ const Dashboard = () => {
       setError('Falha ao carregar dados do dashboard');
     } finally {
       setLoading(false);
-      setIsRefreshing(false);
     }
-  }, [
-    currentUser, hasPreferences, preferencesChecked,
-    setLoading, setError, setTopSongs, setArtistData, setActiveRadios, 
-    setGenreDistribution, setTotalExecutions, setUniqueArtists, setUniqueSongs, 
-    setLastUpdated, setIsRefreshing
-  ]);
+  }, [currentUser, hasPreferences]);
 
   useEffect(() => {
     let isMounted = true;
     const checkPrefs = async () => {
         if (currentUser) {
-            const userPrefs = await userHasPreferences(); 
+            const userPrefs = await userHasPreferences();
             if (!isMounted) return;
             setHasPreferences(userPrefs);
-            if (!userPrefs) {
-            }
         } else {
              if (!isMounted) return;
              setHasPreferences(false);
@@ -227,32 +207,19 @@ const Dashboard = () => {
     };
     checkPrefs();
     return () => { isMounted = false; };
-  }, [currentUser, userHasPreferences, navigate]);
+  }, [currentUser]); // Removido userHasPreferences e navigate para evitar loops
 
   // useEffect para chamar fetchDashboardData na montagem/mudança de dependências
   useEffect(() => {
     if (preferencesChecked && hasPreferences) {
       fetchDashboardData();
-    } else {
-       if (preferencesChecked && !hasPreferences) {
-         setLoading(false); 
-       }
+    } else if (preferencesChecked && !hasPreferences) {
+      setLoading(false);
     }
-  }, [preferencesChecked, hasPreferences, fetchDashboardData]);
+  }, [preferencesChecked, hasPreferences]); // Removido fetchDashboardData das dependências para prevenir loop infinito
 
-  // handleRefresh agora pode chamar fetchDashboardData diretamente
-  const handleRefresh = useCallback(() => {
-    if (!currentUser || !hasPreferences) {
-      return;
-    }
-    setIsRefreshing(true);
-    fetchDashboardData(true);
-  }, [currentUser, hasPreferences, fetchDashboardData]);
 
-  // ---> ADICIONAR useEffect AQUI <--- 
-  useEffect(() => {
-    console.log(`[Dashboard useEffect] planId changed to: ${planId}`);
-  }, [planId]); // Executa sempre que planId mudar
+
 
   // ---> ADICIONAR useEffect PARA META PIXEL <---
   useEffect(() => {
@@ -286,10 +253,11 @@ const Dashboard = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-         <Loading />
+          <Loading />
       </div>
     );
   }
+
   
   if (error) {
       return <div className="text-center text-red-500 p-10">{error}</div>;
@@ -515,7 +483,7 @@ const Dashboard = () => {
     <div className="dashboard-container p-4 md:p-6 space-y-6">
        {/* Alerta para Trial Ativo - Corrigir case */}
        {planId === 'TRIAL' && daysRemaining !== null && daysRemaining > 0 && (
-         <Alert variant="default" className="border-blue-500 bg-blue-50 dark:bg-blue-900/30">
+         <Alert className="border-blue-500 bg-blue-50 dark:bg-blue-900/30">
            <AlertCircle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
            <AlertTitle className="text-blue-800 dark:text-blue-300">Período de Teste Ativo</AlertTitle>
            <AlertDescription className="text-blue-700 dark:text-blue-400">
@@ -530,11 +498,10 @@ const Dashboard = () => {
          <UpgradePrompt
            title="Você está usando a Conta Free"
            message="Seu período de teste terminou. Seu acesso ao Songmetrix agora é limitado. Assine um plano Premium para continuar com acesso completo."
-           variant="warning"
          />
        )}
 
-       {/* Header com botão de refresh */}
+       {/* Header com informações de atualização */}
        <div className="flex justify-end items-center mb-4">
         <div className="flex items-center gap-2">
           {lastUpdated && (
@@ -542,14 +509,6 @@ const Dashboard = () => {
               Atualizado: {lastUpdated.toLocaleTimeString()}
             </span>
           )}
-          <button
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-            title="Atualizar dados"
-          >
-            <RefreshCw className={`w-5 h-5 text-gray-600 dark:text-gray-300 ${isRefreshing ? 'animate-spin' : ''}`} />
-          </button>
         </div>
       </div>
 

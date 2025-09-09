@@ -18,6 +18,10 @@ const RootRoute = () => {
 };
 
 function App() {
+  console.log('🟢 [APP] App component rendering - Application started');
+  console.log('🟢 [APP] Current URL:', window.location.href);
+  console.log('🟢 [APP] Current pathname:', window.location.pathname);
+
   return (
     <AuthProvider>
       <DevPerformanceMonitor />
