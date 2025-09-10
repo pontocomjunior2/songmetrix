@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { Home, BarChart3, FileText, Users, Type, Radio, LogOut, Clock, X, ChevronDown, Mail, MessageSquare, Bell, Brain, Settings } from 'lucide-react';
+import { Home, BarChart3, FileText, Users, Type, Radio, LogOut, Clock, X, ChevronDown, Mail, MessageSquare, Bell, Brain, Settings, Database } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import WhatsAppContact from '../Common/WhatsAppContact';
@@ -91,6 +91,11 @@ const SidebarFixed: React.FC<SidebarProps> = ({ pathname, onClose, isMobile }: S
       name: 'Gerenciar Emails',
       icon: Mail,
       view: 'admin/emails'
+    },
+    {
+      name: 'Console SQL',
+      icon: Database,
+      view: 'admin/sql-console'
     },
     {
       name: 'Notificações',

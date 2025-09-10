@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TC001",
+    "title": "get_dashboard_main_data",
+    "description": "Test the GET /api/dashboard endpoint to verify it returns the main dashboard data with correct status code 200 and proper authentication."
+  },
+  {
+    "id": "TC002",
+    "title": "get_dashboard_essential_data",
+    "description": "Test the GET /api/dashboard/essential endpoint to ensure it returns essential dashboard data with status code 200 and requires basic authentication."
+  },
+  {
+    "id": "TC003",
+    "title": "get_dashboard_secondary_data",
+    "description": "Test the GET /api/dashboard/secondary endpoint to verify it returns secondary dashboard data correctly with status code 200 and proper authentication."
+  },
+  {
+    "id": "TC004",
+    "title": "list_all_streams",
+    "description": "Test the GET /api/streams endpoint to confirm it lists all streams with status code 200 and requires bearer token authentication."
+  },
+  {
+    "id": "TC005",
+    "title": "create_new_stream",
+    "description": "Test the POST /api/streams endpoint to verify creation of a new stream returns status code 201 and requires bearer token authentication."
+  },
+  {
+    "id": "TC006",
+    "title": "get_stream_by_id",
+    "description": "Test the GET /api/streams/{id} endpoint to ensure it returns stream data for a valid ID with status code 200."
+  },
+  {
+    "id": "TC007",
+    "title": "update_stream_by_id",
+    "description": "Test the PUT /api/streams/{id} endpoint to verify updating stream data for a valid ID returns status code 200."
+  },
+  {
+    "id": "TC008",
+    "title": "delete_stream_by_id",
+    "description": "Test the DELETE /api/streams/{id} endpoint to confirm deletion of a stream by ID returns status code 204."
+  },
+  {
+    "id": "TC009",
+    "title": "get_radio_status",
+    "description": "Test the GET /api/radios/status endpoint to verify it returns the current status of radios with status code 200 and requires basic authentication."
+  },
+  {
+    "id": "TC010",
+    "title": "list_users",
+    "description": "Test the GET /api/users endpoint to ensure it lists all users with status code 200 and requires bearer token authentication."
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "status": "commited",
+  "type": "frontend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:5173",
+  "loginUser": "admin@songmetrix.com",
+  "loginPassword": "Admin@@2024",
+  "executionArgs": {
+    "projectName": "songmetrix",
+    "projectPath": "d:\\dataradio\\songmetrix",
+    "testIds": [],
+    "additionalInstruction": "Focar na identificação de erros pendentes e análise de performance dos dados vindos da API. Verificar especialmente problemas de carregamento, otimização de queries e responsividade da interface.",
+    "envs": {
+      "API_KEY": "sk-user-Y65kgY5npl3lSFie4Z-_7bhtciA82WYpe4YbGqc8S6WEIG1um0xUd5-Tp7GNcDQ-yrt7HCvWe6yTD3jjx0Ip_rO4lPEEY3_P9abNiITvtBCAQK_KVIg_pMfsadL90ls0XmA"
+    }
+  },
+  "proxy": "http://7e25c92d-7b61-4301-99ec-f6bde4c4be60:FuzVekd38Wf3I4MTE04hmRhISPbxSD4v@tun.testsprite.com:8080"
+}

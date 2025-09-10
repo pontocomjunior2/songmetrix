@@ -1,0 +1,463 @@
+[
+  {
+    "id": "TC001",
+    "title": "User Registration with 14-Day Free Trial",
+    "description": "Verify that a new user can successfully register with valid details and starts with a 14-day free trial.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to the registration page."
+      },
+      {
+        "type": "action",
+        "description": "Enter valid user details including email, username, and password."
+      },
+      {
+        "type": "action",
+        "description": "Submit the registration form."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify registration is successful and user account is created with a 14-day free trial period."
+      },
+      {
+        "type": "assertion",
+        "description": "Check confirmation email is sent to user."
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "Login with Valid Credentials",
+    "description": "Check login succeeds with valid username/email and password.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to the login page."
+      },
+      {
+        "type": "action",
+        "description": "Input registered username/email and correct password."
+      },
+      {
+        "type": "action",
+        "description": "Click on the login button."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user is authenticated and redirected to the dashboard."
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "Login Failure with Invalid Credentials",
+    "description": "Ensure login fails when using incorrect username/email or password.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to the login page."
+      },
+      {
+        "type": "action",
+        "description": "Input an incorrect or unregistered username/email and/or password."
+      },
+      {
+        "type": "action",
+        "description": "Click the login button."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify login fails and appropriate error message is displayed."
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Dashboard Data Load Performance",
+    "description": "Verify dashboard loads all required data and visualizations within 3 seconds under normal load conditions.",
+    "category": "performance",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login with a valid user account."
+      },
+      {
+        "type": "action",
+        "description": "Access the dashboard page."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that dashboard data and visualizations load completely within 3 seconds."
+      },
+      {
+        "type": "assertion",
+        "description": "Check dashboard uptime and responsiveness throughout multiple access attempts."
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Real-time Radio and Spotify Data Synchronization",
+    "description": "Confirm that the platform synchronizes and displays real-time radio and Spotify streaming data accurately.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Trigger data refresh or access dashboard displaying top songs from radio and Spotify."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify real-time radio airplay data is current and reflects latest plays from major Brazilian radio stations."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify Spotify streaming metrics including playlist analytics and detailed streaming data are up to date."
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Dashboard Filters by Genre, Region, and Radio Station",
+    "description": "Verify that dashboard filters correctly filter displayed data by genre, region, and radio station.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Access the dashboard and open filtering options."
+      },
+      {
+        "type": "action",
+        "description": "Select different genres from filter dropdown and apply."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify dashboard updates to show only data corresponding to selected genres."
+      },
+      {
+        "type": "action",
+        "description": "Apply region filters one by one and verify data update accordingly."
+      },
+      {
+        "type": "action",
+        "description": "Filter by specific radio stations and validate displayed information is correct."
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "Comparative Dashboard for Radio vs Streaming Performance",
+    "description": "Verify the comparative dashboard accurately shows performance gaps and trends between radio airplay and streaming platforms.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to the comparative dashboard section."
+      },
+      {
+        "type": "assertion",
+        "description": "Validate that performance metrics from radio airplay and streaming sources are displayed side by side."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify trend charts update correctly when changing the time frame or applying filters."
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "User Subscription Payment via Stripe Checkout",
+    "description": "Verify users can successfully subscribe to plans, process payments through Stripe, and that subscription lifecycle is correctly handled.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login with valid user account."
+      },
+      {
+        "type": "action",
+        "description": "Navigate to subscription payment page."
+      },
+      {
+        "type": "action",
+        "description": "Select a subscription plan and proceed to Stripe checkout."
+      },
+      {
+        "type": "action",
+        "description": "Submit valid payment details on Stripe's page."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify payment succeeds, subscription is activated, and confirmation is shown to user."
+      },
+      {
+        "type": "assertion",
+        "description": "Simulate Stripe webhook notifications and verify subscription status updates correctly in the platform."
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Role-Based Access Control Enforcement",
+    "description": "Ensure that access to user management, admin functionalities, and system settings is correctly restricted based on user roles.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login as a regular user."
+      },
+      {
+        "type": "action",
+        "description": "Attempt to access administrative routes and features."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access is denied with appropriate error messages."
+      },
+      {
+        "type": "action",
+        "description": "Login as an administrator user."
+      },
+      {
+        "type": "action",
+        "description": "Access administrative routes such as system settings and usage reports."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access is granted and administrative data is displayed correctly."
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "File Upload Validation and Security",
+    "description": "Verify that file upload for logos and images accepts only allowed file types and sizes, stores files securely, and prevents data loss.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login with authorized user account."
+      },
+      {
+        "type": "action",
+        "description": "Attempt to upload a valid image file within size limits."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify file uploads successfully and displays in user interface."
+      },
+      {
+        "type": "action",
+        "description": "Attempt to upload an invalid file type or oversized file."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify upload is rejected with a clear error message."
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "REST API Status Codes and Error Handling",
+    "description": "Validate that all API endpoints return appropriate status codes and error messages for success, client errors, and server errors.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Send valid requests to key APIs: dashboard, streams, users, payments, uploads, admin."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify HTTP 200 or 201 status codes and valid response data."
+      },
+      {
+        "type": "action",
+        "description": "Send malformed or unauthorized requests to these APIs."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify API responds with appropriate client error codes such as 400, 401, 403, and descriptive error messages."
+      },
+      {
+        "type": "action",
+        "description": "Simulate server errors or unavailable resources."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify API responds with appropriate 500-series status codes and handles errors gracefully."
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Compliance with LGPD Data Protection Requirements",
+    "description": "Verify the platform complies with LGPD by ensuring personal data privacy, security, and proper consent management.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Review user registration, data storage, and data access flows."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify personal data is collected only with user consent."
+      },
+      {
+        "type": "assertion",
+        "description": "Check that data is encrypted in storage and transmission."
+      },
+      {
+        "type": "action",
+        "description": "Test user requests for data access, correction, or deletion."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user requests are handled correctly according to LGPD regulations."
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "System Notifications Delivery",
+    "description": "Verify users receive system notifications for significant platform changes and subscription updates.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Trigger a system notification event such as subscription renewal or new feature release."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user receives the notification via the platform interface and/or email."
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "API Authentication and Authorization",
+    "description": "Ensure APIs enforce authentication schemes (BasicAuth, Bearer tokens) and reject unauthorized access.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Send API requests to secure endpoints without authentication headers."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify API responds with 401 Unauthorized error."
+      },
+      {
+        "type": "action",
+        "description": "Send API requests with invalid or expired tokens."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify API denies access and returns error."
+      },
+      {
+        "type": "action",
+        "description": "Send API requests with valid tokens."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access is granted only to permitted resources."
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "Database Optimization Scripts Execution and Effectiveness",
+    "description": "Verify that database optimization scripts run successfully and improve data retrieval and dashboard performance.",
+    "category": "performance",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Execute provided SQL optimization scripts on staging database."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify scripts complete without errors."
+      },
+      {
+        "type": "action",
+        "description": "Measure query performance and dashboard load times before and after optimization."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm performance improvements as expected."
+      }
+    ]
+  },
+  {
+    "id": "TC016",
+    "title": "File Upload Security and Storage Integrity",
+    "description": "Test that uploaded logo and image files are securely stored and accessible only to authorized users without data loss or corruption.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Upload a valid image file as an authenticated user."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify file is stored securely and can be retrieved accurately."
+      },
+      {
+        "type": "action",
+        "description": "Attempt to access uploaded files without authorization."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify unauthorized access is prevented."
+      }
+    ]
+  },
+  {
+    "id": "TC017",
+    "title": "Spotify Playlist and Audio Preview Interaction",
+    "description": "Verify that users can explore Spotify playlist data and play audio previews within the platform with smooth user experience.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Login and navigate to Spotify integration dashboard area."
+      },
+      {
+        "type": "action",
+        "description": "Select a playlist and view associated analytics."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm playlist data loads correctly and statistics display accurately."
+      },
+      {
+        "type": "action",
+        "description": "Click on audio previews for selected songs."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify audio previews play without error and controls respond properly."
+      }
+    ]
+  }
+]

@@ -8,6 +8,7 @@ export const LazyStreamsManager = lazy(() => import('./StreamsManager'));
 export const LazyRelayStreamsManager = lazy(() => import('./RelayStreamsManager'));
 export const LazyEmailManager = lazy(() => import('./EmailManager'));
 export const LazyRadioSuggestions = lazy(() => import('./RadioSuggestions'));
+export const LazySqlConsole = lazy(() => import('./SqlConsole'));
 
 // Wrapper components with loading states
 export const UserListLazy: React.FC = () => (
@@ -75,10 +76,24 @@ export const RadioSuggestionsLazy: React.FC = () => (
   </LazyWrapper>
 );
 
+export const SqlConsoleLazy: React.FC = () => (
+  <LazyWrapper
+    threshold={0.1}
+    rootMargin="100px"
+    loadingMessage="Carregando console SQL..."
+    minHeight="400px"
+  >
+    <Suspense fallback={<Loading message="Carregando console SQL..." />}>
+      <LazySqlConsole />
+    </Suspense>
+  </LazyWrapper>
+);
+
 export default {
   UserListLazy,
   StreamsManagerLazy,
   RelayStreamsManagerLazy,
   EmailManagerLazy,
   RadioSuggestionsLazy,
+  SqlConsoleLazy,
 };

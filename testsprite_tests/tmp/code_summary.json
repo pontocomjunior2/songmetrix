@@ -1,0 +1,129 @@
+{
+  "tech_stack": [
+    "Node.js",
+    "Express.js",
+    "React",
+    "Vite",
+    "PostgreSQL",
+    "Supabase",
+    "TanStack Query",
+    "React Hook Form",
+    "Tailwind CSS",
+    "ShadCN UI",
+    "Chart.js",
+    "Stripe",
+    "OpenAI",
+    "TypeScript",
+    "Zod",
+    "Winston",
+    "Multer",
+    "CORS",
+    "Axios",
+    "Date-fns",
+    "React Router",
+    "Lucide React",
+    "React Toastify",
+    "DOMPurify",
+    "IMask",
+    "Sonner"
+  ],
+  "features": [
+    {
+      "name": "Authentication System",
+      "description": "Sistema completo de autenticação com Supabase, incluindo login, registro, recuperação de senha e gerenciamento de sessão otimizado",
+      "components": ["Login", "Register", "ProtectedRoute", "AuthContext", "useOptimizedAuthIntegration"]
+    },
+    {
+      "name": "Dashboard Analytics",
+      "description": "Dashboard principal com métricas em tempo real, gráficos interativos e dados de performance das rádios",
+      "components": ["Dashboard", "MainLayout", "SidebarFixed", "UserAvatar"]
+    },
+    {
+      "name": "Real-time Monitoring",
+      "description": "Monitoramento em tempo real de streams de rádio e dados de audiência",
+      "components": ["RealTime", "NotificationBell"]
+    },
+    {
+      "name": "Ranking System",
+      "description": "Sistema de ranking de músicas e rádios com filtros e ordenação",
+      "components": ["Ranking"]
+    },
+    {
+      "name": "Admin Panel",
+      "description": "Painel administrativo completo com gerenciamento de usuários, configurações LLM, insights e console SQL",
+      "components": ["InsightDashboardPage", "LLMSettingsPage", "SqlConsole", "UserList", "RadioAbbreviations"]
+    },
+    {
+      "name": "Payment Integration",
+      "description": "Integração com Stripe para processamento de pagamentos e gerenciamento de planos",
+      "components": ["PaymentSuccess", "PaymentCanceled", "MeuPlanoPage"]
+    },
+    {
+      "name": "User Management",
+      "description": "Sistema de gerenciamento de usuários com diferentes níveis de permissão e planos",
+      "components": ["UserMetadataService", "SessionManager", "useCachedUserData"]
+    },
+    {
+      "name": "Radio Management",
+      "description": "Gerenciamento de rádios, sugestões e abreviações",
+      "components": ["SuggestRadioModal", "RadioAbbreviations"]
+    },
+    {
+      "name": "Theme System",
+      "description": "Sistema de temas dark/light com persistência",
+      "components": ["useTheme"]
+    },
+    {
+      "name": "Notification System",
+      "description": "Sistema de notificações em tempo real com toast e bell notifications",
+      "components": ["NotificationBell", "use-toast", "NotificationsPage"]
+    }
+  ],
+  "architecture": {
+    "frontend": {
+      "framework": "React with TypeScript",
+      "bundler": "Vite",
+      "routing": "React Router with lazy loading",
+      "state_management": "TanStack Query + Context API",
+      "styling": "Tailwind CSS + ShadCN UI",
+      "forms": "React Hook Form + Zod validation"
+    },
+    "backend": {
+      "runtime": "Node.js",
+      "framework": "Express.js",
+      "database": "PostgreSQL with Supabase",
+      "authentication": "Supabase Auth with custom middleware",
+      "caching": "Custom cache middleware",
+      "logging": "Winston"
+    },
+    "deployment": {
+      "frontend_port": 5173,
+      "backend_port": 3001,
+      "database": "Supabase hosted PostgreSQL"
+    }
+  },
+  "key_directories": {
+    "src/components": "Componentes React organizados por funcionalidade",
+    "src/hooks": "Custom hooks para lógica reutilizável",
+    "src/services": "Serviços para comunicação com APIs",
+    "src/contexts": "Context providers para estado global",
+    "src/pages": "Páginas principais da aplicação",
+    "server": "Backend Node.js com Express",
+    "testsprite_tests": "Testes automatizados com TestSprite"
+  },
+  "performance_considerations": [
+    "Lazy loading de componentes e rotas",
+    "Cache middleware no backend",
+    "Otimização de queries com TanStack Query",
+    "Gerenciamento otimizado de sessão",
+    "Componentes memoizados para performance"
+  ],
+  "security_features": [
+    "Autenticação JWT com Supabase",
+    "Middleware de autenticação customizado",
+    "Validação de dados com Zod",
+    "Sanitização de HTML com DOMPurify",
+    "Role-based access control",
+    "CORS configurado"
+  ]
+}

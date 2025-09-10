@@ -2464,6 +2464,79 @@ app.post('/api/sendpulse/sync-all-users', authenticateUser, async (req, res) => 
   // ... existing code ...
 });
 
+// Endpoint para execução de SQL (apenas para ADMIN)
+app.post('/api/admin/execute-sql', authenticateUser, async (req, res) => {
+  try {
+    // Verificar se o usuário é administrador
+    const { data: userData, error: userError } = await supabaseAdmin
+      .from('users')
+      .select('status')
+      .eq('id', req.user.id)
+      .single();
+
+    if (userError || userData?.status !== 'ADMIN') {
+      return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem executar SQL.' });
+    }
+
+    const { sql } = req.body;
+
+    if (!sql || typeof sql !== 'string') {
+      return res.status(400).json({ error: 'Query SQL é obrigatória' });
+    }
+
+    // Verificar se é uma query de leitura (SELECT) ou modificação
+    const isReadQuery = sql.trim().toLowerCase().startsWith('select');
+    const isShowQuery = sql.trim().toLowerCase().startsWith('show');
+    const isDescribeQuery = sql.trim().toLowerCase().startsWith('describe');
+    const isExplainQuery = sql.trim().toLowerCase().startsWith('explain');
+    
+    // Permitir apenas queries seguras por padrão
+    if (!isReadQuery && !isShowQuery && !isDescribeQuery && !isExplainQuery) {
+      // Para queries de modificação, adicionar verificação extra
+      const dangerousKeywords = ['drop', 'truncate', 'delete from users', 'delete from auth'];
+      const lowerSql = sql.toLowerCase();
+      
+      for (const keyword of dangerousKeywords) {
+        if (lowerSql.includes(keyword)) {
+          return res.status(403).json({ 
+            error: `Query contém operação perigosa: ${keyword}. Use o Supabase Dashboard para operações críticas.` 
+          });
+        }
+      }
+    }
+
+    console.log(`[ADMIN SQL] Usuário ${req.user.email} executando: ${sql.substring(0, 100)}...`);
+
+    // Executar a query usando o pool direto para maior flexibilidade
+    const result = await pool.query(sql);
+
+    // Formatar resposta baseada no tipo de query
+    let response = {
+      success: true,
+      rowCount: result.rowCount,
+      command: result.command
+    };
+
+    if (result.rows && result.rows.length > 0) {
+      response.data = result.rows;
+      response.fields = result.fields?.map(field => ({
+        name: field.name,
+        dataTypeID: field.dataTypeID
+      }));
+    }
+
+    res.json(response);
+
+  } catch (error) {
+    console.error('[ADMIN SQL] Erro ao executar query:', error);
+    res.status(500).json({
+      error: 'Erro ao executar query SQL',
+      details: error.message,
+      hint: error.hint || null
+    });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);

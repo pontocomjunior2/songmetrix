@@ -13,13 +13,14 @@ export const LazyRoutes = {
   Plans: lazy(() => import('@/components/Plans/index')),
   MeuPlanoPage: lazy(() => import('@/pages/MeuPlanoPage')),
   
-  // Admin routes - using lazy-loaded versions for heavy components
+  // Admin routes
   UserList: lazy(() => import('@/components/Admin/LazyAdminComponents').then(module => ({ default: module.UserListLazy }))),
   RadioAbbreviations: lazy(() => import('@/components/Admin/RadioAbbreviations')),
   StreamsManager: lazy(() => import('@/components/Admin/LazyAdminComponents').then(module => ({ default: module.StreamsManagerLazy }))),
   RelayStreamsManager: lazy(() => import('@/components/Admin/LazyAdminComponents').then(module => ({ default: module.RelayStreamsManagerLazy }))),
   RadioSuggestions: lazy(() => import('@/components/Admin/LazyAdminComponents').then(module => ({ default: module.RadioSuggestionsLazy }))),
   EmailManager: lazy(() => import('@/components/Admin/LazyAdminComponents').then(module => ({ default: module.EmailManagerLazy }))),
+  SqlConsole: lazy(() => import('@/components/Admin/LazyAdminComponents').then(module => ({ default: module.SqlConsoleLazy }))),
   NotificationsPage: lazy(() => import('@/pages/Admin/NotificationsPage')),
   InsightDashboardPage: lazy(() => import('@/pages/Admin/InsightDashboardPage')),
   LLMSettingsPage: lazy(() => import('@/pages/Admin/LLMSettingsPage')),

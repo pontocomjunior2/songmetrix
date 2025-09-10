@@ -214,6 +214,16 @@ function App() {
             } 
           />
           <Route 
+            path="admin/sql-console" 
+            element={
+              <AdminRoute>
+                <Suspense fallback={<RouteLoadingFallback routeName="AdminSqlConsole" />}>
+                  <LazyRoutes.SqlConsole />
+                </Suspense>
+              </AdminRoute>
+            } 
+          />
+          <Route 
             path="admin/notifications" 
             element={
               <AdminRoute>
