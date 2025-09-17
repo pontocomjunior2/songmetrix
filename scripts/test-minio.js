@@ -15,11 +15,11 @@ const __dirname = path.dirname(__filename);
 
 // Configurações MinIO
 const minioConfig = {
-  endpoint: process.env.MINIO_ENDPOINT || '93.127.141.215:9000',
+  endpoint: process.env.MINIO_ENDPOINT || 'files.songmetrix.com.br',
   accessKey: process.env.MINIO_ACCESS_KEY || 'admin',
   secretKey: process.env.MINIO_SECRET_KEY || 'Conquista@@2',
   bucket: process.env.MINIO_BUCKET || 'songmetrix-backups',
-  useSSL: process.env.MINIO_USE_SSL === 'true'
+  useSSL: process.env.MINIO_USE_SSL !== 'false' // Default to true for HTTPS
 };
 
 const LOG_DIR = '/app/logs';
@@ -69,7 +69,8 @@ class MinIOTester {
 
       // Configurar alias
       this.log('🔧 Configurando alias MinIO...');
-      execSync(`mc alias set ${this.aliasName} http://${minioConfig.endpoint} ${minioConfig.accessKey} ${minioConfig.secretKey}`, {
+      const protocol = minioConfig.useSSL ? 'https' : 'http';
+      execSync(`mc alias set ${this.aliasName} ${protocol}://${minioConfig.endpoint} ${minioConfig.accessKey} ${minioConfig.secretKey}`, {
         stdio: 'pipe'
       });
       this.log('✅ Alias configurado');

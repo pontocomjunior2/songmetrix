@@ -1,55 +1,155 @@
 # 🔑 Guia para Obter Credenciais MinIO
 
+## 🔍 **IMPORTANTE: PORTAS DO MINIO**
+
+### **Diferença entre Console e API:**
+- **Console Web:** `https://console.files.songmetrix.com.br` (porta 443/HTTPS)
+- **API S3:** `https://console.files.songmetrix.com.br:9000` (porta 9000)
+
+**⚠️ Para o MinIO Client (mc), sempre use a porta da API S3 (geralmente 9000), não a porta do console!**
+
+### **Portas comuns do MinIO:**
+- **Console:** 9443 (HTTPS) ou 9001 (HTTP)
+- **API S3:** 9000 (HTTPS) ou 9000 (HTTP)
+- **Seu caso específico:** HTTP na porta 9000 (sem SSL)
+- **Se não souber:** Teste 9000 primeiro
+
+---
+
+## 🎯 **SUAS CREDENCIAIS MINIO (PRONTO PARA USAR):**
+
+Baseado nas variáveis que você forneceu, use estas configurações:
+
+```bash
+# Credenciais corretas para o seu MinIO:
+MINIO_ENDPOINT=93.127.141.215:9000
+MINIO_ACCESS_KEY=admin
+MINIO_SECRET_KEY=Conquista@@2
+MINIO_USE_SSL=false
+MINIO_BUCKET=songmetrix-bkp
+
+# Comando para configurar MinIO client:
+mc alias set songmetrix-bkp https://files.songmetrix.com.br/ admin Conquista@@2
+
+# Testar conexão:
+mc ls songmetrix-bkp
+
+# Criar bucket para backups:
+mc mb songmetrix-bkp/songmetrix-backups
+
+# Testar upload:
+echo "test backup" | mc pipe songmetrix-bkp/songmetrix-backups/test.txt
+```
+
+**✅ Com essas credenciais você pode fazer o deploy imediatamente!**
+
+---
+
 ## 📋 Métodos para Obter MINIO_ACCESS_KEY e MINIO_SECRET_KEY
 
-### Método 1: Via Console Web do MinIO (Recomendado)
+### Método 0: Usar Credenciais de Admin (MAIS SIMPLES)
 
-#### **Passo 1: Acesse o Console MinIO**
+#### **Para começar rapidamente:**
 ```bash
-# Abra o navegador e acesse:
-https://console.files.songmetrix.com.br
+# Use as credenciais padrão do MinIO (se não foram alteradas):
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=[sua_senha_admin_do_minio]
 
-# Ou se for HTTP:
-http://console.files.songmetrix.com.br
+# Ou se você sabe as credenciais atuais:
+MINIO_ACCESS_KEY=[access_key_atual]
+MINIO_SECRET_KEY=[secret_key_atual]
 ```
 
-#### **Passo 2: Login no MinIO**
+**⚠️ Importante:** Para produção, crie um usuário específico usando os métodos abaixo.
+
+---
+
+### Método 1: Via MinIO Client (mc) - RECOMENDADO
+
+#### **Passo 1: Instalar MinIO Client**
 ```bash
-# Use as credenciais de administrador:
-Username: minioadmin (ou seu usuário admin)
-Password: [sua senha de admin do MinIO]
+# Linux
+wget https://dl.min.io/client/mc/release/linux-amd64/mc
+chmod +x mc
+sudo mv mc /usr/local/bin/
+
+# macOS
+brew install minio/stable/mc
+
+# Windows (PowerShell)
+Invoke-WebRequest -Uri "https://dl.min.io/client/mc/release/windows-amd64/mc.exe" -OutFile "mc.exe"
 ```
 
-#### **Passo 3: Acesse Identity → Users**
+#### **Passo 2: Configurar Alias (Importante: Use a porta API, não console)**
 ```bash
-# No menu lateral esquerdo:
-1. Clique em "Identity"
-2. Clique em "Users"
-3. Veja a lista de usuários existentes
+# ⚠️ IMPORTANTE: Use a porta da API S3, não a porta do console!
+# Se o console é https://console.files.songmetrix.com.br (porta 443)
+# A API S3 geralmente está na porta 9000
+
+# Para console na porta 443/HTTPS, API geralmente na porta 9000
+mc alias set songmetrix https://console.files.songmetrix.com.br:9000 minioadmin [sua_senha_admin]
+
+# Ou se for HTTP na porta 9000
+mc alias set songmetrix http://console.files.songmetrix.com.br:9000 minioadmin [sua_senha_admin]
+
+# Verificar conexão
+mc admin info songmetrix
 ```
 
-#### **Passo 4: Criar ou Ver Usuário**
+#### **Passo 3: Criar Service Account (Método Atual)**
 ```bash
-# Se já existe um usuário para backup:
-- Clique no usuário
-- Vá para "Access Keys"
-- Copie o Access Key e Secret Key
+# Criar service account para backup (método mais seguro)
+mc admin user svcacct add songmetrix-bkp admin \
+  --access-key "songmetrix_backup_key" \
+  --secret-key "sua_secret_key_aqui" \
+  --description "Songmetrix Backup Service Account"
 
-# Se precisar criar um novo usuário:
-1. Clique "Create User"
-2. Username: songmetrix_backup
-3. Password: [senha forte]
-4. Clique "Save"
-5. Vá para "Access Keys" do usuário
-6. Clique "Create Access Key"
-7. Copie Access Key e Secret Key
+# Verificar service accounts criados
+mc admin user svcacct ls songmetrix minioadmin
 ```
 
-#### **Passo 5: Verificar Permissões**
+#### **Passo 4: Testar Credenciais**
 ```bash
-# Certifique-se que o usuário tem permissões:
-- ReadWrite no bucket songmetrix-backups
-- Ou permissões de admin se for usuário admin
+# Configurar alias com as novas credenciais
+mc alias set songmetrix-backup https://console.files.songmetrix.com.br songmetrix_backup_key sua_secret_key_aqui
+
+# Testar listando buckets
+mc ls songmetrix-backup
+
+# Criar bucket de teste
+mc mb songmetrix-backup/test-bucket
+
+# Testar upload
+echo "test backup" | mc pipe songmetrix-backup/test-bucket/test.txt
+```
+
+#### **Passo 5: Definir Política de Acesso**
+```bash
+# Criar política para backup (opcional)
+cat > backup-policy.json << EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::songmetrix-backups/*",
+        "arn:aws:s3:::songmetrix-backups"
+      ]
+    }
+  ]
+}
+EOF
+
+# Aplicar política ao service account
+mc admin policy create songmetrix backup-policy backup-policy.json
+mc admin policy attach songmetrix backup-policy --user songmetrix_backup_key
 ```
 
 ---
@@ -303,6 +403,33 @@ curl -k https://console.files.songmetrix.com.br
 
 # Verificar usuários:
 mc admin user list songmetrix
+```
+
+### **Erro: "S3 API Requests must be made to API port"**
+```bash
+# ❌ ERRADO - Usando HTTPS quando deveria ser HTTP:
+mc alias set songmetrix https://console.files.songmetrix.com.br admin password
+
+# ✅ CERTO - Usando HTTP na porta 9000 (seu caso):
+mc alias set songmetrix http://93.127.141.215:9000 admin Conquista@@2
+
+# Ou com o domínio:
+mc alias set songmetrix http://console.files.songmetrix.com.br:9000 admin Conquista@@2
+```
+
+### **Para o seu caso específico:**
+```bash
+# Baseado nas suas variáveis de ambiente:
+mc alias set songmetrix-bkp http://93.127.141.215:9000 admin Conquista@@2
+
+# Testar conexão:
+mc ls songmetrix-bkp
+
+# Criar bucket para backups:
+mc mb songmetrix-bkp/songmetrix-backups
+
+# Testar upload:
+echo "test backup" | mc pipe songmetrix-bkp/songmetrix-backups/test.txt
 ```
 
 ---

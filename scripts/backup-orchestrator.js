@@ -28,11 +28,11 @@ const dbConfig = {
 
 // Configurações MinIO
 const minioConfig = {
-  endpoint: process.env.MINIO_ENDPOINT || '93.127.141.215:9000',
+  endpoint: process.env.MINIO_ENDPOINT || 'files.songmetrix.com.br',
   accessKey: process.env.MINIO_ACCESS_KEY || 'admin',
   secretKey: process.env.MINIO_SECRET_KEY || 'Conquista@@2',
   bucket: process.env.MINIO_BUCKET || 'songmetrix-backups',
-  useSSL: process.env.MINIO_USE_SSL === 'true'
+  useSSL: process.env.MINIO_USE_SSL !== 'false'  // Default to true for HTTPS
 };
 
 // Diretórios
@@ -183,16 +183,24 @@ class BackupOrchestrator {
         return false;
       }
 
-      // Configurar alias do MinIO (se não existir)
-      const aliasName = 'songmetrix-backup-alias';
+      // Usar alias existente 'songmetrix-bkp'
+      const aliasName = 'songmetrix-bkp';
+
+      // Verificar se o alias existe
       try {
-        execSync(`mc alias set ${aliasName} http://${minioConfig.endpoint} ${minioConfig.accessKey} ${minioConfig.secretKey}`, {
-          stdio: 'pipe'
-        });
-        this.log('✅ Alias MinIO configurado');
+        execSync(`mc ping ${aliasName}`, { stdio: 'pipe' });
+        this.log('✅ Alias MinIO existente verificado');
       } catch (error) {
-        // Alias pode já existir, continuar
-        this.log('ℹ️ Alias MinIO já existe ou erro na configuração');
+        this.log('⚠️ Alias songmetrix-bkp não encontrado, tentando criar...');
+        try {
+          execSync(`mc alias set ${aliasName} https://${minioConfig.endpoint} ${minioConfig.accessKey} ${minioConfig.secretKey}`, {
+            stdio: 'pipe'
+          });
+          this.log('✅ Alias MinIO criado');
+        } catch (createError) {
+          this.log(`❌ Erro ao criar alias MinIO: ${createError.message}`, 'ERROR');
+          return false;
+        }
       }
 
       // Criar bucket se não existir
