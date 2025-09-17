@@ -36,14 +36,14 @@ const minioConfig = {
 };
 
 // Diretórios
-const TEMP_DIR = '/app/temp';
-const LOG_DIR = '/app/logs';
+const TEMP_DIR = process.platform === 'win32' ? './temp' : '/app/temp';
+const LOG_DIR = process.platform === 'win32' ? './logs' : '/app/logs';
 
 class BackupOrchestrator {
   constructor() {
     this.pool = new Pool(dbConfig);
     this.timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    this.backupFile = `songmetrix-backup-${this.timestamp}.sql.gz`;
+    this.backupFile = `songmetrix-backup-${this.timestamp}.dump`;
     this.backupPath = path.join(TEMP_DIR, this.backupFile);
   }
 
@@ -176,8 +176,9 @@ class BackupOrchestrator {
       this.log('☁️ Fazendo upload para MinIO...');
 
       // Verificar se mc (MinIO client) está disponível
+      const mcCmd = process.platform === 'win32' ? 'mc.exe' : 'mc';
       try {
-        execSync('which mc', { stdio: 'pipe' });
+        execSync(`${mcCmd} --version`, { stdio: 'pipe' });
       } catch (error) {
         this.log('⚠️ MinIO client (mc) não encontrado, pulando upload');
         return false;
@@ -188,12 +189,12 @@ class BackupOrchestrator {
 
       // Verificar se o alias existe
       try {
-        execSync(`mc ping ${aliasName}`, { stdio: 'pipe' });
+        execSync(`${mcCmd} ping ${aliasName}`, { stdio: 'pipe' });
         this.log('✅ Alias MinIO existente verificado');
       } catch (error) {
         this.log('⚠️ Alias songmetrix-bkp não encontrado, tentando criar...');
         try {
-          execSync(`mc alias set ${aliasName} https://${minioConfig.endpoint} ${minioConfig.accessKey} ${minioConfig.secretKey}`, {
+          execSync(`${mcCmd} alias set ${aliasName} https://${minioConfig.endpoint} ${minioConfig.accessKey} ${minioConfig.secretKey}`, {
             stdio: 'pipe'
           });
           this.log('✅ Alias MinIO criado');
@@ -205,7 +206,7 @@ class BackupOrchestrator {
 
       // Criar bucket se não existir
       try {
-        execSync(`mc mb ${aliasName}/${minioConfig.bucket} --ignore-existing`, {
+        execSync(`${mcCmd} mb ${aliasName}/${minioConfig.bucket} --ignore-existing`, {
           stdio: 'pipe'
         });
         this.log(`✅ Bucket ${minioConfig.bucket} verificado/criado`);
@@ -215,7 +216,7 @@ class BackupOrchestrator {
 
       // Fazer upload
       const remotePath = `daily/${this.backupFile}`;
-      execSync(`mc cp ${this.backupPath} ${aliasName}/${minioConfig.bucket}/${remotePath}`, {
+      execSync(`${mcCmd} cp ${this.backupPath} ${aliasName}/${minioConfig.bucket}/${remotePath}`, {
         stdio: 'inherit'
       });
 

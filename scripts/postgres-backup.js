@@ -28,20 +28,21 @@ const dbConfig = {
 
 // Configurações MinIO
 const minioConfig = {
-  endpoint: process.env.MINIO_ENDPOINT || '93.127.141.215:9000',
+  endpoint: process.env.MINIO_ENDPOINT || 'files.songmetrix.com.br',
   accessKey: process.env.MINIO_ACCESS_KEY || 'admin',
   secretKey: process.env.MINIO_SECRET_KEY || 'Conquista@@2',
-  bucket: process.env.MINIO_BUCKET || 'songmetrix-backups'
+  bucket: process.env.MINIO_BUCKET || 'songmetrix-backups',
+  useSSL: process.env.MINIO_USE_SSL !== 'false' // Default to true for HTTPS
 };
 
-const TEMP_DIR = '/app/temp';
-const LOG_DIR = '/app/logs';
+const TEMP_DIR = process.platform === 'win32' ? './temp' : '/app/temp';
+const LOG_DIR = process.platform === 'win32' ? './logs' : '/app/logs';
 
 class PostgresBackupService {
   constructor() {
     this.pool = new Pool(dbConfig);
     this.timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    this.backupFile = `postgres-backup-${this.timestamp}.sql.gz`;
+    this.backupFile = `postgres-backup-${this.timestamp}.dump`;
     this.backupPath = path.join(TEMP_DIR, this.backupFile);
   }
 
@@ -135,32 +136,15 @@ class PostgresBackupService {
         this.log('📁 Diretório temp criado');
       }
 
-      // Comando pg_dump otimizado
-      const pgDumpCmd = `
-        pg_dump --host=${dbConfig.host}
-                --port=${dbConfig.port}
-                --username=${dbConfig.user}
-                --dbname=${dbConfig.database}
-                --no-password
-                --format=custom
-                --compress=9
-                --blobs
-                --verbose
-                --file=${this.backupPath}
-                --exclude-table='*_temp*'
-                --exclude-table='*_backup*'
-      `.replace(/\s+/g, ' ').trim();
+      // Usar Docker para executar pg_dump
+      const dockerCmd = `docker run --rm --network host -e PGPASSWORD=${dbConfig.password} -v ${process.cwd()}/temp:/backup postgres:15-alpine pg_dump --host=${dbConfig.host} --port=${dbConfig.port} --username=${dbConfig.user} --dbname=${dbConfig.database} --no-password --format=custom --compress=9 --blobs --verbose --file=/backup/${this.backupFile} --exclude-table='*_temp*' --exclude-table='*_backup*'`;
 
-      this.log('🚀 Executando pg_dump...');
-
-      // Configurar senha
-      process.env.PGPASSWORD = dbConfig.password;
+      this.log('🚀 Executando pg_dump via Docker...');
 
       const startTime = Date.now();
-      execSync(pgDumpCmd, {
+      execSync(dockerCmd, {
         stdio: 'inherit',
-        env: { ...process.env, PGPASSWORD: dbConfig.password },
-        timeout: 300000 // 5 minutos timeout
+        timeout: 600000 // 10 minutos timeout
       });
 
       const duration = Math.round((Date.now() - startTime) / 1000);
@@ -187,30 +171,36 @@ class PostgresBackupService {
     try {
       this.log('🔍 Validando backup...');
 
-      // Tentar restaurar apenas o schema para validação
-      const validateCmd = `
-        pg_restore --host=${dbConfig.host}
-                   --port=${dbConfig.port}
-                   --username=${dbConfig.user}
-                   --dbname=${dbConfig.database}
-                   --no-password
-                   --schema-only
-                   --clean
-                   --if-exists
-                   --verbose
-                   ${this.backupPath}
-      `.replace(/\s+/g, ' ').trim();
+      // Verificar se o arquivo existe e tem tamanho válido
+      if (!fs.existsSync(this.backupPath)) {
+        throw new Error('Arquivo de backup não encontrado');
+      }
+
+      const stats = fs.statSync(this.backupPath);
+      if (stats.size === 0) {
+        throw new Error('Arquivo de backup está vazio');
+      }
+
+      this.log(`📏 Tamanho do backup: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+
+      // Tentar listar o conteúdo do backup para validar estrutura
+      const listCmd = `pg_restore --list ${this.backupPath}`;
 
       process.env.PGPASSWORD = dbConfig.password;
 
-      // Executar validação (não afetará dados reais)
-      execSync(`echo "SELECT 1;" | psql --host=${dbConfig.host} --port=${dbConfig.port} --username=${dbConfig.user} --dbname=${dbConfig.database} --no-password`, {
+      const result = execSync(listCmd, {
+        encoding: 'utf8',
         stdio: 'pipe',
         env: { ...process.env, PGPASSWORD: dbConfig.password }
       });
 
-      this.log('✅ Backup validado (estrutura OK)');
-      return true;
+      // Verificar se o resultado contém itens esperados
+      if (result.includes('TABLE') || result.includes('SEQUENCE') || result.includes('INDEX')) {
+        this.log('✅ Backup validado (estrutura OK)');
+        return true;
+      } else {
+        throw new Error('Backup não contém estruturas esperadas');
+      }
 
     } catch (error) {
       this.log(`⚠️ Validação do backup falhou: ${error.message}`, 'WARN');
@@ -225,8 +215,9 @@ class PostgresBackupService {
       this.log('☁️ Fazendo upload para MinIO...');
 
       // Verificar se mc está disponível
+      const mcCmd = process.platform === 'win32' ? 'mc.exe' : 'mc';
       try {
-        execSync('which mc', { stdio: 'pipe' });
+        execSync(`${mcCmd} --version`, { stdio: 'pipe' });
       } catch (error) {
         this.log('⚠️ MinIO client não encontrado, pulando upload');
         return false;
@@ -234,8 +225,9 @@ class PostgresBackupService {
 
       // Configurar alias
       const aliasName = 'postgres-backup-alias';
+      const protocol = minioConfig.useSSL ? 'https' : 'http';
       try {
-        execSync(`mc alias set ${aliasName} http://${minioConfig.endpoint} ${minioConfig.accessKey} ${minioConfig.secretKey}`, {
+        execSync(`${mcCmd} alias set ${aliasName} ${protocol}://${minioConfig.endpoint} ${minioConfig.accessKey} ${minioConfig.secretKey}`, {
           stdio: 'pipe'
         });
       } catch (error) {
@@ -244,7 +236,7 @@ class PostgresBackupService {
 
       // Criar bucket se não existir
       try {
-        execSync(`mc mb ${aliasName}/${minioConfig.bucket} --ignore-existing`, {
+        execSync(`${mcCmd} mb ${aliasName}/${minioConfig.bucket} --ignore-existing`, {
           stdio: 'pipe'
         });
       } catch (error) {
@@ -253,7 +245,7 @@ class PostgresBackupService {
 
       // Fazer upload
       const remotePath = `postgres/${this.backupFile}`;
-      execSync(`mc cp ${this.backupPath} ${aliasName}/${minioConfig.bucket}/${remotePath}`, {
+      execSync(`${mcCmd} cp ${this.backupPath} ${aliasName}/${minioConfig.bucket}/${remotePath}`, {
         stdio: 'inherit'
       });
 

@@ -5,6 +5,8 @@
  * Diagnóstico completo da integração MinIO
  */
 
+console.log('🚀 Iniciando script test-minio.js...');
+
 import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
@@ -45,11 +47,22 @@ class MinIOTester {
   async testMCInstallation() {
     try {
       this.log('🔍 Verificando instalação do MinIO client (mc)...');
+      console.log('🔍 Procurando mc no PATH...');
 
-      const result = execSync('which mc', { encoding: 'utf8' });
+      // Usar mc.exe diretamente do diretório atual
+      const mcPath = './mc.exe';
+      this.log(`🔍 Verificando mc em: ${mcPath}`);
+
+      // Verificar se o arquivo existe
+      const fs = await import('fs');
+      if (!fs.existsSync(mcPath)) {
+        throw new Error(`mc.exe não encontrado em ${mcPath}`);
+      }
+
+      this.log('✅ mc.exe encontrado');
       this.log('✅ mc encontrado em: ' + result.trim());
 
-      const version = execSync('mc --version', { encoding: 'utf8' });
+      const version = execSync('mc.exe --version', { encoding: 'utf8' });
       this.log('📋 Versão mc: ' + version.trim());
 
       return true;
@@ -70,14 +83,14 @@ class MinIOTester {
       // Configurar alias
       this.log('🔧 Configurando alias MinIO...');
       const protocol = minioConfig.useSSL ? 'https' : 'http';
-      execSync(`mc alias set ${this.aliasName} ${protocol}://${minioConfig.endpoint} ${minioConfig.accessKey} ${minioConfig.secretKey}`, {
+      execSync(`mc.exe alias set ${this.aliasName} ${protocol}://${minioConfig.endpoint} ${minioConfig.accessKey} ${minioConfig.secretKey}`, {
         stdio: 'pipe'
       });
       this.log('✅ Alias configurado');
 
       // Testar conexão
       this.log('🔗 Testando conexão...');
-      const pingResult = execSync(`mc ping ${this.aliasName}`, {
+      const pingResult = execSync(`mc.exe ping ${this.aliasName}`, {
         encoding: 'utf8',
         stdio: 'pipe'
       });
@@ -96,14 +109,14 @@ class MinIOTester {
 
       // Criar bucket se não existir
       this.log(`📋 Criando/verificando bucket: ${minioConfig.bucket}`);
-      execSync(`mc mb ${this.aliasName}/${minioConfig.bucket} --ignore-existing`, {
+      execSync(`mc.exe mb ${this.aliasName}/${minioConfig.bucket} --ignore-existing`, {
         stdio: 'pipe'
       });
       this.log('✅ Bucket OK');
 
       // Listar conteúdo do bucket
       this.log('📋 Listando conteúdo do bucket...');
-      const listResult = execSync(`mc ls ${this.aliasName}/${minioConfig.bucket}`, {
+      const listResult = execSync(`mc.exe ls ${this.aliasName}/${minioConfig.bucket}`, {
         encoding: 'utf8',
         stdio: 'pipe'
       });
@@ -141,13 +154,13 @@ class MinIOTester {
 
       // Fazer upload
       const remotePath = `test/minio-test-${Date.now()}.txt`;
-      execSync(`mc cp ${testFile} ${this.aliasName}/${minioConfig.bucket}/${remotePath}`, {
+      execSync(`mc.exe cp ${testFile} ${this.aliasName}/${minioConfig.bucket}/${remotePath}`, {
         stdio: 'inherit'
       });
       this.log(`✅ Upload concluído: ${remotePath}`);
 
       // Verificar upload
-      const verifyResult = execSync(`mc ls ${this.aliasName}/${minioConfig.bucket}/test/`, {
+      const verifyResult = execSync(`mc.exe ls ${this.aliasName}/${minioConfig.bucket}/test/`, {
         encoding: 'utf8',
         stdio: 'pipe'
       });
@@ -215,6 +228,12 @@ class MinIOTester {
   async run() {
     const startTime = Date.now();
     this.log('🎯 Iniciando diagnóstico MinIO do Songmetrix');
+    console.log('🔧 Configuração MinIO:', {
+      endpoint: minioConfig.endpoint,
+      accessKey: minioConfig.accessKey,
+      bucket: minioConfig.bucket,
+      useSSL: minioConfig.useSSL
+    });
 
     const results = {
       mcInstallation: false,
@@ -224,16 +243,20 @@ class MinIOTester {
     };
 
     try {
+      console.log('1. Iniciando teste de instalação do mc...');
       // 1. Testar instalação do mc
       results.mcInstallation = await this.testMCInstallation();
+      console.log('1. Teste de instalação concluído:', results.mcInstallation);
 
       if (!results.mcInstallation) {
         this.log('❌ Abortando testes - mc não instalado', 'ERROR');
         return false;
       }
 
+      console.log('2. Iniciando teste de conexão MinIO...');
       // 2. Testar conexão MinIO
       results.minioConnection = await this.testMinIOConnection();
+      console.log('2. Teste de conexão concluído:', results.minioConnection);
 
       if (!results.minioConnection) {
         this.log('❌ Abortando testes - conexão MinIO falhou', 'ERROR');
