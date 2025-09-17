@@ -96,6 +96,11 @@ run_monthly_backup() {
     fi
 }
 
+# Garantir que os diretórios existem e têm as permissões corretas
+mkdir -p /app/logs /app/temp /app/config 2>/dev/null || true
+touch "$LOG_FILE" 2>/dev/null || true
+chmod 644 "$LOG_FILE" 2>/dev/null || true
+
 # Inicialização
 log "INFO" "🎯 Songmetrix Backup Service iniciado"
 log "INFO" "📍 Container: $(hostname)"
