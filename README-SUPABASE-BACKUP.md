@@ -121,6 +121,69 @@ tail -f /app/logs/supabase-backup.log
 docker exec songmetrix-supabase-backup-service pg_isready -h $SUPABASE_DB_HOST
 ```
 
+## ⚠️ Limitações do Dashboard MinIO
+
+### Problema Conhecido
+O **dashboard web do MinIO** tem limitações para download de arquivos grandes:
+
+- ❌ Downloads ficam travados em ~5%
+- ❌ Timeouts para arquivos >100MB
+- ❌ Problemas com arquivos binários (.dump)
+
+### ✅ Solução: Use MinIO Client (mc) ou Script Automático
+
+#### Opção 1: Script Automático (Recomendado)
+```bash
+# Executar script de download automático
+node scripts/download-backup.js
+
+# O script irá:
+# - Listar backups disponíveis
+# - Baixar o backup mais recente
+# - Verificar integridade automaticamente
+```
+
+#### Opção 2: MinIO Client Manual
+```bash
+# Instalar mc (se necessário)
+# Windows: https://dl.min.io/client/mc/release/windows-amd64/mc.exe
+# Linux: wget https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/local/bin/mc
+
+# Configurar acesso
+mc alias set songmetrix https://files.songmetrix.com.br admin SUA_SECRET_KEY
+
+# Listar backups disponíveis
+mc ls songmetrix/songmetrix-backups/ --recursive
+
+# Baixar backup PostgreSQL
+mc cp songmetrix/songmetrix-backups/daily/songmetrix-backup-2025-09-17T22-19-09.dump ./backup.dump
+
+# Baixar backup Supabase
+mc cp songmetrix/songmetrix-backups/supabase/supabase-backup-2025-09-17T22-19-09.dump ./supabase-backup.dump
+```
+
+### 🔍 Verificar Integridade do Download
+
+```bash
+# Verificar tamanho
+ls -lh backup.dump
+
+# Listar conteúdo (PostgreSQL)
+pg_restore --list backup.dump | head -20
+
+# Listar conteúdo (Supabase)
+pg_restore --list supabase-backup.dump | head -20
+```
+
+### 💡 Recomendação
+
+**Para downloads de backup, sempre use o MinIO Client (`mc`) em vez do dashboard web.**
+
+- ✅ Downloads completos e confiáveis
+- ✅ Verificação automática de integridade
+- ✅ Suporte total para arquivos grandes
+- ✅ Funciona via linha de comando ou scripts
+
 ## 🔄 Restauração de Emergência
 
 ### Cenário: Supabase Corrompido
