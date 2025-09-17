@@ -92,7 +92,79 @@ services:
       - "easypanel.category=backup"
       - "traefik.enable=false"
 
-# Rede isolada para backup (conecta ao PostgreSQL remoto)
+  supabase-backup:
+    build:
+      context: .
+      dockerfile: Dockerfile.supabasebkp
+    container_name: songmetrix-supabase-backup-service
+    restart: "no"  # Job único, não reinicia automaticamente
+
+    # Configurações de rede para conectar ao Supabase
+    networks:
+      - backup-network
+
+    # Variáveis de ambiente para Supabase (READ-ONLY)
+    # ⚠️ CONFIGURAR via arquivo .env ou EasyPanel
+    environment:
+      - NODE_ENV=production
+      - TZ=America/Sao_Paulo
+
+      # Supabase Database Connection (READ-ONLY)
+      - SUPABASE_DB_HOST=${SUPABASE_DB_HOST:-db.aylxcqaddelwxfukerhr.supabase.co}
+      - SUPABASE_DB_PORT=${SUPABASE_DB_PORT:-5432}
+      - SUPABASE_DB_NAME=${SUPABASE_DB_NAME:-postgres}
+      - SUPABASE_DB_USER=${SUPABASE_DB_USER:-postgres}
+      - SUPABASE_DB_PASSWORD=${SUPABASE_DB_PASSWORD}  # REQUIRED
+
+      # MinIO - Mesmo storage do backup PostgreSQL
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-files.songmetrix.com.br}
+      - MINIO_USE_SSL=${MINIO_USE_SSL:-true}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-admin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-Conquista@@2}
+      - MINIO_BUCKET=${MINIO_BUCKET:-songmetrix-backups}
+
+    # Volumes persistentes
+    volumes:
+      - supabase_backup_logs:/app/logs:rw
+      - supabase_backup_temp:/app/temp:rw
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+
+    # Configurações de segurança - usuário não-root
+    user: backupuser
+    security_opt:
+      - no-new-privileges:true
+    read_only: false  # Permite escrita nos volumes montados
+    tmpfs:
+      - /tmp:noexec,nosuid,size=50m
+
+    # Recursos limitados
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+    # Health check específico para Supabase
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "${SUPABASE_DB_HOST:-db.aylxcqaddelwxfukerhr.supabase.co}", "-p", "${SUPABASE_DB_PORT:-5432}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # Labels para EasyPanel
+    labels:
+      - "easypanel.managed=true"
+      - "easypanel.service=songmetrix-supabase-backup"
+      - "easypanel.description=Supabase Read-Only Backup Service"
+      - "easypanel.category=backup"
+      - "traefik.enable=false"
+
+# Rede isolada para backup (conecta ao PostgreSQL e Supabase)
 networks:
   backup-network:
     driver: bridge
@@ -107,3 +179,9 @@ volumes:
   backup_temp:
     driver: local
     name: songmetrix-backup-temp
+  supabase_backup_logs:
+    driver: local
+    name: songmetrix-supabase-backup-logs
+  supabase_backup_temp:
+    driver: local
+    name: songmetrix-supabase-backup-temp

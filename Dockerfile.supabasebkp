@@ -1,0 +1,66 @@
+# Songmetrix Supabase Backup Container
+# Container READ-ONLY para backup seguro do Supabase
+
+FROM node:18-alpine
+
+# Labels para identificação
+LABEL maintainer="Songmetrix Team"
+LABEL description="Supabase Backup Service - Read-Only Operations Only"
+LABEL version="1.0"
+
+# Instalar PostgreSQL client para pg_dump e pg_restore
+RUN apk add --no-cache \
+    postgresql-client \
+    postgresql \
+    && rm -rf /var/cache/apk/*
+
+# Criar usuário não-root para segurança
+RUN addgroup -g 1001 -S backupuser && \
+    adduser -S -D -H -u 1001 -h /app -s /sbin/nologin -G backupuser -g backupuser backupuser
+
+# Criar diretórios necessários
+RUN mkdir -p /app/temp /app/logs && \
+    chown -R backupuser:backupuser /app
+
+# Definir usuário não-root
+USER backupuser
+
+# Diretório de trabalho
+WORKDIR /app
+
+# Copiar arquivos de dependências primeiro (para cache de layers)
+COPY --chown=backupuser:backupuser package*.json ./
+
+# Instalar dependências
+RUN npm ci --only=production --no-audit --no-fund
+
+# Copiar código da aplicação
+COPY --chown=backupuser:backupuser scripts/supabase-backup.js ./
+
+# Criar arquivo de configuração de exemplo
+RUN echo "# Supabase Backup Configuration Example" > .env.example && \
+    echo "SUPABASE_DB_HOST=db.aylxcqaddelwxfukerhr.supabase.co" >> .env.example && \
+    echo "SUPABASE_DB_PORT=5432" >> .env.example && \
+    echo "SUPABASE_DB_NAME=postgres" >> .env.example && \
+    echo "SUPABASE_DB_USER=postgres" >> .env.example && \
+    echo "SUPABASE_DB_PASSWORD=your_password_here" >> .env.example && \
+    echo "" >> .env.example && \
+    echo "# MinIO Configuration" >> .env.example && \
+    echo "MINIO_ENDPOINT=files.songmetrix.com.br" >> .env.example && \
+    echo "MINIO_ACCESS_KEY=admin" >> .env.example && \
+    echo "MINIO_SECRET_KEY=your_secret_key" >> .env.example && \
+    echo "MINIO_BUCKET=songmetrix-backups" >> .env.example && \
+    echo "MINIO_USE_SSL=true" >> .env.example
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD pg_isready -h ${SUPABASE_DB_HOST:-db.aylxcqaddelwxfukerhr.supabase.co} -p ${SUPABASE_DB_PORT:-5432} || exit 1
+
+# Comando padrão - executar backup
+CMD ["node", "scripts/supabase-backup.js"]
+
+# Exposição de porta (não necessária para backup)
+# EXPOSE não é usado pois é um job, não um serviço web
+
+# Volumes para persistência de logs (opcional)
+VOLUME ["/app/logs"]
