@@ -52,7 +52,6 @@ services:
     volumes:
       - backup_logs:/app/logs:rw
       - backup_temp:/app/temp:rw
-      - backup_config:/app/config:ro
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
 
@@ -104,6 +103,3 @@ volumes:
   backup_temp:
     driver: local
     name: songmetrix-backup-temp
-  backup_config:
-    driver: local
-    name: songmetrix-backup-config
