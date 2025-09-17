@@ -19,7 +19,7 @@ RUN addgroup -g 1001 -S backupuser && \
     adduser -S -D -H -u 1001 -h /app -s /sbin/nologin -G backupuser -g backupuser backupuser
 
 # Criar diretórios necessários
-RUN mkdir -p /app/temp /app/logs && \
+RUN mkdir -p /app/temp /app/logs /app/scripts && \
     chown -R backupuser:backupuser /app
 
 # Definir usuário não-root
@@ -35,7 +35,7 @@ COPY --chown=backupuser:backupuser package*.json ./
 RUN npm ci --only=production --no-audit --no-fund
 
 # Copiar código da aplicação
-COPY --chown=backupuser:backupuser scripts/supabase-backup.js ./
+COPY --chown=backupuser:backupuser scripts/supabase-backup.js scripts/
 
 # Criar arquivo de configuração de exemplo
 RUN echo "# Supabase Backup Configuration Example" > .env.example && \
