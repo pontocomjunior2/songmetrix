@@ -55,6 +55,10 @@ services:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
 
+    # Configuração de usuário para resolver problemas de permissão
+    # Temporariamente roda como root para configurar permissões
+    user: root
+
     # Configurações de segurança
     security_opt:
       - no-new-privileges:true

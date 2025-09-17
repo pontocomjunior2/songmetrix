@@ -19,22 +19,51 @@ O **Sistema de Backup Songmetrix** está rodando no EasyPanel e executa backups 
 
 ## 📊 Monitoramento do Sistema
 
-### **Verificar Status no EasyPanel**
+### **Para Deploy via Docker Compose (Seu caso):**
+
+#### **Verificar Status dos Containers:**
 ```bash
-# No painel do EasyPanel:
-1. Vá para "Services" → "songmetrix-backup"
-2. Verifique se o status é "Running"
-3. Veja os logs em tempo real
-4. Monitore uso de CPU/Memória
+# Listar containers em execução:
+docker ps | grep songmetrix
+
+# Verificar status específico:
+docker ps --filter "name=songmetrix-backup"
+
+# Verificar todos os containers do compose:
+docker-compose -f docker-compose.backup.yml ps
 ```
 
-### **Logs do Container**
+#### **Logs do Sistema:**
 ```bash
-# Ver logs atuais:
+# Ver logs atuais do container:
 docker logs songmetrix-backup-service
 
 # Seguir logs em tempo real:
 docker logs -f songmetrix-backup-service
+
+# Ver logs com timestamps:
+docker logs --timestamps songmetrix-backup-service
+
+# Limitar número de linhas:
+docker logs --tail 100 songmetrix-backup-service
+```
+
+#### **Gerenciar o Compose:**
+```bash
+# Ver status completo do compose:
+docker-compose -f docker-compose.backup.yml ps
+
+# Reiniciar o serviço:
+docker-compose -f docker-compose.backup.yml restart
+
+# Parar o serviço:
+docker-compose -f docker-compose.backup.yml stop
+
+# Iniciar novamente:
+docker-compose -f docker-compose.backup.yml start
+
+# Recriar containers (após mudanças):
+docker-compose -f docker-compose.backup.yml up -d --force-recreate
 ```
 
 ### **Arquivos de Log (Após Correção)**
@@ -44,6 +73,40 @@ docker logs -f songmetrix-backup-service
 /app/logs/backup.log         # Logs de backup
 /app/logs/monitoring.log     # Logs de monitoramento
 /app/logs/cleanup.log        # Logs de limpeza
+
+# Para acessar logs do container (deploy docker-compose):
+docker exec songmetrix-backup-service tail -f /app/logs/cron.log
+docker exec songmetrix-backup-service cat /app/logs/cron.log
+```
+
+### **Gerenciamento de Volumes (Docker Compose)**
+```bash
+# Verificar volumes criados:
+docker volume ls | grep songmetrix
+
+# Inspecionar volume específico:
+docker volume inspect songmetrix-backup-logs
+
+# Localização física dos volumes no host:
+docker volume inspect songmetrix-backup-logs | grep Mountpoint
+
+# Limpar volumes se necessário:
+docker-compose -f docker-compose.backup.yml down -v
+```
+
+### **Gerenciamento de Rede (Docker Compose)**
+```bash
+# Verificar rede criada:
+docker network ls | grep songmetrix
+
+# Inspecionar rede:
+docker network inspect songmetrix-backup-network
+
+# Conectar outros containers à mesma rede:
+docker network connect songmetrix-backup-network outro-container
+
+# Ver containers na rede:
+docker network inspect songmetrix-backup-network | grep Name
 ```
 
 ## ⏰ Agendamento de Backups
@@ -97,12 +160,45 @@ songmetrix-backups/
 
 ## 🔧 Operações Manuais
 
-### **Executar Backup Imediato**
+### **Para Deploy via Docker Compose:**
+
+#### **Executar Backup Imediato**
 ```bash
-# Dentro do container:
+# Executar backup completo agora:
 docker exec songmetrix-backup-service node scripts/backup-orchestrator.js
 
-# Ou via EasyPanel terminal
+# Executar apenas backup PostgreSQL:
+docker exec songmetrix-backup-service node scripts/postgres-backup.js
+
+# Executar apenas backup Supabase:
+docker exec songmetrix-backup-service node scripts/supabase-backup.js
+```
+
+#### **Acessar Terminal do Container**
+```bash
+# Entrar no container para debug:
+docker exec -it songmetrix-backup-service /bin/bash
+
+# Ver arquivos dentro do container:
+docker exec songmetrix-backup-service ls -la /app/
+
+# Ver processos rodando:
+docker exec songmetrix-backup-service ps aux
+
+# Ver uso de disco:
+docker exec songmetrix-backup-service df -h
+```
+
+#### **Gerenciar Arquivos no Container**
+```bash
+# Copiar arquivo do host para container:
+docker cp arquivo-local songmetrix-backup-service:/app/
+
+# Copiar arquivo do container para host:
+docker cp songmetrix-backup-service:/app/logs/cron.log .
+
+# Ver tamanho dos logs:
+docker exec songmetrix-backup-service du -sh /app/logs/
 ```
 
 ### **Verificar Status dos Backups**
