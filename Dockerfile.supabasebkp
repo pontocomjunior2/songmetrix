@@ -8,11 +8,21 @@ LABEL maintainer="Songmetrix Team"
 LABEL description="Supabase Backup Service - Read-Only Operations Only"
 LABEL version="1.0"
 
-# Instalar PostgreSQL client para pg_dump e pg_restore
+# Variáveis de ambiente para agendamento e limpeza
+ENV BACKUP_ENABLED=true \
+    BACKUP_HOUR=02 \
+    BACKUP_MIN=00 \
+    BACKUP_RETENTION_DAYS=15 \
+    BACKUP_CLEANUP_ENABLED=true
+
+# Instalar PostgreSQL client e MinIO client para pg_dump e upload
 RUN apk add --no-cache \
     postgresql-client \
     postgresql \
-    && rm -rf /var/cache/apk/*
+    curl \
+    && rm -rf /var/cache/apk/* \
+    && curl -sSL https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc \
+    && chmod +x /usr/local/bin/mc
 
 # Criar usuário não-root para segurança
 RUN addgroup -g 1001 -S backupuser && \
@@ -56,8 +66,43 @@ RUN echo "# Supabase Backup Configuration Example" > .env.example && \
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD pg_isready -h ${SUPABASE_DB_HOST:-db.aylxcqaddelwxfukerhr.supabase.co} -p ${SUPABASE_DB_PORT:-5432} || exit 1
 
-# Comando padrão - executar backup
-CMD ["node", "scripts/supabase-backup.js"]
+# Comando com agendamento automático e limpeza
+CMD ["sh", "-c", "\
+  echo '🗄️ Songmetrix Supabase Backup Service' && \
+  echo \"BACKUP_ENABLED: $BACKUP_ENABLED\" && \
+  echo \"Horário agendado: $BACKUP_HOUR:$BACKUP_MIN\" && \
+  echo \"Retenção: $BACKUP_RETENTION_DAYS dias\" && \
+  echo \"Limpeza automática: $BACKUP_CLEANUP_ENABLED\" && \
+  \
+  if [ \"$BACKUP_ENABLED\" = \"true\" ]; then \
+    echo '⏰ Modo agendado ativado - aguardando horário programado...' && \
+    while true; do \
+      CURRENT_HOUR=$(date +%H) && \
+      CURRENT_MIN=$(date +%M) && \
+      \
+      if [ \"$CURRENT_HOUR\" = \"$BACKUP_HOUR\" ] && [ \"$CURRENT_MIN\" = \"$BACKUP_MIN\" ]; then \
+        echo '🚀 Executando backup programado...' && \
+        node scripts/supabase-backup.js && \
+        \
+        if [ \"$BACKUP_CLEANUP_ENABLED\" = \"true\" ]; then \
+          echo \"🧹 Executando limpeza de backups antigos (> $BACKUP_RETENTION_DAYS dias)...\" && \
+          mc alias set cleanup-alias https://$MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY --ignore-existing 2>/dev/null && \
+          mc rm --recursive --force --older-than ${BACKUP_RETENTION_DAYS}d cleanup-alias/$MINIO_BUCKET/supabase/ 2>/dev/null && \
+          echo \"✅ Limpeza concluída\"; \
+        fi && \
+        \
+        echo '✅ Ciclo concluído - aguardando próximo backup...' && \
+        sleep 60; \
+      else \
+        sleep 30; \
+      fi; \
+    done; \
+  else \
+    echo '🔄 Modo único ativado - executando backup imediato...' && \
+    node scripts/supabase-backup.js && \
+    echo '✅ Backup único concluído'; \
+  fi \
+"]
 
 # Exposição de porta (não necessária para backup)
 # EXPOSE não é usado pois é um job, não um serviço web
