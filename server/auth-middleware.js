@@ -40,20 +40,26 @@ const supabaseAdmin = createClient(
 
 // Simplified authentication middleware
 export const authenticateBasicUser = async (req, res, next) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      console.error('[AuthMiddleware] No Bearer token provided');
-      return res.status(401).json({ error: 'Token não fornecido' });
-    }
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.error('[AuthMiddleware] No Bearer token provided');
+    return res.status(401).json({ error: 'Token não fornecido' });
+  }
 
+  try {
     const token = authHeader.split('Bearer ')[1];
+    console.log('[AuthMiddleware] Token received (first 20 chars):', token.substring(0, 20) + '...');
+    
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
     
     if (authError || !user) {
       console.error('[AuthMiddleware] Invalid token or user not found:', authError?.message);
+      console.error('[AuthMiddleware] Full error:', authError);
       return res.status(401).json({ error: 'Token inválido ou usuário não encontrado' });
     }
+    
+    console.log('[AuthMiddleware] User authenticated successfully:', user.id);
 
     // Obter dados diretamente do user_metadata retornado por getUser
     const userMetadata = user.user_metadata || {};

@@ -47,14 +47,11 @@ function EmailLogs() {
   const fetchLogs = async () => {
     try {
       setLoading(true);
+      
+      // First, get the email logs without relationships
       let query = supabase
         .from('email_logs')
-        .select(`
-          *,
-          template:template_id (name),
-          sequence:sequence_id (name),
-          user:user_id (email, full_name)
-        `)
+        .select('*')
         .order('sent_at', { ascending: false })
         .range((page - 1) * logsPerPage, page * logsPerPage - 1);
 
@@ -78,10 +75,47 @@ function EmailLogs() {
         query = query.lt('sent_at', nextDay.toISOString());
       }
 
-      const { data, error } = await query;
+      const { data: emailLogs, error } = await query;
 
       if (error) throw error;
-      setLogs(data || []);
+      
+      if (!emailLogs || emailLogs.length === 0) {
+        setLogs([]);
+        return;
+      }
+
+      // Get unique IDs for related data
+      const templateIds = [...new Set(emailLogs.map(log => log.template_id).filter(Boolean))];
+      const sequenceIds = [...new Set(emailLogs.map(log => log.sequence_id).filter(Boolean))];
+      const userIds = [...new Set(emailLogs.map(log => log.user_id).filter(Boolean))];
+
+      // Fetch related data separately
+      const [templatesData, sequencesData, usersData] = await Promise.all([
+        templateIds.length > 0 
+          ? supabase.from('email_templates').select('id, name').in('id', templateIds)
+          : { data: [], error: null },
+        sequenceIds.length > 0 
+          ? supabase.from('email_sequences').select('id, name').in('id', sequenceIds)
+          : { data: [], error: null },
+        userIds.length > 0 
+          ? supabase.from('users').select('id, email, full_name').in('id', userIds)
+          : { data: [], error: null }
+      ]);
+
+      // Create lookup maps
+      const templatesMap = new Map((templatesData.data || []).map(t => [t.id, t]));
+      const sequencesMap = new Map((sequencesData.data || []).map(s => [s.id, s]));
+      const usersMap = new Map((usersData.data || []).map(u => [u.id, u]));
+
+      // Combine data
+      const enrichedLogs = emailLogs.map(log => ({
+        ...log,
+        template: templatesMap.get(log.template_id) || null,
+        sequence: sequencesMap.get(log.sequence_id) || null,
+        user: usersMap.get(log.user_id) || null
+      }));
+
+      setLogs(enrichedLogs);
     } catch (error) {
       console.error('Erro ao carregar logs:', error);
       toast.error('Não foi possível carregar o histórico de emails');
@@ -368,4 +402,4 @@ function EmailLogs() {
   );
 }
 
-export default EmailLogs; 
+export default EmailLogs;

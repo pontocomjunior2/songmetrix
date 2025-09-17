@@ -1,13 +1,21 @@
-import React, { useState, useEffect, Suspense, memo, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, Suspense, memo, useCallback, useMemo, lazy, useRef } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase-client';
-import { Radio as RadioIcon, Music, Info, Clock, AlertCircle, Lock } from 'lucide-react';
+import { Radio as RadioIcon, Music, Info, Clock, AlertCircle, Lock, CheckCircle, RefreshCw } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, PieLabelRenderProps } from 'recharts';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { UpgradePrompt } from '../Common/UpgradePrompt';
 import Loading from '../Common/Loading';
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Link } from 'react-router-dom';
+import { Button } from '../ui/button';
+// Remover import do DashboardFilters
+// import DashboardFilters from './DashboardFilters';
+import { toast } from 'sonner';
+
+// Lazy loading para componentes pesados
+const LazyBarChart = lazy(() => import('recharts').then(module => ({ default: module.BarChart })));
+const LazyPieChart = lazy(() => import('recharts').then(module => ({ default: module.PieChart })));
 
 interface TopSong {
   song_title: string;
@@ -106,6 +114,7 @@ const Dashboard = () => {
   const [artistData, setArtistData] = useState<ArtistData[]>([]);
   const [genreDistribution, setGenreDistribution] = useState<GenreDistribution[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [secondaryLoading, setSecondaryLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const { currentUser, planId, trialEndsAt, userHasPreferences } = useAuth();
@@ -123,16 +132,63 @@ const Dashboard = () => {
   const [uniqueArtists, setUniqueArtists] = useState<number>(0);
   const [uniqueSongs, setUniqueSongs] = useState<number>(0);
   const [activeRadios, setActiveRadios] = useState<ActiveRadio[]>([]);
+  // Replace legacy filters shape with normalized FilterState used by DashboardFilters
+  // const [filters, setFilters] = useState({
+  //   genres: [] as string[],
+  //   regions: [] as string[],
+  //   radioStations: [] as string[],
+  //   dateRange: '7d' as string,
+  // });
+  // const filtersRef = useRef(filters);
+  // useEffect(() => {
+  //   filtersRef.current = filters;
+  // }, [filters]);
+
+  const isFetchingEssentialRef = useRef(false);
+  const isFetchingSecondaryRef = useRef(false);
+  // Novo estado: execuções somadas do Top 5 Artistas
+  const [top5ArtistExecutions, setTop5ArtistExecutions] = useState<number>(0);
+
+  // Removido: getDateRangeParams não é mais utilizado
+  const getDateRangeParams = useCallback((dateRange: string) => {
+    const end = new Date();
+    const start = new Date();
+    switch (dateRange) {
+      case '1d':
+        start.setDate(end.getDate() - 1);
+        break;
+      case '7d':
+        start.setDate(end.getDate() - 7);
+        break;
+      case '30d':
+        start.setDate(end.getDate() - 30);
+        break;
+      case '90d':
+        start.setDate(end.getDate() - 90);
+        break;
+      default:
+        start.setDate(end.getDate() - 7);
+    }
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    return { start_date: fmt(start), end_date: fmt(end) };
+  }, []);
+
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [isAutoRefreshing, setIsAutoRefreshing] = useState(true);
 
   const daysRemaining = useMemo(() => calculateDaysRemaining(trialEndsAt), [trialEndsAt]);
 
-  const fetchDashboardData = useCallback(async () => {
+  // Carregar dados essenciais primeiro (métricas básicas)
+  const fetchEssentialData = useCallback(async () => {
     if (!currentUser || !hasPreferences) {
       return;
     }
 
+    if (isFetchingEssentialRef.current) return;
+    isFetchingEssentialRef.current = true;
+
     try {
-      setLoading(true);
+      // setLoading(true); // removed to avoid full-page flicker on background refreshes
       setError(null);
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
@@ -140,53 +196,127 @@ const Dashboard = () => {
         throw new Error('Sessão não encontrada ou inválida para buscar dados.');
       }
 
-      const limitParams = 'limit_songs=5&limit_artists=5&limit_genres=5';
+      // Endpoint essencial não usa filtros do cliente — depende das preferências do usuário
+      const url = `/api/dashboard/essential`;
 
-      const dashboardResponse = await fetch(`/api/dashboard?${limitParams}`, {
+      const dashboardResponse = await fetch(url, {
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
       });
 
-      if (!dashboardResponse.ok) throw new Error(`Falha ao carregar dashboard: ${dashboardResponse.statusText}`);
+      if (!dashboardResponse.ok) throw new Error(`Falha ao carregar dados essenciais: ${dashboardResponse.statusText}`);
 
       const dashboardData = await dashboardResponse.json();
 
-      // Processar dados recebidos
-      setTopSongs(dashboardData.topSongs || []);
-      setArtistData(dashboardData.artistData || []);
       setActiveRadios(dashboardData.activeRadios || []);
-
-      // Calcular e processar dados de gênero
-      const genreSourceData = dashboardData.genreData || [];
-      if (genreSourceData.length > 0) {
-        const totalGenreExecutions = genreSourceData.reduce((sum: number, item: any) => sum + (parseInt(item.count) || 0), 0);
-        const genreDataFormatted = genreSourceData.map((item: any, index: number) => {
-          const count = parseInt(item.count) || 0;
-          const name = item.genre || 'Desconhecido';
-          const value = totalGenreExecutions > 0 ? Math.round((count / totalGenreExecutions) * 100) : 0;
-          return {
-            name: name,
-            value: value,
-            executions: count,
-            color: colors[index % colors.length]
-          };
-        });
-        setGenreDistribution(genreDataFormatted);
-      } else {
-        setGenreDistribution([]);
-      }
-
-      // Definir estado das métricas
       setTotalExecutions(dashboardData.totalExecutions || 0);
       setUniqueArtists(dashboardData.uniqueArtists || 0);
       setUniqueSongs(dashboardData.uniqueSongs || 0);
-
       setLastUpdated(new Date());
 
     } catch (error: any) {
-      console.error('[Dashboard] fetchDashboardData: Error:', error);
-      setError('Falha ao carregar dados do dashboard');
+      console.error('[Dashboard] fetchEssentialData: Error:', error);
+      setError(error.message || 'Erro ao carregar dados essenciais');
+      toast.error('Erro ao sincronizar dados essenciais', {
+        description: error.message || 'Verifique sua conexão e tente novamente'
+      });
     } finally {
+      isFetchingEssentialRef.current = false;
       setLoading(false);
+      setLastUpdate(new Date());
+    }
+  }, [currentUser, hasPreferences]);
+
+  // Carregar dados secundários (gráficos e listas)
+  const fetchSecondaryData = useCallback(async () => {
+    if (!currentUser || !hasPreferences) {
+      return;
+    }
+
+    if (isFetchingSecondaryRef.current) return;
+    isFetchingSecondaryRef.current = true;
+
+    try {
+      setSecondaryLoading(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        throw new Error('Sessão não encontrada ou inválida para buscar dados.');
+      }
+
+      // Apenas limites; backend usa preferências do usuário
+      const params = new URLSearchParams({ limit_songs: '5', limit_artists: '5' });
+      const dashboardResponse = await fetch(`/api/dashboard/secondary?${params.toString()}`, {
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+      });
+
+      if (!dashboardResponse.ok) throw new Error(`Falha ao carregar dados secundários: ${dashboardResponse.statusText}`);
+
+      const dashboardData = await dashboardResponse.json();
+
+      setTopSongs(dashboardData.topSongs || []);
+      setArtistData(dashboardData.artistData || []);
+
+      // Corrigir métrica: somar execuções dos top 5 artistas
+      const sumTop5 = (dashboardData.artistData || [])
+        .slice(0, 5)
+        .reduce((sum: number, item: any) => sum + (parseInt(item.executions) || 0), 0);
+      setTop5ArtistExecutions(sumTop5);
+
+    } catch (error: any) {
+      console.error('[Dashboard] fetchSecondaryData: Error:', error);
+      toast.error('Erro ao sincronizar dados secundários', {
+        description: 'Alguns gráficos podem estar desatualizados'
+      });
+    } finally {
+      isFetchingSecondaryRef.current = false;
+      setSecondaryLoading(false);
+      setLastUpdate(new Date());
+    }
+  }, [currentUser, hasPreferences]);
+
+  // NOVO: Carregar dados opcionais (distribuição por gênero)
+  const fetchOptionalData = useCallback(async () => {
+    if (!currentUser || !hasPreferences) {
+      return;
+    }
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        throw new Error('Sessão não encontrada ou inválida para buscar dados opcionais.');
+      }
+      const response = await fetch('/api/dashboard/optional?limit_genres=5', {
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+      });
+      if (!response.ok) {
+        throw new Error(`Falha ao carregar dados de gêneros: ${response.statusText}`);
+      }
+      const json = await response.json();
+      const raw = Array.isArray(json?.genreData) ? json.genreData : (Array.isArray(json?.data) ? json.data : []);
+      if (!Array.isArray(raw)) {
+        setGenreDistribution([]);
+        return;
+      }
+      // Ordena por contagem desc e calcula percentuais
+      const sorted = [...raw].sort((a, b) => (Number(b.count) || 0) - (Number(a.count) || 0));
+      const total = sorted.reduce((acc, it) => acc + (Number(it.count) || 0), 0);
+      if (total <= 0) {
+        setGenreDistribution([]);
+        return;
+      }
+      const dist: GenreDistribution[] = sorted.map((it, idx) => ({
+        name: (it.genre || it.name || 'Outros') as string,
+        executions: Number(it.count) || 0,
+        value: Math.round(((Number(it.count) || 0) / total) * 100),
+        color: colors[idx % colors.length]
+      }));
+      setGenreDistribution(dist);
+      setLastUpdate(new Date());
+    } catch (error: any) {
+      console.error('[Dashboard] fetchOptionalData: Error:', error);
+      toast.error('Erro ao sincronizar dados opcionais (gêneros)', {
+        description: error.message || 'Tente novamente mais tarde'
+      });
     }
   }, [currentUser, hasPreferences]);
 
@@ -207,16 +337,118 @@ const Dashboard = () => {
     };
     checkPrefs();
     return () => { isMounted = false; };
-  }, [currentUser]); // Removido userHasPreferences e navigate para evitar loops
+  }, [currentUser]);
 
-  // useEffect para chamar fetchDashboardData na montagem/mudança de dependências
+  // Buscar dados quando estiver pronto (preferências verificadas)
   useEffect(() => {
-    if (preferencesChecked && hasPreferences) {
-      fetchDashboardData();
-    } else if (preferencesChecked && !hasPreferences) {
-      setLoading(false);
+    if (!preferencesChecked || !hasPreferences || !currentUser) return;
+    fetchEssentialData();
+    fetchSecondaryData();
+    fetchOptionalData();
+  }, [preferencesChecked, hasPreferences, currentUser, fetchEssentialData, fetchSecondaryData, fetchOptionalData]);
+
+  // Auto-refresh em intervalos
+  useEffect(() => {
+    if (!preferencesChecked || !hasPreferences || !currentUser || !isAutoRefreshing) return;
+
+    const essentialRefreshInterval = setInterval(() => {
+      console.log('[Dashboard] Auto-refresh: dados essenciais');
+      fetchEssentialData();
+    }, 2 * 60 * 1000);
+
+    const secondaryRefreshInterval = setInterval(() => {
+      console.log('[Dashboard] Auto-refresh: dados secundários');
+      fetchSecondaryData();
+    }, 5 * 60 * 1000);
+
+    const optionalRefreshInterval = setInterval(() => {
+      console.log('[Dashboard] Auto-refresh: dados opcionais (gêneros)');
+      fetchOptionalData();
+    }, 5 * 60 * 1000);
+
+    return () => {
+      clearInterval(essentialRefreshInterval);
+      clearInterval(secondaryRefreshInterval);
+      clearInterval(optionalRefreshInterval);
+    };
+  }, [preferencesChecked, hasPreferences, currentUser, isAutoRefreshing, fetchEssentialData, fetchSecondaryData, fetchOptionalData]);
+
+  // Atualizar ao voltar o foco
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && preferencesChecked && hasPreferences && currentUser) {
+        console.log('[Dashboard] Aba voltou ao foco - atualizando dados');
+        fetchEssentialData();
+        setTimeout(() => fetchSecondaryData(), 1000);
+        setTimeout(() => fetchOptionalData(), 1500);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [preferencesChecked, hasPreferences, currentUser, fetchEssentialData, fetchSecondaryData, fetchOptionalData]);
+
+  // Removido: efeito duplicado de checagem de preferências
+  useEffect(() => {
+    let isMounted = true;
+    const checkPrefs = async () => {
+        if (currentUser) {
+            const userPrefs = await userHasPreferences();
+            if (!isMounted) return;
+            setHasPreferences(userPrefs);
+        } else {
+             if (!isMounted) return;
+             setHasPreferences(false);
+        }
+        if (isMounted) {
+          setPreferencesChecked(true);
+        }
+    };
+    checkPrefs();
+    return () => { isMounted = false; };
+  }, [currentUser]);
+
+  // Função para alternar auto-refresh
+  const toggleAutoRefresh = useCallback(() => {
+    setIsAutoRefreshing(prev => {
+      const newState = !prev;
+      toast.success(
+        newState ? 'Sincronização automática ativada' : 'Sincronização automática pausada',
+        {
+          description: newState 
+            ? 'Os dados serão atualizados automaticamente a cada 2-5 minutos'
+            : 'Use o botão "Atualizar agora" para sincronizar manualmente'
+        }
+      );
+      return newState;
+    });
+  }, []);
+
+  // Função para refresh manual
+  const handleManualRefresh = useCallback(async () => {
+    console.log('[Dashboard] Refresh manual solicitado');
+    toast.info('Atualizando dados...', {
+      icon: <RefreshCw className="w-4 h-4 animate-spin" />
+    });
+    
+    try {
+      await Promise.all([
+        fetchEssentialData(),
+        fetchSecondaryData(),
+        fetchOptionalData()
+      ]);
+      
+      toast.success('Dados atualizados com sucesso!', {
+        icon: <CheckCircle className="w-4 h-4" />
+      });
+    } catch (error) {
+      // Erros já são tratados nas funções individuais
+      console.error('[Dashboard] Erro no refresh manual:', error);
     }
-  }, [preferencesChecked, hasPreferences]); // Removido fetchDashboardData das dependências para prevenir loop infinito
+  }, [fetchEssentialData, fetchSecondaryData, fetchOptionalData]);
 
 
 
@@ -275,52 +507,80 @@ const Dashboard = () => {
     return null;
   };
 
-  const TopSongsList = memo(({ songs }: { songs: TopSong[] }) => (
-    <div className="space-y-4">
-      {songs.length > 0 ? (
-        songs.map((song: TopSong, index: number) => (
-          <div key={index} className="flex items-center justify-between">
-            <div>
-              <p className="font-medium text-gray-900 dark:text-white">{song.song_title}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{song.artist}</p>
-            </div>
-            <span className="text-gray-600 dark:text-gray-300">{song.executions}x</span>
-          </div>
-        ))
-      ) : (
-        <div className="text-center py-4">
-          <p className="text-gray-500 dark:text-gray-400">Nenhuma música encontrada</p>
+  const TopSongsList = memo(({ songs }: { songs: TopSong[] }) => {
+    if (!songs || songs.length === 0) {
+      return (
+        <div className="text-center py-8 text-gray-500">
+          <Music className="mx-auto h-12 w-12 mb-4 opacity-50" />
+          <p>Nenhuma música encontrada no período</p>
         </div>
-      )}
-    </div>
-  ));
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {songs.map((song, index) => (
+          <div key={`${song.song_title}-${song.artist}-${index}`} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+            <div className="flex items-center space-x-3">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
+                  <span className="text-sm font-medium text-blue-600 dark:text-blue-400">#{index + 1}</span>
+                </div>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                  {song.song_title}
+                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                  {song.artist}
+                </p>
+              </div>
+            </div>
+            <div className="flex-shrink-0">
+              <span className="px-2 py-1 text-xs font-medium bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded">
+                {song.executions} execuções
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  });
 
   const ArtistBarChart = memo(({ data }: { data: ArtistData[] }) => {
-    // Detect dark mode
-    const isDarkMode = document.documentElement.classList.contains('dark');
+    // Detect dark mode with useMemo for performance
+    const isDarkMode = useMemo(() => document.documentElement.classList.contains('dark'), []);
+    
+    // Memoize chart configuration
+    const chartConfig = useMemo(() => ({
+      margin: { top: 5, right: 0, left: -20, bottom: 5 },
+      gridStroke: isDarkMode ? "#374151" : "#e0e0e0",
+      axisStroke: isDarkMode ? "#9ca3af" : "#6b7280",
+      tickFill: isDarkMode ? "#e5e7eb" : "#374151"
+    }), [isDarkMode]);
     
     return (
       <Suspense fallback={<Loading />}>
         {data.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 5, right: 0, left: -20, bottom: 5 }}>
+            <BarChart data={data} margin={chartConfig.margin}>
               <defs>
                 <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#3B82F6" />
                   <stop offset="100%" stopColor="#1E3A8A" />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDarkMode ? "#374151" : "#e0e0e0"} />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartConfig.gridStroke} />
               <XAxis 
                 dataKey="artist" 
-                stroke={isDarkMode ? "#9ca3af" : "#6b7280"} 
+                stroke={chartConfig.axisStroke} 
                 fontSize={12}
-                tick={{ fill: isDarkMode ? "#e5e7eb" : "#374151" }}
+                tick={{ fill: chartConfig.tickFill }}
               />
               <YAxis 
-                stroke={isDarkMode ? "#9ca3af" : "#6b7280"} 
+                stroke={chartConfig.axisStroke} 
                 fontSize={12}
-                tick={{ fill: isDarkMode ? "#e5e7eb" : "#374151" }}
+                tick={{ fill: chartConfig.tickFill }}
               />
               <Tooltip
                 cursor={{ fill: 'rgba(0, 0, 0, 0.1)' }}
@@ -352,10 +612,12 @@ const Dashboard = () => {
   });
 
   const GenrePieChart = memo(({ data, colors }: { data: GenreDistribution[], colors: string[] }) => {
-    // Custom label renderer
+    // Custom label renderer with memoized dark mode detection
     const RADIAN = Math.PI / 180;
-    // Define explicit types for label props
-    const renderCustomizedLabel = (props: PieLabelRenderProps) => {
+    const isDarkMode = useMemo(() => document.documentElement.classList.contains('dark'), []);
+    
+    // Memoize label renderer
+    const renderCustomizedLabel = useCallback((props: PieLabelRenderProps) => {
       // Destructure with default values or checks if needed, accessing props directly
       const cx = Number(props.cx) || 0;
       const cy = Number(props.cy) || 0;
@@ -375,9 +637,6 @@ const Dashboard = () => {
       const y = cy + radius * Math.sin(-midAngle * RADIAN);
       const textAnchor = x > cx ? 'start' : 'end';
 
-      // Detect dark mode
-      const isDarkMode = document.documentElement.classList.contains('dark');
-
       return (
         <text 
           x={x} 
@@ -390,7 +649,7 @@ const Dashboard = () => {
           {`${name}: ${value}%`} 
         </text>
       );
-    };
+    }, [isDarkMode]);
 
     return (
       <Suspense fallback={<Loading />}>
@@ -501,21 +760,50 @@ const Dashboard = () => {
          />
        )}
 
-       {/* Header com informações de atualização */}
-       <div className="flex justify-end items-center mb-4">
-        <div className="flex items-center gap-2">
-          {lastUpdated && (
-            <span className="text-sm text-gray-500 dark:text-gray-400">
-              Atualizado: {lastUpdated.toLocaleTimeString()}
-            </span>
-          )}
-        </div>
-      </div>
+       {/* Status de Sincronização */}
+       <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-800 rounded-lg p-3 border">
+         <div className="flex items-center space-x-4">
+           <div className="flex items-center space-x-2">
+             <div className={`w-2 h-2 rounded-full ${
+               isAutoRefreshing ? 'bg-green-500 animate-pulse' : 'bg-gray-400'
+             }`} />
+             <span className="text-sm text-gray-600 dark:text-gray-300">
+               {isAutoRefreshing ? 'Sincronização ativa' : 'Sincronização pausada'}
+             </span>
+           </div>
+           {lastUpdate && (
+             <div className="flex items-center space-x-1 text-xs text-gray-500 dark:text-gray-400">
+               <Clock className="w-3 h-3" />
+               <span>Última atualização: {lastUpdate.toLocaleTimeString('pt-BR')}</span>
+             </div>
+           )}
+         </div>
+         <div className="flex items-center space-x-2">
+           <Button
+             variant="outline"
+             size="sm"
+             onClick={handleManualRefresh}
+             disabled={loading || secondaryLoading}
+             className="text-xs"
+           >
+             {loading || secondaryLoading ? 'Atualizando...' : 'Atualizar agora'}
+           </Button>
+           <Button
+             variant="ghost"
+             size="sm"
+             onClick={toggleAutoRefresh}
+             className="text-xs"
+           >
+             {isAutoRefreshing ? 'Pausar' : 'Ativar'} auto-refresh
+           </Button>
+         </div>
+       </div>
+
 
       {/* Linha 1: Métricas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <MetricCard title="Rádios Ativas (Seu Formato)" value={activeRadios.length} icon={RadioIcon} />
-        <MetricCard title="Execuções (Top 5 Artistas)" value={totalExecutions} icon={Music} />
+        <MetricCard title="Execuções (Top 5 Artistas)" value={top5ArtistExecutions} icon={Music} />
         <MetricCard title="Gênero Principal" value={genreDistribution[0]?.name || '-'} icon={Music} />
       </div>
 
@@ -527,7 +815,19 @@ const Dashboard = () => {
             <Music className="w-5 h-5 mr-2" /> Músicas em Destaque
             <InfoTooltip text="Top 5 músicas mais tocadas nos últimos 7 dias, baseado no(s) formato(s) de rádio selecionados por você." />
           </h2>
-          <TopSongsList songs={topSongs} />
+          <Suspense fallback={
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+          }>
+            {secondaryLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            ) : (
+              <TopSongsList songs={topSongs} />
+            )}
+          </Suspense>
         </div>
 
         {/* Card Rádios no seu segmento (já com tooltip) */}
@@ -550,7 +850,19 @@ const Dashboard = () => {
           </h2>
           {/* Aumentar altura fixa para mobile */}
           <div className="h-96 md:flex-grow md:min-h-[280px]">
-            <ArtistBarChart data={artistData} />
+            <Suspense fallback={
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            }>
+              {secondaryLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : (
+                <ArtistBarChart data={artistData} />
+              )}
+            </Suspense>
           </div>
         </div>
 
@@ -562,7 +874,19 @@ const Dashboard = () => {
           </h2>
           {/* Aumentar altura fixa para mobile */}
           <div className="h-96 md:flex-grow md:min-h-[320px]">
-            <GenrePieChart data={genreDistribution} colors={colors} />
+            <Suspense fallback={
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              </div>
+            }>
+              {secondaryLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : (
+                <GenrePieChart data={genreDistribution} colors={colors} />
+              )}
+            </Suspense>
           </div>
         </div>
       </div>

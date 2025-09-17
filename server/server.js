@@ -49,6 +49,7 @@ import { createClient } from '@supabase/supabase-js';
 import { reportQuery } from './report-query.js';
 import registerRoutes from './index.js';
 import { pool } from './db-optimized.js';
+import dashboardFilterOptionsRoutes from './routes/dashboard-filter-options.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -93,7 +94,7 @@ const corsOptions = {
     }
   },
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS', // Métodos permitidos
-  allowedHeaders: ['Content-Type', 'Authorization'], // Cabeçalhos permitidos
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With', 'Cache-Control', 'Pragma'], // Cabeçalhos permitidos (inclui Cache-Control e Pragma)
   credentials: true // Se você precisar enviar cookies/auth headers
 };
 
@@ -481,6 +482,9 @@ if (!fs.existsSync(uploadsDir)) {
     console.error('Erro ao listar arquivos no diretório de uploads:', error);
   }
 }
+
+// Register dashboard filter options routes
+app.use('/api/dashboard/filter-options', dashboardFilterOptionsRoutes);
 
 // Registrar as rotas DEPOIS do CORS e body-parser
 registerRoutes(app);

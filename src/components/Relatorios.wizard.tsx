@@ -14,6 +14,7 @@ import { cn } from '../lib/utils';
 import { Link } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { Button } from './ui/button';
+import { LoadingOverlay } from './ui/loading-overlay';
 
 import './Ranking/styles/Ranking.css';
 
@@ -156,6 +157,10 @@ const RelatoriosWizard: React.FC = () => {
   const [apiResponse, setApiResponse] = useState<any>(null);
   const [expandedCards, setExpandedCards] = useState<Record<number, boolean>>({});
   const [locationRadios, setLocationRadios] = useState<any[]>([]);
+  // Indicadores de carregamento para selects
+  const [isLoadingRadios, setIsLoadingRadios] = useState(false);
+  const [isLoadingCities, setIsLoadingCities] = useState(false);
+  const [isLoadingStates, setIsLoadingStates] = useState(false);
 
   const getRadioAbbreviation = (radioName: string): string => {
     return radioAbbreviations[radioName] || radioName.substring(0, 3).toUpperCase();
@@ -405,6 +410,7 @@ const RelatoriosWizard: React.FC = () => {
           return;
         }
         
+        setIsLoadingRadios(true);
         console.log('Fetching radios data...');
         const radiosData = await apiServices.reports.getRadios();
         
@@ -439,6 +445,8 @@ const RelatoriosWizard: React.FC = () => {
         } else {
           alert('Erro ao carregar dados. Por favor, tente novamente.');
         }
+      } finally {
+        setIsLoadingRadios(false);
       }
     };
 
@@ -450,32 +458,34 @@ const RelatoriosWizard: React.FC = () => {
         }
         
         console.log('Fetching cities data...');
+        setIsLoadingCities(true);
         const citiesData = await apiServices.reports.getCities();
         
         if (!citiesData) {
           console.error('Cities data is null or undefined');
-          return;
+        } else {
+          const cityOptions = citiesData.map((city: string) => ({
+            value: city,
+            label: city,
+          }));
+          setCitiesOptions(cityOptions);
         }
-        
-        const cityOptions = citiesData.map((city: string) => ({
-          value: city,
-          label: city,
-        }));
-        setCitiesOptions(cityOptions);
+        setIsLoadingCities(false);
         
         console.log('Fetching states data...');
+        setIsLoadingStates(true);
         const statesData = await apiServices.reports.getStates();
         
         if (!statesData) {
           console.error('States data is null or undefined');
-          return;
+        } else {
+          const stateOptions = statesData.map((state: string) => ({
+            value: state,
+            label: state,
+          }));
+          setStatesOptions(stateOptions);
         }
-        
-        const stateOptions = statesData.map((state: string) => ({
-          value: state,
-          label: state,
-        }));
-        setStatesOptions(stateOptions);
+        setIsLoadingStates(false);
       } catch (error: any) {
         console.error('Error fetching location data:', error);
         if (error?.message?.includes('Unauthorized') || error?.code === 'auth/requires-recent-login') {
@@ -483,6 +493,8 @@ const RelatoriosWizard: React.FC = () => {
         } else {
           alert('Erro ao carregar dados de localização. Por favor, tente novamente.');
         }
+        setIsLoadingCities(false);
+        setIsLoadingStates(false);
       }
     };
 
@@ -544,6 +556,11 @@ const RelatoriosWizard: React.FC = () => {
             placeholder="Escolha uma ou mais rádios"
             className="react-select-container"
             classNamePrefix="react-select"
+            isLoading={isLoadingRadios}
+            isDisabled={isLoadingRadios}
+            loadingMessage={() => 'Carregando opções...'}
+            noOptionsMessage={() => (isLoadingRadios ? 'Carregando opções...' : 'Sem opções')}
+            aria-busy={isLoadingRadios}
           />
         </div>
       )}
@@ -562,6 +579,11 @@ const RelatoriosWizard: React.FC = () => {
             placeholder="Escolha uma cidade"
             className="react-select-container"
             classNamePrefix="react-select"
+            isLoading={isLoadingCities}
+            isDisabled={isLoadingCities}
+            loadingMessage={() => 'Carregando cidades...'}
+            noOptionsMessage={() => (isLoadingCities ? 'Carregando cidades...' : 'Sem opções')}
+            aria-busy={isLoadingCities}
           />
         </div>
       )}
@@ -580,6 +602,11 @@ const RelatoriosWizard: React.FC = () => {
             placeholder="Escolha um estado"
             className="react-select-container"
             classNamePrefix="react-select"
+            isLoading={isLoadingStates}
+            isDisabled={isLoadingStates}
+            loadingMessage={() => 'Carregando estados...'}
+            noOptionsMessage={() => (isLoadingStates ? 'Carregando estados...' : 'Sem opções')}
+            aria-busy={isLoadingStates}
           />
         </div>
       )}
@@ -825,7 +852,7 @@ const RelatoriosWizard: React.FC = () => {
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-8 bg-white dark:bg-gray-800 rounded-lg shadow">
+    <div className="relative p-4 md:p-6 space-y-8 bg-white dark:bg-gray-800 rounded-lg shadow">
       <div className="flex items-center justify-between">
         <div></div>
         {reportGenerated && (
@@ -884,6 +911,27 @@ const RelatoriosWizard: React.FC = () => {
           </button>
         )}
       </div>
+
+      <LoadingOverlay
+        isOpen={
+          (currentStep === 2 && (isLoadingRadios || isLoadingCities || isLoadingStates)) ||
+          loading ||
+          loadingSpotify
+        }
+        label={
+          loadingSpotify
+            ? 'Sincronizando dados do Spotify...'
+            : loading
+            ? 'Gerando relatório...'
+            : isLoadingRadios
+            ? 'Carregando rádios...'
+            : isLoadingCities
+            ? 'Carregando cidades...'
+            : isLoadingStates
+            ? 'Carregando estados...'
+            : 'Carregando...'
+        }
+      />
 
       {reportData.length > 0 && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">

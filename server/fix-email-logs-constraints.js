@@ -11,8 +11,8 @@ const __dirname = path.dirname(__filename);
 
 // Tentar carregar variáveis de ambiente de múltiplos locais
 const envPaths = [
-  path.join(__dirname, '.env'),
-  path.join(path.dirname(__dirname), '.env')
+  path.join(path.dirname(__dirname), '.env'),
+  path.join(__dirname, '.env')
 ];
 
 let envLoaded = false;
@@ -39,7 +39,7 @@ if (!envLoaded) {
 
 // Verificar variáveis críticas
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 
 console.log('Variáveis de ambiente carregadas:');
 console.log('- SUPABASE_URL:', supabaseUrl ? 'OK' : 'FALTANDO');
@@ -126,4 +126,4 @@ async function applyFixes() {
 }
 
 // Executar o script
-applyFixes(); 
+applyFixes();

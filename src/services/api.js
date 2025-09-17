@@ -35,7 +35,7 @@ const fetchWithRetry = async (url, options, maxRetries = 3) => {
         headers: {
           ...options.headers,
           'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache',
+          // Removido para evitar bloqueio de CORS no preflight: 'Pragma': 'no-cache',
           'X-Requested-With': 'XMLHttpRequest',
           'Accept': 'application/json',
           'Content-Type': 'application/json',

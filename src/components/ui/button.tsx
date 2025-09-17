@@ -35,19 +35,25 @@ export const buttonVariants = ({
   return `${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]}`;
 };
 
-export const Button: React.FC<ButtonProps> = ({
-  variant = 'default',
-  size = 'default',
-  className = '',
-  children,
-  ...props
-}) => {
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>((
+  {
+    variant = 'default',
+    size = 'default',
+    className = '',
+    children,
+    ...props
+  },
+  ref
+) => {
   return (
     <button
+      ref={ref}
       className={`${buttonVariants({ variant, size })} ${className}`}
       {...props}
     >
       {children}
     </button>
   );
-};
+});
+
+Button.displayName = 'Button';

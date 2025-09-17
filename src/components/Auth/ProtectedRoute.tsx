@@ -1,7 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { Loader2 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -14,6 +14,8 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const location = useLocation();
   const [checkingPreferences, setCheckingPreferences] = useState(false);
   const [shouldRedirectToFirstAccess, setShouldRedirectToFirstAccess] = useState(false);
+  const hasCheckedPrefsRef = useRef<string | null>(null); // userId para quem já checamos
+  const checkingInFlightRef = useRef(false);
 
   console.log('[ProtectedRoute] 🔒 Check:', {
     currentUser: !!currentUser,
@@ -27,7 +29,7 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     userMetadata: currentUser?.user_metadata
   });
 
-  // 🔥 Efeito para verificar preferências do usuário
+  // 🔥 Efeito para verificar preferências do usuário (controlado por ref para evitar loop)
   useEffect(() => {
     console.log('[ProtectedRoute] 🔄 PREFERENCE CHECK EFFECT triggered');
     console.log('[ProtectedRoute] 📊 Effect conditions:', {
@@ -36,38 +38,61 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
       authLoading,
       pathname: location.pathname,
       isNotFirstAccess: location.pathname !== '/first-access',
-      hasUserHasPreferences: !!userHasPreferences
+      hasCheckedPrefsForUser: hasCheckedPrefsRef.current === currentUser?.id,
+      checkingInFlight: checkingInFlightRef.current,
     });
 
-    if (currentUser && isInitialized && !authLoading && location.pathname !== '/first-access' && userHasPreferences) {
+    // Só checar quando:
+    // - há usuário
+    // - auth inicializada e não carregando
+    // - não estamos na página de primeiro acesso
+    // - ainda não checamos para este usuário
+    if (
+      currentUser &&
+      isInitialized &&
+      !authLoading &&
+      location.pathname !== '/first-access' &&
+      hasCheckedPrefsRef.current !== currentUser.id &&
+      !checkingInFlightRef.current
+    ) {
       console.log('[ProtectedRoute] 🔍 Checking user preferences...');
       console.log('[ProtectedRoute] 👤 Current user metadata:', currentUser.user_metadata);
+
       setCheckingPreferences(true);
+      checkingInFlightRef.current = true;
 
-      userHasPreferences().then((hasPrefs) => {
-        console.log('[ProtectedRoute] 📋 User has preferences?', hasPrefs);
-        console.log('[ProtectedRoute] 📊 Preference check details:', {
-          hasSegments: !!(currentUser.user_metadata?.favorite_segments?.length > 0),
-          hasRadios: !!(currentUser.user_metadata?.favorite_radios?.length > 0),
-          segments: currentUser.user_metadata?.favorite_segments,
-          radios: currentUser.user_metadata?.favorite_radios
+      userHasPreferences()
+        .then((hasPrefs) => {
+          console.log('[ProtectedRoute] 📋 User has preferences?', hasPrefs);
+          console.log('[ProtectedRoute] 📊 Preference check details:', {
+            hasSegments: !!(currentUser.user_metadata?.favorite_segments?.length > 0),
+            hasRadios: !!(currentUser.user_metadata?.favorite_radios?.length > 0),
+            segments: currentUser.user_metadata?.favorite_segments,
+            radios: currentUser.user_metadata?.favorite_radios,
+          });
+
+          if (!hasPrefs) {
+            console.log('[ProtectedRoute] 🎯 No preferences found, will redirect to first access');
+            setShouldRedirectToFirstAccess(true);
+          } else {
+            console.log('[ProtectedRoute] ✅ User has preferences, allowing normal access');
+            setShouldRedirectToFirstAccess(false);
+          }
+
+          hasCheckedPrefsRef.current = currentUser.id; // marcar como checado para este usuário
+        })
+        .catch((error) => {
+          console.error('[ProtectedRoute] ❌ Error checking preferences:', error);
+        })
+        .finally(() => {
+          checkingInFlightRef.current = false;
+          setCheckingPreferences(false);
         });
-        setCheckingPreferences(false);
-
-        if (!hasPrefs) {
-          console.log('[ProtectedRoute] 🎯 No preferences found, will redirect to first access');
-          setShouldRedirectToFirstAccess(true);
-        } else {
-          console.log('[ProtectedRoute] ✅ User has preferences, allowing normal access');
-        }
-      }).catch((error) => {
-        console.error('[ProtectedRoute] ❌ Error checking preferences:', error);
-        setCheckingPreferences(false);
-      });
     } else {
       console.log('[ProtectedRoute] ⏭️ Skipping preference check - conditions not met');
     }
-  }, [currentUser, isInitialized, authLoading, location.pathname, userHasPreferences]);
+  // Dependências estáveis para evitar re-execuções desnecessárias
+  }, [currentUser?.id, isInitialized, authLoading, location.pathname]);
 
   console.log('[ProtectedRoute] 🎯 RENDER DECISION - Current state:', {
     authLoading,
@@ -78,16 +103,14 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     pathname: location.pathname
   });
 
-  // Carregando autenticação ou verificando preferências
-  if (authLoading || !isInitialized || checkingPreferences) {
+  // Carregando autenticação (não bloquear por checkingPreferences para evitar flicker)
+  if (authLoading || !isInitialized) {
     console.log('[ProtectedRoute] ⏳ Showing loading screen');
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground">
-            {checkingPreferences ? 'Verificando suas preferências...' : 'Carregando...'}
-          </p>
+          <p className="text-muted-foreground">Carregando...</p>
         </div>
       </div>
     );
@@ -100,12 +123,12 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   // 🔥 Nenhuma preferência encontrada - redirecionar para primeiro acesso
-  if (shouldRedirectToFirstAccess && location.pathname !== '/first-access') {
+  if (!checkingPreferences && shouldRedirectToFirstAccess && location.pathname !== '/first-access') {
     console.log('[ProtectedRoute] 🎯 Redirecting to first access due to no preferences');
     return <Navigate to="/first-access" replace />;
   }
 
-  // Logado e com preferências - permite acesso
-  console.log('[ProtectedRoute] ✅ User authenticated with preferences, allowing access');
+  // Logado e com preferências (ou enquanto verifica) - permite acesso
+  console.log('[ProtectedRoute] ✅ User authenticated, allowing access');
   return <>{children}</>;
 }

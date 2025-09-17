@@ -6,7 +6,7 @@ export default function PaymentCanceled() {
   const navigate = useNavigate();
 
   const handleTryAgain = () => {
-    navigate('/');
+    navigate('/plans');
   };
 
   return (

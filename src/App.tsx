@@ -1,6 +1,5 @@
 import React, { Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from '@/contexts/AuthContext';
 import { LazyRoutes, RouteLoadingFallback } from '@/config/lazyRoutes';
 import ProtectedRoute from '@/components/Auth/ProtectedRoute';
 import AdminRoute from '@/components/Auth/AdminRoute';
@@ -23,7 +22,7 @@ function App() {
   console.log('🟢 [APP] Current pathname:', window.location.pathname);
 
   return (
-    <AuthProvider>
+    <>
       <DevPerformanceMonitor />
       <PerformanceAlertIndicator />
       <Routes>
@@ -265,7 +264,7 @@ function App() {
           />
         </Route>
       </Routes>
-    </AuthProvider>
+    </>
   );
 }
 
