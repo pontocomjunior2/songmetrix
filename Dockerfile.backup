@@ -1,0 +1,95 @@
+# ============================================
+# Songmetrix Backup Service - Dockerfile
+# Deploy otimizado para EasyPanel
+# ============================================
+
+# Usar Node.js 18 Alpine (leve e seguro)
+FROM node:18-alpine
+
+# Labels informativos
+LABEL maintainer="Songmetrix Team"
+LABEL description="Sistema de backup automatizado para PostgreSQL e Supabase"
+LABEL version="1.0.0"
+
+# Instalar dependências do sistema necessárias
+RUN apk add --no-cache \
+    postgresql-client \
+    curl \
+    wget \
+    ca-certificates \
+    tzdata \
+    bash \
+    && rm -rf /var/cache/apk/*
+
+# Configurar timezone para São Paulo
+ENV TZ=America/Sao_Paulo
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# Criar usuário não-root para segurança
+RUN addgroup -g 1001 -S backupuser && \
+    adduser -S backupuser -u 1001 -G backupuser
+
+# Criar estrutura de diretórios
+RUN mkdir -p /app/{scripts,config,logs,temp} && \
+    chown -R backupuser:backupuser /app
+
+# Definir diretório de trabalho
+WORKDIR /app
+
+# Copiar arquivos de configuração primeiro (para aproveitar cache de layers)
+COPY package*.json ./
+COPY config/ ./config/
+
+# Instalar dependências Node.js
+RUN npm ci --only=production && \
+    npm cache clean --force
+
+# Copiar scripts de backup
+COPY scripts/ ./scripts/
+
+# Copiar script de inicialização do cron
+COPY backup-cron ./backup-cron
+
+# Instalar MinIO client (mc)
+RUN wget -q https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/local/bin/mc && \
+    chmod +x /usr/local/bin/mc
+
+# Dar permissões de execução aos scripts
+RUN chmod +x ./backup-cron && \
+    chmod +x ./scripts/*.js && \
+    chown -R backupuser:backupuser /app
+
+# Mudar para usuário não-root
+USER backupuser
+
+# Expor porta para health checks (opcional)
+EXPOSE 3000
+
+# Health check integrado
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD node -e "\
+    const fs = require('fs'); \
+    const path = require('path'); \
+    try { \
+      fs.accessSync(path.join(__dirname, 'package.json')); \
+      fs.accessSync(path.join(__dirname, 'scripts', 'backup-orchestrator.js')); \
+      console.log('OK'); \
+      process.exit(0); \
+    } catch (e) { \
+      console.error('Health check failed:', e.message); \
+      process.exit(1); \
+    }"
+
+# Comando padrão - executa o script de cron
+CMD ["/app/backup-cron"]
+
+# ============================================
+# CONFIGURAÇÕES DE SEGURANÇA IMPLEMENTADAS:
+# ============================================
+# ✅ Usuário não-root (backupuser)
+# ✅ Permissões mínimas nos arquivos
+# ✅ Health check integrado
+# ✅ Imagem Alpine leve
+# ✅ Dependências atualizadas
+# ✅ Cache de layers otimizado
+# ============================================

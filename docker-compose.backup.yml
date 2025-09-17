@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  songmetrix-backup:
+    build:
+      context: .
+      dockerfile: Dockerfile.backup
+    container_name: songmetrix-backup-service
+    restart: unless-stopped
+
+    # Configurações de rede para conectar ao PostgreSQL remoto
+    networks:
+      - backup-network
+
+    # Variáveis de ambiente para conexão remota
+    # ⚠️ CONFIGURAR via arquivo .env ou EasyPanel
+    environment:
+      - NODE_ENV=production
+      - TZ=America/Sao_Paulo
+
+      # PostgreSQL - Servidor remoto
+      - POSTGRES_HOST=${POSTGRES_HOST:-your_postgres_host}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_DB=${POSTGRES_DB:-your_database}
+      - POSTGRES_USER=${POSTGRES_USER:-your_username}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-your_password}
+
+      # Supabase (opcional)
+      - SUPABASE_URL=${SUPABASE_URL:-your_supabase_url}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY:-your_service_key}
+
+      # MinIO - Servidor separado
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-your_minio_endpoint}
+      - MINIO_PORT=${MINIO_PORT:-9000}
+      - MINIO_USE_SSL=${MINIO_USE_SSL:-true}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-your_access_key}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-your_secret_key}
+      - MINIO_BUCKET=${MINIO_BUCKET:-your_bucket}
+
+      # Configurações de backup
+      - BACKUP_RETENTION_DAILY=${BACKUP_RETENTION_DAILY:-7}
+      - BACKUP_RETENTION_WEEKLY=${BACKUP_RETENTION_WEEKLY:-4}
+      - BACKUP_RETENTION_MONTHLY=${BACKUP_RETENTION_MONTHLY:-12}
+      - BACKUP_COMPRESSION_LEVEL=${BACKUP_COMPRESSION_LEVEL:-9}
+
+      # Monitoramento
+      - MONITORING_ENABLED=${MONITORING_ENABLED:-true}
+      - ALERT_EMAIL=${ALERT_EMAIL:-your_email@example.com}
+      - ALERT_WEBHOOK=${ALERT_WEBHOOK:-your_webhook_url}
+
+    # Volumes persistentes
+    volumes:
+      - backup_logs:/app/logs:rw
+      - backup_temp:/app/temp:rw
+      - backup_config:/app/config:ro
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+
+    # Configurações de segurança
+    security_opt:
+      - no-new-privileges:true
+    read_only: false  # Permite escrita nos volumes montados
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+
+    # Recursos limitados
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('fs').accessSync('/app/package.json') && console.log('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    # Labels para EasyPanel
+    labels:
+      - "easypanel.managed=true"
+      - "easypanel.service=songmetrix-backup"
+      - "easypanel.description=Songmetrix Database Backup Service"
+      - "easypanel.category=backup"
+      - "traefik.enable=false"
+
+# Rede isolada para backup (conecta ao PostgreSQL remoto)
+networks:
+  backup-network:
+    driver: bridge
+    internal: false
+    name: songmetrix-backup-network
+
+# Volumes persistentes para dados do backup
+volumes:
+  backup_logs:
+    driver: local
+    name: songmetrix-backup-logs
+  backup_temp:
+    driver: local
+    name: songmetrix-backup-temp
+  backup_config:
+    driver: local
+    name: songmetrix-backup-config

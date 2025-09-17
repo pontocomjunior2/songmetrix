@@ -1,0 +1,94 @@
+# ============================================
+# Songmetrix Backup System - .gitignore
+# Arquivos e diretórios a serem ignorados no Git
+# ============================================
+
+# Arquivos de ambiente com dados sensíveis
+.env
+.env.local
+.env.production
+.env.staging
+.env.backup
+.env.*
+
+# Logs e arquivos temporários
+logs/
+*.log
+temp/
+*.tmp
+*.temp
+
+# Backups locais (não versionar backups)
+backups/
+*.sql
+*.sql.gz
+*.dump
+*.backup
+
+# Diretórios de dados do container
+data/
+volumes/
+
+# Arquivos de configuração com secrets
+config/secrets.json
+config/database.json
+config/minio.json
+
+# Cache e dependências
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Arquivos do sistema operacional
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Arquivos temporários
+*.swp
+*.swo
+*~
+
+# Arquivos de backup do editor
+*.bak
+*.backup
+*.orig
+
+# Arquivos de configuração local
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Arquivos de teste e desenvolvimento
+test-results/
+coverage/
+.nyc_output/
+
+# Docker
+.dockerignore
+
+# Documentação gerada
+docs/api/
+docs/build/
+
+# Arquivos de lock de dependências (opcional - descomente se necessário)
+# package-lock.json
+# yarn.lock
+
+# ============================================
+# DIRETÓRIOS IMPORTANTES A MANTER NO GIT
+# ============================================
+# ✅ scripts/          - Scripts de backup
+# ✅ config/*.example  - Arquivos de exemplo
+# ✅ docker-compose.backup.yml - Deploy
+# ✅ Dockerfile.backup - Imagem
+# ✅ backup-cron       - Automação
+# ✅ *.md              - Documentação
+# ============================================
