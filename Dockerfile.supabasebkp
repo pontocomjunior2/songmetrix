@@ -10,7 +10,7 @@ LABEL version="1.0"
 
 # Variáveis de ambiente para agendamento e limpeza
 ENV BACKUP_ENABLED=true \
-    BACKUP_HOUR=02 \
+    BACKUP_HOUR=01 \
     BACKUP_MIN=00 \
     BACKUP_RETENTION_DAYS=15 \
     BACKUP_CLEANUP_ENABLED=true
@@ -87,26 +87,31 @@ CMD ["sh", "-c", "\
   fi && \
   \
   if [ \"$BACKUP_ENABLED\" = \"true\" ]; then \
-    echo '⏰ Modo agendado ativado - aguardando próximos horários programados...' && \
+    echo '⏰ Modo agendado ativado - aguardando horário programado...' && \
+    LAST_BACKUP_DATE=\"$(date +%Y-%m-%d)\" && \
     while true; do \
       CURRENT_HOUR=$(date +%H) && \
       CURRENT_MIN=$(date +%M) && \
+      CURRENT_DATE=$(date +%Y-%m-%d) && \
       \
-      if [ \"$CURRENT_HOUR\" = \"$BACKUP_HOUR\" ] && [ \"$CURRENT_MIN\" = \"$BACKUP_MIN\" ]; then \
+      # Só executar backup se for o horário correto E não executou hoje ainda \
+      if [ \"$CURRENT_HOUR\" = \"$BACKUP_HOUR\" ] && [ \"$CURRENT_MIN\" = \"$BACKUP_MIN\" ] && [ \"$LAST_BACKUP_DATE\" != \"$CURRENT_DATE\" ]; then \
         echo '🚀 Executando backup programado...' && \
         node scripts/supabase-backup.js && \
         \
         if [ \"$BACKUP_CLEANUP_ENABLED\" = \"true\" ]; then \
           echo \"🧹 Executando limpeza de backups antigos (> $BACKUP_RETENTION_DAYS dias)...\" && \
           mc alias set cleanup-alias https://$MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY --ignore-existing 2>/dev/null && \
-          mc rm --recursive --force --older-than ${BACKUP_RETENTION_DAYS}d cleanup-alias/$MINIO_BUCKET/supabase/ 2>/dev/null && \
+          mc rm --recursive --force --older-than ${BACKUP_RETENTION_DAYS}d cleanup-alias/$MINIO_BUCKET/daily/ 2>/dev/null && \
           echo \"✅ Limpeza concluída\"; \
         fi && \
         \
-        echo '✅ Ciclo concluído - aguardando próximo backup...' && \
+        LAST_BACKUP_DATE=\"$CURRENT_DATE\" && \
+        echo '✅ Ciclo concluído - aguardando próximo dia...' && \
         sleep 60; \
       else \
-        sleep 30; \
+        # Aguardar 5 minutos antes de verificar novamente \
+        sleep 300; \
       fi; \
     done; \
   else \
