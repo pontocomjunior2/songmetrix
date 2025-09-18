@@ -91,24 +91,23 @@ CMD ["sh", "-c", "\
   fi && \
   \
   if [ \"$BACKUP_ENABLED\" = \"true\" ]; then \
-    echo '⏰ Modo agendado ativado - verificando se deve executar backup inicial...' && \
-    CURRENT_HOUR=$(date +%H) && \
-    CURRENT_MIN=$(date +%M) && \
-    CURRENT_DATE=$(date +%Y-%m-%d) && \
+    echo '⏰ Modo agendado ativado - executando backup inicial...' && \
     \
-    # Verificar se já passou do horário agendado hoje \
-    if [ \"$CURRENT_HOUR\" -gt \"$BACKUP_HOUR\" ] || ([ \"$CURRENT_HOUR\" = \"$BACKUP_HOUR\" ] && [ \"$CURRENT_MIN\" -ge \"$BACKUP_MIN\" ]); then \
-      echo \"📅 Já passou do horário agendado hoje ($BACKUP_HOUR:$BACKUP_MIN), executando backup inicial...\" && \
-      if node scripts/supabase-backup.js; then \
-        echo '✅ Backup inicial (atrasado) concluído com sucesso' && \
-        LAST_BACKUP_DATE=\"$CURRENT_DATE\"; \
-      else \
-        echo '❌ Backup inicial falhou' && \
-        LAST_BACKUP_DATE=\"\"; \
-      fi; \
+    # Sempre executar backup inicial ao iniciar container \
+    if node scripts/supabase-backup.js; then \
+      echo '✅ Backup inicial concluído com sucesso' && \
+      LAST_BACKUP_DATE=\"$(date +%Y-%m-%d)\"; \
     else \
-      echo \"⏰ Ainda não chegou o horário ($BACKUP_HOUR:$BACKUP_MIN), aguardando...\" && \
+      echo '❌ Backup inicial falhou' && \
       LAST_BACKUP_DATE=\"\"; \
+    fi && \
+    \
+    # Executar limpeza inicial \
+    if [ \"$BACKUP_CLEANUP_ENABLED\" = \"true\" ]; then \
+      echo \"🧹 Executando limpeza inicial de backups antigos (> $BACKUP_RETENTION_DAYS dias)...\" && \
+      mc alias set cleanup-alias https://$MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY --ignore-existing 2>/dev/null && \
+      mc rm --recursive --force --older-than ${BACKUP_RETENTION_DAYS}d cleanup-alias/$MINIO_BUCKET/daily/ 2>/dev/null && \
+      echo \"✅ Limpeza inicial concluída\"; \
     fi && \
     \
     # Loop de agendamento diário \

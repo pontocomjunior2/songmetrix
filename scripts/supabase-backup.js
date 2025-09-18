@@ -31,7 +31,7 @@ const supabaseConfig = {
 const minioConfig = {
   endpoint: process.env.MINIO_ENDPOINT || 'files.songmetrix.com.br',
   accessKey: process.env.MINIO_ACCESS_KEY || 'admin',
-  secretKey: process.env.MINIO_SECRET_KEY, // Removido fallback para forçar uso da env var
+  secretKey: process.env.MINIO_SECRET_KEY || 'Conquista@@2',
   bucket: process.env.MINIO_BUCKET || 'songmetrix-backups',
   useSSL: process.env.MINIO_USE_SSL !== 'false'
 };
