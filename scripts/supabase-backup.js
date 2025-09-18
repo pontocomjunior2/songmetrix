@@ -265,7 +265,7 @@ class SupabaseBackupService {
       }
 
       // Fazer upload
-      const remotePath = `supabase/${this.backupFile}`;
+      const remotePath = `daily/${this.backupFile}`;
       execSync(`${mcCmd} cp ${this.backupPath} ${aliasName}/${minioConfig.bucket}/${remotePath}`, {
         stdio: 'inherit'
       });

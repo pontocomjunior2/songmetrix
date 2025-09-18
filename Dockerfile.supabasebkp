@@ -82,7 +82,7 @@ CMD ["sh", "-c", "\
   if [ \"$BACKUP_CLEANUP_ENABLED\" = \"true\" ]; then \
     echo \"🧹 Executando limpeza inicial de backups antigos (> $BACKUP_RETENTION_DAYS dias)...\" && \
     mc alias set cleanup-alias https://$MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY --ignore-existing 2>/dev/null && \
-    mc rm --recursive --force --older-than ${BACKUP_RETENTION_DAYS}d cleanup-alias/$MINIO_BUCKET/supabase/ 2>/dev/null && \
+    mc rm --recursive --force --older-than ${BACKUP_RETENTION_DAYS}d cleanup-alias/$MINIO_BUCKET/daily/ 2>/dev/null && \
     echo \"✅ Limpeza inicial concluída\"; \
   fi && \
   \
