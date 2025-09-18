@@ -91,8 +91,27 @@ CMD ["sh", "-c", "\
   fi && \
   \
   if [ \"$BACKUP_ENABLED\" = \"true\" ]; then \
-    echo '⏰ Modo agendado ativado - aguardando horário programado...' && \
-    LAST_BACKUP_DATE=\"$(date +%Y-%m-%d)\" && \
+    echo '⏰ Modo agendado ativado - verificando se deve executar backup inicial...' && \
+    CURRENT_HOUR=$(date +%H) && \
+    CURRENT_MIN=$(date +%M) && \
+    CURRENT_DATE=$(date +%Y-%m-%d) && \
+    \
+    # Verificar se já passou do horário agendado hoje \
+    if [ \"$CURRENT_HOUR\" -gt \"$BACKUP_HOUR\" ] || ([ \"$CURRENT_HOUR\" = \"$BACKUP_HOUR\" ] && [ \"$CURRENT_MIN\" -ge \"$BACKUP_MIN\" ]); then \
+      echo \"📅 Já passou do horário agendado hoje ($BACKUP_HOUR:$BACKUP_MIN), executando backup inicial...\" && \
+      if node scripts/supabase-backup.js; then \
+        echo '✅ Backup inicial (atrasado) concluído com sucesso' && \
+        LAST_BACKUP_DATE=\"$CURRENT_DATE\"; \
+      else \
+        echo '❌ Backup inicial falhou' && \
+        LAST_BACKUP_DATE=\"\"; \
+      fi; \
+    else \
+      echo \"⏰ Ainda não chegou o horário ($BACKUP_HOUR:$BACKUP_MIN), aguardando...\" && \
+      LAST_BACKUP_DATE=\"\"; \
+    fi && \
+    \
+    # Loop de agendamento diário \
     while true; do \
       CURRENT_HOUR=$(date +%H) && \
       CURRENT_MIN=$(date +%M) && \
@@ -102,9 +121,9 @@ CMD ["sh", "-c", "\
       \
       # Só executar backup se for o horário correto E não executou hoje ainda \
       if [ \"$CURRENT_HOUR\" = \"$BACKUP_HOUR\" ] && [ \"$CURRENT_MIN\" = \"$BACKUP_MIN\" ] && [ \"$LAST_BACKUP_DATE\" != \"$CURRENT_DATE\" ]; then \
-        echo '🚀 Executando backup programado...' && \
+        echo '🚀 Executando backup diário programado...' && \
         if node scripts/supabase-backup.js; then \
-          echo '✅ Backup programado concluído com sucesso' && \
+          echo '✅ Backup diário concluído com sucesso' && \
           \
           if [ \"$BACKUP_CLEANUP_ENABLED\" = \"true\" ]; then \
             echo \"🧹 Executando limpeza de backups antigos (> $BACKUP_RETENTION_DAYS dias)...\" && \
@@ -116,12 +135,12 @@ CMD ["sh", "-c", "\
           LAST_BACKUP_DATE=\"$CURRENT_DATE\" && \
           echo '✅ Ciclo concluído - aguardando próximo dia...'; \
         else \
-          echo '❌ Backup programado falhou - tentando novamente em 5 minutos' && \
+          echo '❌ Backup diário falhou - tentando novamente em 5 minutos' && \
           sleep 300; \
           continue; \
         fi; \
       else \
-        echo '⏳ Aguardando horário do backup...'; \
+        echo '⏳ Aguardando horário do backup diário...'; \
       fi && \
       \
       # Aguardar 5 minutos antes de verificar novamente \
