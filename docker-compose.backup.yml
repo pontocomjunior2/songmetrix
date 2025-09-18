@@ -97,7 +97,7 @@ services:
       context: .
       dockerfile: Dockerfile.supabasebkp
     container_name: songmetrix-supabase-backup-service
-    restart: "no"  # Job único, não reinicia automaticamente
+    restart: "no"  # Job único, finaliza após execução
 
     # Configurações de rede para conectar ao Supabase
     networks:

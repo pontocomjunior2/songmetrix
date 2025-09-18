@@ -41,10 +41,32 @@ const LOG_DIR = process.platform === 'win32' ? './logs' : '/app/logs';
 
 class SupabaseBackupService {
   constructor() {
+    this.validateEnvironment();
     this.pool = new Pool(supabaseConfig);
     this.timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     this.backupFile = `supabase-backup-${this.timestamp}.dump`;
     this.backupPath = path.join(TEMP_DIR, this.backupFile);
+  }
+
+  validateEnvironment() {
+    const requiredVars = [
+      'SUPABASE_DB_PASSWORD'
+    ];
+
+    const missingVars = requiredVars.filter(varName => !process.env[varName]);
+
+    if (missingVars.length > 0) {
+      throw new Error(`Variáveis de ambiente obrigatórias não configuradas: ${missingVars.join(', ')}`);
+    }
+
+    // Log de configuração (sem senhas)
+    this.log('🔧 Configuração do ambiente:');
+    this.log(`  - Host: ${supabaseConfig.host}`);
+    this.log(`  - Porta: ${supabaseConfig.port}`);
+    this.log(`  - Banco: ${supabaseConfig.database}`);
+    this.log(`  - Usuário: ${supabaseConfig.user}`);
+    this.log(`  - MinIO Endpoint: ${minioConfig.endpoint}`);
+    this.log(`  - MinIO Bucket: ${minioConfig.bucket}`);
   }
 
   log(message, level = 'INFO') {
@@ -97,7 +119,7 @@ class SupabaseBackupService {
       `);
       this.log(`📋 Número de tabelas: ${tablesResult.rows[0].table_count}`);
 
-      // Tabelas principais (autenticação)
+      // Tabelas principais (autenticação) - Query compatível com Supabase
       const topTablesResult = await this.pool.query(`
         SELECT
           schemaname,
@@ -105,7 +127,8 @@ class SupabaseBackupService {
           pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) as size,
           n_tup_ins - n_tup_del as rowcount
         FROM pg_stat_user_tables
-        WHERE tablename IN ('users', 'sessions', 'refresh_tokens', 'audit_log_entries')
+        WHERE schemaname = 'auth'
+          AND tablename IN ('users', 'sessions', 'refresh_tokens', 'audit_log_entries')
         ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC
         LIMIT 5
       `);
@@ -257,8 +280,14 @@ class SupabaseBackupService {
       this.log('☁️ Fazendo upload para MinIO...');
 
       // Verificar se as credenciais MinIO estão disponíveis
-      if (!minioConfig.secretKey || minioConfig.secretKey === 'Conquista@@2') {
-        this.log('⚠️ Credenciais MinIO não configuradas ou usando valor padrão, pulando upload', 'WARN');
+      if (!minioConfig.secretKey || !minioConfig.accessKey) {
+        this.log('⚠️ Credenciais MinIO não configuradas, pulando upload', 'WARN');
+        return false;
+      }
+
+      // Verificar se não está usando valores padrão/placeholder
+      if (minioConfig.secretKey === 'your_secret_key' || minioConfig.secretKey === 'Conquista@@2') {
+        this.log('⚠️ Credencial MinIO usando valor padrão/placeholder, pulando upload', 'WARN');
         return false;
       }
 
@@ -341,6 +370,49 @@ class SupabaseBackupService {
     }
   }
 
+  async cleanupOldBackups() {
+    try {
+      this.log('🧹 Executando limpeza de backups antigos...');
+
+      // Verificar se MinIO está configurado
+      if (!minioConfig.secretKey || minioConfig.secretKey === 'your_secret_key' || minioConfig.secretKey === 'Conquista@@2') {
+        this.log('⚠️ MinIO não configurado, pulando limpeza', 'WARN');
+        return false;
+      }
+
+      const mcCmd = process.platform === 'win32' ? 'mc.exe' : 'mc';
+      const retentionDays = process.env.BACKUP_RETENTION_DAYS || 15;
+
+      // Configurar alias
+      const aliasName = 'cleanup-alias';
+      const protocol = minioConfig.useSSL ? 'https' : 'http';
+      const aliasCmd = `${mcCmd} alias set ${aliasName} ${protocol}://${minioConfig.endpoint} ${minioConfig.accessKey} ${minioConfig.secretKey}`;
+
+      try {
+        execSync(aliasCmd, { stdio: 'pipe' });
+        this.log('✅ Alias MinIO configurado para limpeza');
+      } catch (error) {
+        this.log(`⚠️ Erro ao configurar alias: ${error.message}`);
+        return false;
+      }
+
+      // Executar limpeza
+      const cleanupCmd = `${mcCmd} rm --recursive --force --older-than ${retentionDays}d ${aliasName}/${minioConfig.bucket}/daily/`;
+      try {
+        execSync(cleanupCmd, { stdio: 'pipe' });
+        this.log(`✅ Limpeza concluída - backups com mais de ${retentionDays} dias removidos`);
+        return true;
+      } catch (error) {
+        this.log(`⚠️ Erro na limpeza: ${error.message}`, 'WARN');
+        return false;
+      }
+
+    } catch (error) {
+      this.log(`❌ Erro na limpeza de backups antigos: ${error.message}`, 'ERROR');
+      return false;
+    }
+  }
+
   async cleanup() {
     try {
       this.log('🧹 Fazendo limpeza...');
@@ -382,7 +454,10 @@ class SupabaseBackupService {
         this.log('⚠️ Upload para MinIO falhou, mas backup local mantido', 'WARN');
       }
 
-      // 6. Limpeza
+      // 6. Limpeza de backups antigos
+      await this.cleanupOldBackups();
+
+      // 7. Limpeza local
       await this.cleanup();
 
       const duration = Math.round((Date.now() - startTime) / 1000);
