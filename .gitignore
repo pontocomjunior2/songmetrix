@@ -129,3 +129,49 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Backup files and large files
+*.dump
+*.sql
+*.backup
+*.bak
+BKPS*/
+backup*/
+*.exe
+mc.exe
+mc
+
+# Docker volumes and temp files
+/app/temp/*
+/app/logs/*
+temp/
+logs/
+
+# Environment files (except examples)
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.backup.example
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Large files (>100MB)
+*.zip
+*.tar.gz
+*.rar
+*.7z
