@@ -76,14 +76,18 @@ CMD ["sh", "-c", "\
   \
   # Executar backup inicial ao iniciar o container \
   echo '🚀 Executando backup inicial...' && \
-  node scripts/supabase-backup.js && \
-  \
-  # Executar limpeza após backup inicial \
-  if [ \"$BACKUP_CLEANUP_ENABLED\" = \"true\" ]; then \
-    echo \"🧹 Executando limpeza inicial de backups antigos (> $BACKUP_RETENTION_DAYS dias)...\" && \
-    mc alias set cleanup-alias https://$MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY --ignore-existing 2>/dev/null && \
-    mc rm --recursive --force --older-than ${BACKUP_RETENTION_DAYS}d cleanup-alias/$MINIO_BUCKET/daily/ 2>/dev/null && \
-    echo \"✅ Limpeza inicial concluída\"; \
+  if node scripts/supabase-backup.js; then \
+    echo '✅ Backup inicial concluído com sucesso' && \
+    \
+    # Executar limpeza após backup inicial \
+    if [ \"$BACKUP_CLEANUP_ENABLED\" = \"true\" ]; then \
+      echo \"🧹 Executando limpeza inicial de backups antigos (> $BACKUP_RETENTION_DAYS dias)...\" && \
+      mc alias set cleanup-alias https://$MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY --ignore-existing 2>/dev/null && \
+      mc rm --recursive --force --older-than ${BACKUP_RETENTION_DAYS}d cleanup-alias/$MINIO_BUCKET/daily/ 2>/dev/null && \
+      echo \"✅ Limpeza inicial concluída\"; \
+    fi; \
+  else \
+    echo '❌ Backup inicial falhou, continuando mesmo assim...'; \
   fi && \
   \
   if [ \"$BACKUP_ENABLED\" = \"true\" ]; then \
@@ -97,22 +101,27 @@ CMD ["sh", "-c", "\
       # Só executar backup se for o horário correto E não executou hoje ainda \
       if [ \"$CURRENT_HOUR\" = \"$BACKUP_HOUR\" ] && [ \"$CURRENT_MIN\" = \"$BACKUP_MIN\" ] && [ \"$LAST_BACKUP_DATE\" != \"$CURRENT_DATE\" ]; then \
         echo '🚀 Executando backup programado...' && \
-        node scripts/supabase-backup.js && \
-        \
-        if [ \"$BACKUP_CLEANUP_ENABLED\" = \"true\" ]; then \
-          echo \"🧹 Executando limpeza de backups antigos (> $BACKUP_RETENTION_DAYS dias)...\" && \
-          mc alias set cleanup-alias https://$MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY --ignore-existing 2>/dev/null && \
-          mc rm --recursive --force --older-than ${BACKUP_RETENTION_DAYS}d cleanup-alias/$MINIO_BUCKET/daily/ 2>/dev/null && \
-          echo \"✅ Limpeza concluída\"; \
-        fi && \
-        \
-        LAST_BACKUP_DATE=\"$CURRENT_DATE\" && \
-        echo '✅ Ciclo concluído - aguardando próximo dia...' && \
-        sleep 60; \
-      else \
-        # Aguardar 5 minutos antes de verificar novamente \
-        sleep 300; \
-      fi; \
+        if node scripts/supabase-backup.js; then \
+          echo '✅ Backup programado concluído com sucesso' && \
+          \
+          if [ \"$BACKUP_CLEANUP_ENABLED\" = \"true\" ]; then \
+            echo \"🧹 Executando limpeza de backups antigos (> $BACKUP_RETENTION_DAYS dias)...\" && \
+            mc alias set cleanup-alias https://$MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY --ignore-existing 2>/dev/null && \
+            mc rm --recursive --force --older-than ${BACKUP_RETENTION_DAYS}d cleanup-alias/$MINIO_BUCKET/daily/ 2>/dev/null && \
+            echo \"✅ Limpeza concluída\"; \
+          fi && \
+          \
+          LAST_BACKUP_DATE=\"$CURRENT_DATE\" && \
+          echo '✅ Ciclo concluído - aguardando próximo dia...'; \
+        else \
+          echo '❌ Backup programado falhou' && \
+          sleep 300; \
+          continue; \
+        fi; \
+      fi && \
+      \
+      # Aguardar 5 minutos antes de verificar novamente \
+      sleep 300; \
     done; \
   else \
     echo '🔄 Modo único ativado - backup inicial já executado, finalizando...' && \

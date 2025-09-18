@@ -131,11 +131,24 @@ class SupabaseBackupService {
   async createBackup() {
     try {
       this.log(`💾 Criando backup Supabase: ${this.backupFile}`);
+      this.log(`📂 Diretório temp: ${TEMP_DIR}`);
+      this.log(`📄 Arquivo destino: ${this.backupPath}`);
 
       // Garantir que o diretório temp existe
       if (!fs.existsSync(TEMP_DIR)) {
         fs.mkdirSync(TEMP_DIR, { recursive: true });
         this.log('📁 Diretório temp criado');
+      } else {
+        this.log('📁 Diretório temp já existe');
+      }
+
+      // Verificar permissões do diretório
+      try {
+        fs.accessSync(TEMP_DIR, fs.constants.W_OK);
+        this.log('✅ Permissões de escrita OK');
+      } catch (error) {
+        this.log(`❌ Sem permissões de escrita: ${error.message}`, 'ERROR');
+        return false;
       }
 
       // Comando pg_dump READ-ONLY para Supabase
@@ -170,14 +183,22 @@ class SupabaseBackupService {
 
       const duration = Math.round((Date.now() - startTime) / 1000);
 
+      // DEBUG: Verificar arquivos no diretório temp
+      this.log('🔍 Verificando arquivos criados...');
+      const tempFiles = fs.readdirSync(TEMP_DIR);
+      this.log(`📋 Arquivos no temp: ${tempFiles.join(', ')}`);
+
       // Verificar se o arquivo foi criado
       if (fs.existsSync(this.backupPath)) {
         const stats = fs.statSync(this.backupPath);
         const sizeMB = (stats.size / 1024 / 1024).toFixed(2);
         this.log(`✅ Backup criado: ${this.backupPath} (${sizeMB} MB) em ${duration}s`);
+        this.log(`📏 Tamanho em bytes: ${stats.size}`);
         return true;
       } else {
-        throw new Error('Arquivo de backup não foi criado');
+        this.log(`❌ Arquivo não encontrado: ${this.backupPath}`, 'ERROR');
+        this.log(`📂 Conteúdo do diretório: ${fs.readdirSync(TEMP_DIR).join(', ')}`, 'ERROR');
+        throw new Error(`Arquivo de backup não foi criado: ${this.backupPath}`);
       }
 
     } catch (error) {
@@ -235,24 +256,46 @@ class SupabaseBackupService {
     try {
       this.log('☁️ Fazendo upload para MinIO...');
 
+      // DEBUG: Verificar arquivo antes do upload
+      this.log(`🔍 Verificando arquivo: ${this.backupPath}`);
+      if (!fs.existsSync(this.backupPath)) {
+        this.log(`❌ Arquivo de backup não encontrado: ${this.backupPath}`, 'ERROR');
+        return false;
+      }
+
+      const stats = fs.statSync(this.backupPath);
+      this.log(`📏 Tamanho do arquivo: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+
       // Verificar se mc está disponível
       const mcCmd = process.platform === 'win32' ? 'mc.exe' : 'mc';
       try {
         execSync(`${mcCmd} --version`, { stdio: 'pipe' });
+        this.log('✅ MinIO client encontrado');
       } catch (error) {
-        this.log('⚠️ MinIO client não encontrado, pulando upload');
+        this.log(`❌ MinIO client não encontrado: ${error.message}`, 'ERROR');
         return false;
       }
 
       // Configurar alias
       const aliasName = 'supabase-backup-alias';
       const protocol = minioConfig.useSSL ? 'https' : 'http';
+      const aliasCmd = `${mcCmd} alias set ${aliasName} ${protocol}://${minioConfig.endpoint} ${minioConfig.accessKey} ${minioConfig.secretKey}`;
+
+      this.log(`🔧 Configurando alias: ${aliasName}`);
       try {
-        execSync(`${mcCmd} alias set ${aliasName} ${protocol}://${minioConfig.endpoint} ${minioConfig.accessKey} ${minioConfig.secretKey}`, {
-          stdio: 'pipe'
-        });
+        execSync(aliasCmd, { stdio: 'pipe' });
+        this.log('✅ Alias configurado com sucesso');
       } catch (error) {
-        // Alias pode já existir
+        this.log(`⚠️ Alias pode já existir: ${error.message}`);
+      }
+
+      // Verificar conectividade
+      try {
+        execSync(`${mcCmd} ls ${aliasName}/`, { stdio: 'pipe' });
+        this.log('✅ Conectividade MinIO OK');
+      } catch (error) {
+        this.log(`❌ Erro de conectividade MinIO: ${error.message}`, 'ERROR');
+        return false;
       }
 
       // Criar bucket se não existir
@@ -260,21 +303,34 @@ class SupabaseBackupService {
         execSync(`${mcCmd} mb ${aliasName}/${minioConfig.bucket} --ignore-existing`, {
           stdio: 'pipe'
         });
+        this.log('✅ Bucket verificado/criado');
       } catch (error) {
-        // Bucket pode já existir
+        this.log(`⚠️ Erro ao verificar bucket: ${error.message}`);
       }
 
-      // Fazer upload
+      // Fazer upload com path absoluto
       const remotePath = `daily/${this.backupFile}`;
-      execSync(`${mcCmd} cp ${this.backupPath} ${aliasName}/${minioConfig.bucket}/${remotePath}`, {
-        stdio: 'inherit'
-      });
+      const uploadCmd = `${mcCmd} cp "${this.backupPath}" ${aliasName}/${minioConfig.bucket}/${remotePath}`;
 
-      this.log(`✅ Upload concluído: ${minioConfig.bucket}/${remotePath}`);
-      return true;
+      this.log(`📤 Executando upload: ${uploadCmd}`);
+      execSync(uploadCmd, { stdio: 'inherit' });
+
+      // Verificar se upload foi bem-sucedido
+      try {
+        const result = execSync(`${mcCmd} ls ${aliasName}/${minioConfig.bucket}/${remotePath}`, {
+          encoding: 'utf8',
+          stdio: 'pipe'
+        });
+        this.log(`✅ Upload verificado: ${minioConfig.bucket}/${remotePath}`);
+        return true;
+      } catch (verifyError) {
+        this.log(`⚠️ Upload executado mas não verificado: ${verifyError.message}`);
+        return true; // Upload foi executado, pode ter funcionado
+      }
 
     } catch (error) {
       this.log(`❌ Erro no upload MinIO: ${error.message}`, 'ERROR');
+      this.log(`🔍 Detalhes do erro: ${error.stack}`, 'ERROR');
       return false;
     }
   }
