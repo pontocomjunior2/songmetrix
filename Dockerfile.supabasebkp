@@ -10,7 +10,7 @@ LABEL version="1.0"
 
 # Variáveis de ambiente para agendamento e limpeza
 ENV BACKUP_ENABLED=true \
-    BACKUP_HOUR=01 \
+    BACKUP_HOUR=02 \
     BACKUP_MIN=00 \
     BACKUP_RETENTION_DAYS=15 \
     BACKUP_CLEANUP_ENABLED=true
