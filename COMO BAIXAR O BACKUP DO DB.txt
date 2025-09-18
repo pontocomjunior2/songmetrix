@@ -1,0 +1,4 @@
+PS D:\dataradio\songmetrix> .\mc.exe ls test-alias/songmetrix-backups/daily/ --recursive                                
+[2025-09-17 19:21:17 -03] 199MiB STANDARD songmetrix-backup-2025-09-17T22-19-09.dump
+
+PS D:\dataradio\songmetrix> .\mc.exe cp test-alias/songmetrix-backups/daily/songmetrix-backup-2025-09-17T22-19-09.dump ./temp/test-download.dump

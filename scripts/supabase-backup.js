@@ -286,7 +286,7 @@ class SupabaseBackupService {
       }
 
       // Verificar se não está usando valores padrão/placeholder
-      if (minioConfig.secretKey === 'your_secret_key' || minioConfig.secretKey === 'Conquista@@2') {
+      if (minioConfig.secretKey === 'your_secret_key') {
         this.log('⚠️ Credencial MinIO usando valor padrão/placeholder, pulando upload', 'WARN');
         return false;
       }
@@ -428,7 +428,7 @@ class SupabaseBackupService {
     }
   }
 
-  async run() {
+  async runBackup() {
     const startTime = Date.now();
     this.log('🗄️ Iniciando backup Supabase (READ-ONLY)');
 
@@ -471,6 +471,70 @@ class SupabaseBackupService {
       return false;
     } finally {
       await this.pool.end();
+    }
+  }
+
+  async runScheduled() {
+    const backupEnabled = process.env.BACKUP_ENABLED !== 'false';
+    const backupHour = parseInt(process.env.BACKUP_HOUR) || 1; // 01:00 por padrão
+    const backupMin = parseInt(process.env.BACKUP_MIN) || 0;
+
+    this.log(`⏰ Modo agendado ativado - horário: ${backupHour.toString().padStart(2, '0')}:${backupMin.toString().padStart(2, '0')}`);
+
+    if (!backupEnabled) {
+      this.log('🔄 Modo agendado desativado, executando backup único...');
+      return await this.runBackup();
+    }
+
+    let lastBackupDate = '';
+
+    while (true) {
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentMin = now.getMinutes();
+      const currentDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
+
+      this.log(`⏰ Verificando horário: ${currentHour.toString().padStart(2, '0')}:${currentMin.toString().padStart(2, '0')} (esperado: ${backupHour.toString().padStart(2, '0')}:${backupMin.toString().padStart(2, '0')}, último backup: ${lastBackupDate})`);
+
+      // Verificar se é o horário do backup E não executou hoje ainda
+      if (currentHour === backupHour && currentMin === backupMin && lastBackupDate !== currentDate) {
+        this.log('🚀 Executando backup agendado...');
+
+        // Criar nova instância para cada backup
+        const backupService = new SupabaseBackupService();
+        const success = await backupService.runBackup();
+
+        if (success) {
+          lastBackupDate = currentDate;
+          this.log('✅ Backup agendado concluído com sucesso');
+        } else {
+          this.log('❌ Backup agendado falhou - tentando novamente em 5 minutos', 'ERROR');
+          // Aguardar 5 minutos antes de tentar novamente
+          await this.sleep(300000);
+          continue;
+        }
+      } else if (currentHour === backupHour && currentMin === backupMin && lastBackupDate === currentDate) {
+        this.log('⏳ Backup já executado hoje, aguardando próximo dia...');
+      } else {
+        this.log('⏳ Aguardando horário do backup agendado...');
+      }
+
+      // Aguardar 1 minuto antes de verificar novamente
+      await this.sleep(60000);
+    }
+  }
+
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async run() {
+    const mode = process.env.BACKUP_MODE || 'single'; // 'single' ou 'scheduled'
+
+    if (mode === 'scheduled') {
+      return await this.runScheduled();
+    } else {
+      return await this.runBackup();
     }
   }
 }

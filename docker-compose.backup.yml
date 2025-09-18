@@ -97,7 +97,7 @@ services:
       context: .
       dockerfile: Dockerfile.supabasebkp
     container_name: songmetrix-supabase-backup-service
-    restart: "no"  # Job único, finaliza após execução
+    restart: unless-stopped  # Reinicia automaticamente se parar inesperadamente
 
     # Configurações de rede para conectar ao Supabase
     networks:
@@ -122,6 +122,14 @@ services:
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-admin}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-Conquista@@2}
       - MINIO_BUCKET=${MINIO_BUCKET:-songmetrix-backups}
+
+      # Modo de operação
+      - BACKUP_MODE=${BACKUP_MODE:-scheduled}
+      - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
+      - BACKUP_HOUR=${BACKUP_HOUR:-1}
+      - BACKUP_MIN=${BACKUP_MIN:-0}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-15}
+      - BACKUP_CLEANUP_ENABLED=${BACKUP_CLEANUP_ENABLED:-true}
 
     # Volumes persistentes
     volumes:

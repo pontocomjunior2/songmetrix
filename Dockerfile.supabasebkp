@@ -66,12 +66,17 @@ RUN echo "# Supabase Backup Configuration Example" > .env.example && \
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD pg_isready -h ${SUPABASE_DB_HOST:-db.aylxcqaddelwxfukerhr.supabase.co} -p ${SUPABASE_DB_PORT:-5432} || exit 1
 
-# Comando simplificado - apenas backup único
+# Comando com modo agendado ou único
 CMD ["sh", "-c", "\
   echo '🗄️ Songmetrix Supabase Backup Service' && \
-  echo '🚀 Executando backup único...' && \
-  node scripts/supabase-backup.js && \
-  echo '✅ Backup concluído - container finalizando...' \
+  if [ \"$BACKUP_MODE\" = \"scheduled\" ]; then \
+    echo '⏰ Modo agendado ativado - aguardando horário programado...' && \
+    node scripts/supabase-backup.js; \
+  else \
+    echo '🚀 Executando backup único...' && \
+    node scripts/supabase-backup.js && \
+    echo '✅ Backup concluído - container finalizando...'; \
+  fi \
 "]
 
 # Exposição de porta (não necessária para backup)
