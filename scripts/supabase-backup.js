@@ -31,7 +31,7 @@ const supabaseConfig = {
 const minioConfig = {
   endpoint: process.env.MINIO_ENDPOINT || 'files.songmetrix.com.br',
   accessKey: process.env.MINIO_ACCESS_KEY || 'admin',
-  secretKey: process.env.MINIO_SECRET_KEY || 'Conquista@@2',
+  secretKey: process.env.MINIO_SECRET_KEY, // Removido fallback para forçar uso da env var
   bucket: process.env.MINIO_BUCKET || 'songmetrix-backups',
   useSSL: process.env.MINIO_USE_SSL !== 'false'
 };
@@ -255,6 +255,12 @@ class SupabaseBackupService {
   async uploadToMinIO() {
     try {
       this.log('☁️ Fazendo upload para MinIO...');
+
+      // Verificar se as credenciais MinIO estão disponíveis
+      if (!minioConfig.secretKey || minioConfig.secretKey === 'Conquista@@2') {
+        this.log('⚠️ Credenciais MinIO não configuradas ou usando valor padrão, pulando upload', 'WARN');
+        return false;
+      }
 
       // DEBUG: Verificar arquivo antes do upload
       this.log(`🔍 Verificando arquivo: ${this.backupPath}`);

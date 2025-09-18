@@ -98,6 +98,8 @@ CMD ["sh", "-c", "\
       CURRENT_MIN=$(date +%M) && \
       CURRENT_DATE=$(date +%Y-%m-%d) && \
       \
+      echo \"⏰ Verificando horário: $CURRENT_HOUR:$CURRENT_MIN (esperado: $BACKUP_HOUR:$BACKUP_MIN, último backup: $LAST_BACKUP_DATE)\" && \
+      \
       # Só executar backup se for o horário correto E não executou hoje ainda \
       if [ \"$CURRENT_HOUR\" = \"$BACKUP_HOUR\" ] && [ \"$CURRENT_MIN\" = \"$BACKUP_MIN\" ] && [ \"$LAST_BACKUP_DATE\" != \"$CURRENT_DATE\" ]; then \
         echo '🚀 Executando backup programado...' && \
@@ -114,10 +116,12 @@ CMD ["sh", "-c", "\
           LAST_BACKUP_DATE=\"$CURRENT_DATE\" && \
           echo '✅ Ciclo concluído - aguardando próximo dia...'; \
         else \
-          echo '❌ Backup programado falhou' && \
+          echo '❌ Backup programado falhou - tentando novamente em 5 minutos' && \
           sleep 300; \
           continue; \
         fi; \
+      else \
+        echo '⏳ Aguardando horário do backup...'; \
       fi && \
       \
       # Aguardar 5 minutos antes de verificar novamente \
