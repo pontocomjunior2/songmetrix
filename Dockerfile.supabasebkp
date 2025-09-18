@@ -66,7 +66,7 @@ RUN echo "# Supabase Backup Configuration Example" > .env.example && \
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD pg_isready -h ${SUPABASE_DB_HOST:-db.aylxcqaddelwxfukerhr.supabase.co} -p ${SUPABASE_DB_PORT:-5432} || exit 1
 
-# Comando com agendamento automático e limpeza
+# Comando com backup inicial + agendamento automático e limpeza
 CMD ["sh", "-c", "\
   echo '🗄️ Songmetrix Supabase Backup Service' && \
   echo \"BACKUP_ENABLED: $BACKUP_ENABLED\" && \
@@ -74,8 +74,20 @@ CMD ["sh", "-c", "\
   echo \"Retenção: $BACKUP_RETENTION_DAYS dias\" && \
   echo \"Limpeza automática: $BACKUP_CLEANUP_ENABLED\" && \
   \
+  # Executar backup inicial ao iniciar o container \
+  echo '🚀 Executando backup inicial...' && \
+  node scripts/supabase-backup.js && \
+  \
+  # Executar limpeza após backup inicial \
+  if [ \"$BACKUP_CLEANUP_ENABLED\" = \"true\" ]; then \
+    echo \"🧹 Executando limpeza inicial de backups antigos (> $BACKUP_RETENTION_DAYS dias)...\" && \
+    mc alias set cleanup-alias https://$MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY --ignore-existing 2>/dev/null && \
+    mc rm --recursive --force --older-than ${BACKUP_RETENTION_DAYS}d cleanup-alias/$MINIO_BUCKET/supabase/ 2>/dev/null && \
+    echo \"✅ Limpeza inicial concluída\"; \
+  fi && \
+  \
   if [ \"$BACKUP_ENABLED\" = \"true\" ]; then \
-    echo '⏰ Modo agendado ativado - aguardando horário programado...' && \
+    echo '⏰ Modo agendado ativado - aguardando próximos horários programados...' && \
     while true; do \
       CURRENT_HOUR=$(date +%H) && \
       CURRENT_MIN=$(date +%M) && \
@@ -98,8 +110,7 @@ CMD ["sh", "-c", "\
       fi; \
     done; \
   else \
-    echo '🔄 Modo único ativado - executando backup imediato...' && \
-    node scripts/supabase-backup.js && \
+    echo '🔄 Modo único ativado - backup inicial já executado, finalizando...' && \
     echo '✅ Backup único concluído'; \
   fi \
 "]
